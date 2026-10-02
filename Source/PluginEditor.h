@@ -41,6 +41,22 @@ private:
 class LSamplerParameterComboBox final : public juce::ComboBox
 {
 public:
+    using Shortcut = std::function<bool(const juce::KeyPress&, juce::Component*)>;
+    void setShortcutHandler(Shortcut handler) { shortcut = std::move(handler); }
+
+    bool keyPressed(const juce::KeyPress& key) override
+    {
+        const auto mods = key.getModifiers();
+        const auto code = key.getKeyCode();
+        const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
+        const bool dedicated = (mods.isCtrlDown() && !mods.isAltDown()
+                                && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
+                            || (mods.isAltDown() && !mods.isCtrlDown() && ch == 'l');
+        if (dedicated && shortcut && shortcut(key, this))
+            return true;
+        return juce::ComboBox::keyPressed(key);
+    }
+
     void setLineReadingMode()
     {
         setTitle({});
@@ -64,11 +80,31 @@ public:
                     safeThis->setLineReadingMode();
             });
     }
+
+
+private:
+    Shortcut shortcut;
 };
 
 class LSamplerValueSlider final : public juce::Slider
 {
 public:
+    using Shortcut = std::function<bool(const juce::KeyPress&, juce::Component*)>;
+    void setShortcutHandler(Shortcut handler) { shortcut = std::move(handler); }
+
+    bool keyPressed(const juce::KeyPress& key) override
+    {
+        const auto mods = key.getModifiers();
+        const auto code = key.getKeyCode();
+        const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
+        const bool dedicated = (mods.isCtrlDown() && !mods.isAltDown()
+                                && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
+                            || (mods.isAltDown() && !mods.isCtrlDown() && ch == 'l');
+        if (dedicated && shortcut && shortcut(key, this))
+            return true;
+        return juce::Slider::keyPressed(key);
+    }
+
     void setParameterAccessibilityName(const juce::String& newName)
     {
         parameterName = newName;
@@ -106,6 +142,7 @@ public:
 
 private:
     juce::String parameterName;
+    Shortcut shortcut;
 };
 
 class LSampler24AudioProcessorEditor : public juce::AudioProcessorEditor,

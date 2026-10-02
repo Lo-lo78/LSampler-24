@@ -150,6 +150,10 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
 
     parameterSelector.setWantsKeyboardFocus(true);
     parameterSelector.setExplicitFocusOrder(1);
+    parameterSelector.setShortcutHandler([this](const juce::KeyPress& key, juce::Component* source)
+    {
+        return handleKeyPress(key, source);
+    });
     parameterSelector.addKeyListener(this);
     for (int i = 0; i < static_cast<int>(lsampler::grid.size()); ++i)
         parameterSelector.addItem(parameterCellText(i), i + 1);
@@ -176,6 +180,10 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     parameterValue.setLookAndFeel(valueLookAndFeel.get());
     parameterValue.setWantsKeyboardFocus(true);
     parameterValue.setExplicitFocusOrder(2);
+    parameterValue.setShortcutHandler([this](const juce::KeyPress& key, juce::Component* source)
+    {
+        return handleKeyPress(key, source);
+    });
     parameterValue.addKeyListener(this);
     parameterValue.onValueChange = [this]
     {
@@ -567,9 +575,9 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         return true;
     }
 
-    // Ctrl+Left/Right is a dedicated sample-window scrub command.  Keep the
-    // focus in the normal Grid/Value surface while editing Sample Play Start.
-    if (parameterPage && !sourceIsValueEditor && mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown()
+    // Ctrl+Left/Right scrubs Sample Play Start without moving Grid/Value focus.
+    // If Space preview is already playing, restart it from the new start position.
+    if (parameterPage && mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown()
         && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
     {
         int sampleStartIndex = -1;
@@ -579,11 +587,22 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 sampleStartIndex = i;
                 break;
             }
+
         if (sampleStartIndex >= 0)
         {
-            if (selectedParameter != sampleStartIndex)
-                selectParameter(sampleStartIndex, false);
-            changeSelectedParameterValue(code == juce::KeyPress::rightKey ? 1 : -1, false);
+            const auto& d = descriptor(lsampler::grid[static_cast<size_t>(sampleStartIndex)]);
+            const double step = d.step * static_cast<double>(stepWidths[static_cast<size_t>(stepWidthIndex)]);
+            const double current = processor.getSlotParameter(sampleStartIndex);
+            const double next = juce::jlimit(d.minimum, d.maximum,
+                                             current + (code == juce::KeyPress::rightKey ? step : -step));
+            if (std::abs(next - current) >= 1.0e-9)
+            {
+                processor.setSlotParameter(sampleStartIndex, next);
+                refreshParameterGrid();
+                processor.requestPreviewRestartIfPlaying();
+                // Deliberately silent for screen readers: Ctrl+Left/Right is an auditory scrub.
+                // Normal editing of Sample Play Start still announces values through the regular parameter path.
+            }
             return true;
         }
     }
@@ -596,16 +615,18 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         if (ch == 's' && mods.isShiftDown()) { chooseSaveSlot(); return true; }
         if (ch == 'b' && mods.isShiftDown()) { chooseSaveBank(); return true; }
         if (ch == 'v' && parameterPage && !sourceIsValueEditor) { focusValue(); return true; }
-        if (ch == 'l' && parameterPage && !sourceIsValueEditor)
+        if (ch == 'l' && parameterPage)
         {
             for (int i = 0; i < static_cast<int>(lsampler::grid.size()); ++i)
                 if (lsampler::grid[static_cast<size_t>(i)].parameter == int(lsampler::P::global_one_shot)
                     && std::strcmp(lsampler::grid[static_cast<size_t>(i)].category, "Sample Window") == 0)
                 {
-                    selectParameter(i, false);
-                    processor.setSlotParameter(i, 1.0, selectedLoop);
+                    const double current = processor.getSlotParameter(i);
+                    const bool loopWillBeOn = current != 0.0;
+                    processor.setSlotParameter(i, loopWillBeOn ? 0.0 : 1.0);
                     refreshParameterGrid();
-                    announceSelectedValue();
+                    auto* announceSource = source != nullptr ? source : static_cast<juce::Component*>(&status);
+                    lsampler::announceToActiveScreenReader(*announceSource, loopWillBeOn ? "Loop On" : "Loop Off");
                     return true;
                 }
         }

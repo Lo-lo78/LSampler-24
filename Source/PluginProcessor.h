@@ -69,6 +69,11 @@ public:
         previewToggleRequested.store(true);
     }
     void requestPreviewStop() noexcept { previewStopRequested.store(true); }
+    void requestPreviewRestartIfPlaying() noexcept
+    {
+        previewTargetSlot.store(currentSlot.load(std::memory_order_relaxed));
+        previewRestartRequested.store(true);
+    }
 
     double getSlotParameter(int gridIndex, int loopIndex = 0) const;
     void setSlotParameter(int gridIndex, double value, int loopIndex = 0);
@@ -101,6 +106,7 @@ private:
     std::atomic<int> currentSlot { 0 };
     std::atomic<bool> previewToggleRequested { false };
     std::atomic<bool> previewStopRequested { false };
+    std::atomic<bool> previewRestartRequested { false };
     std::atomic<int> previewTargetSlot { 0 };
     std::atomic<uint32_t> stopVoicesMask { 0 };
     bool previewPlaying = false;

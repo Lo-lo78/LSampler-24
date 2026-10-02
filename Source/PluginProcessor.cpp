@@ -90,6 +90,22 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         previewPlayingSlot = -1;
     }
 
+    if (previewRestartRequested.exchange(false, std::memory_order_acq_rel)) {
+        const int slot = juce::jlimit(0, slotCount - 1, previewTargetSlot.load());
+        const bool shouldRestart = previewPlaying && previewPlayingSlot == slot;
+        if (shouldRestart) {
+            voicePool.stopPreviewVoices(slot);
+            if (audio[size_t(slot)].sample) {
+                voicePool.noteOn(slot, int(audio[size_t(slot)].params[P::root]), 1.0f, 0, true);
+                previewPlaying = true;
+                previewPlayingSlot = slot;
+            } else {
+                previewPlaying = false;
+                previewPlayingSlot = -1;
+            }
+        }
+    }
+
     double bpm = 120;
     if (auto* playHead = getPlayHead()) if (auto position = playHead->getPosition())
         if (auto tempo = position->getBpm()) if (std::isfinite(*tempo) && *tempo > 0) bpm = *tempo;
