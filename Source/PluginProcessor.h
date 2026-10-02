@@ -56,7 +56,11 @@ public:
     void setRootNote(int note);
     float getVolume() const noexcept;
     void setVolume(float newVolume);
-    void requestPreviewToggle() noexcept { previewToggleRequested.store(true); }
+    void requestPreviewToggle() noexcept
+    {
+        previewTargetSlot.store(currentSlot);
+        previewToggleRequested.store(true);
+    }
 
     LibraryManager& getLibrary() noexcept { return library; }
 
@@ -77,18 +81,25 @@ private:
     bool writePreset(const juce::File& file, const juce::ValueTree& tree, juce::String& error) const;
     juce::ValueTree readPreset(const juce::File& file, juce::String& error) const;
     bool materialiseSlotSample(int slotIndex, juce::String& error);
-    void applyCurrentSlotToVoiceBank();
+    void markAudioStateDirty() noexcept;
+    void syncVoiceBanksFromState();
 
     mutable juce::CriticalSection stateLock;
     std::array<SlotState, slotCount> slots;
     int currentSlot = 0;
-    std::atomic<int> activeLowKey { 0 };
-    std::atomic<int> activeHighKey { 127 };
     std::atomic<bool> previewToggleRequested { false };
+    std::atomic<int> previewTargetSlot { 0 };
+    std::atomic<uint64_t> audioStateRevision { 1 };
+    uint64_t appliedAudioStateRevision = 0;
     bool previewPlaying = false;
+    int previewPlayingSlot = -1;
 
-    // Intentionally unchanged TEST2 audio engine for this diagnostic stage.
-    VoiceBank voiceBank;
+    // Transitional multi-slot engine: the proven TEST2 VoiceBank is reused
+    // independently per slot.  A later stage can replace these with the
+    // shared global 96-voice allocator without changing slot mapping.
+    std::array<VoiceBank, slotCount> voiceBanks;
+    std::array<int, slotCount> audioLowKeys {};
+    std::array<int, slotCount> audioHighKeys {};
     LibraryManager library;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LSampler24AudioProcessor)
