@@ -1,6 +1,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include <cmath>
+#include <set>
+#include <juce_cryptography/juce_cryptography.h>
 using namespace lsampler;
 
 LSampler24AudioProcessor::LSampler24AudioProcessor(const juce::File& libraryRootOverride)
@@ -209,16 +211,29 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         const int channels = src.getNumChannels();
         const double sourceRate = importPreview.sample->sourceSampleRate > 0.0 ? importPreview.sample->sourceSampleRate : preparedSampleRate;
         const double inc = sourceRate / juce::jmax(1.0, preparedSampleRate);
+        const bool loopEnabled = importPreviewLoopEnabled.load(std::memory_order_acquire);
+        const double loopStart = juce::jlimit(0.0, double(n > 0 ? n - 1 : 0),
+            importPreviewLoopStartSeconds.load(std::memory_order_relaxed) * sourceRate);
+        const double loopEnd = juce::jlimit(loopStart, double(n),
+            importPreviewLoopEndSeconds.load(std::memory_order_relaxed) * sourceRate);
+        const bool validLoop = loopEnabled && loopEnd > loopStart + 1.0;
         auto* outL = buffer.getWritePointer(0);
         auto* outR = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : outL;
         for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
+            if (validLoop && importPreviewPosition >= loopEnd)
+                importPreviewPosition = loopStart;
             if (importPreviewPosition >= n - 1)
             {
-                importPreviewPosition = juce::jmax(0.0, double(n - 1));
-                importPreviewPlaying = false;
-                importPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
-                break;
+                if (validLoop)
+                    importPreviewPosition = loopStart;
+                else
+                {
+                    importPreviewPosition = juce::jmax(0.0, double(n - 1));
+                    importPreviewPlaying = false;
+                    importPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
+                    break;
+                }
             }
             const int a = juce::jlimit(0, n - 1, int(importPreviewPosition));
             const int b = juce::jmin(n - 1, a + 1);
@@ -335,6 +350,7 @@ bool LSampler24AudioProcessor::prepareImportPreview(const juce::File& file, juce
     importPreviewWriter = importPreviewMiddle.exchange(importPreviewWriter | 4, std::memory_order_acq_rel) & 3;
     importPreviewSeekSeconds.store(0.0, std::memory_order_relaxed);
     importPreviewSeekRequested.store(true, std::memory_order_release);
+    importPreviewLoopEnabled.store(false, std::memory_order_release);
     importPreviewStopRequested.store(true, std::memory_order_release);
     return true;
 }
@@ -687,6 +703,334 @@ bool LSampler24AudioProcessor::loadBankPreset(const juce::File& presetFile, juce
     markAudioStateDirty();
     error = firstError;
     return ok;
+}
+
+
+bool LSampler24AudioProcessor::importFilesToLibrary(const juce::Array<juce::File>& sourceFiles,
+                                                     int& importedSlots,
+                                                     int& skippedFiles,
+                                                     juce::String& error)
+{
+    importedSlots = 0;
+    skippedFiles = 0;
+    error.clear();
+
+    bool foundSupportedAudio = false;
+    for (const auto& source : sourceFiles)
+    {
+        if (!source.existsAsFile() || !SamplePool::instance().canReadFile(source))
+            continue;
+
+        foundSupportedAudio = true;
+        juce::String localError;
+        auto localSample = library.materialiseSample(source, localError);
+        if (localSample.getFullPathName().isEmpty())
+        {
+            ++skippedFiles;
+            continue;
+        }
+
+        lsampler::SlotParameters defaults;
+        juce::ValueTree tree("LSampler24Slot");
+        tree.setProperty("format", "LSampler-24 Slot", nullptr);
+        tree.setProperty("formatVersion", 3, nullptr);
+        tree.setProperty("index", 0, nullptr);
+        tree.setProperty("sampleReference", library.makeSampleReference(localSample), nullptr);
+        tree.setProperty("lowKey", defaults[P::low], nullptr);
+        tree.setProperty("highKey", defaults[P::high], nullptr);
+        tree.setProperty("rootNote", defaults[P::root], nullptr);
+        tree.setProperty("volume", std::pow(10.0, defaults[P::input_gain] / 20.0), nullptr);
+
+        juce::ValueTree values("Parameters");
+        for (int i = 0; i < parameterCount; ++i)
+            values.setProperty(parameters[size_t(i)].key, defaults.values[size_t(i)], nullptr);
+        tree.addChild(values, -1, nullptr);
+
+        juce::ValueTree loops("Loops");
+        for (int j = 0; j < loopCount; ++j)
+        {
+            juce::ValueTree loop("Loop");
+            loop.setProperty("index", j, nullptr);
+            for (int i = 0; i < loopParameterCount; ++i)
+                loop.setProperty(loopParameters[size_t(i)].key, defaults.loops[size_t(j)][size_t(i)], nullptr);
+            loops.addChild(loop, -1, nullptr);
+        }
+        tree.addChild(loops, -1, nullptr);
+
+        auto cleanBase = juce::File::createLegalFileName(source.getFileNameWithoutExtension()).trim();
+        if (cleanBase.isEmpty())
+            cleanBase = "Sample";
+
+        auto presetFile = library.slots().getChildFile("Slot_" + cleanBase + LibraryManager::slotExtension);
+        if (presetFile.existsAsFile())
+            presetFile = library.slots().getNonexistentChildFile("Slot_" + cleanBase,
+                                                                  LibraryManager::slotExtension,
+                                                                  false);
+
+        if (!writePreset(presetFile, tree, localError))
+        {
+            ++skippedFiles;
+            continue;
+        }
+        ++importedSlots;
+    }
+
+    if (!foundSupportedAudio)
+    {
+        error = "No supported audio files found";
+        return false;
+    }
+    if (importedSlots == 0)
+    {
+        error = "No audio files could be imported";
+        return false;
+    }
+    return true;
+}
+
+bool LSampler24AudioProcessor::importFolderToLibrary(const juce::File& sourceFolder,
+                                                      int& importedSlots,
+                                                      int& skippedFiles,
+                                                      juce::String& error)
+{
+    importedSlots = 0;
+    skippedFiles = 0;
+    error.clear();
+    if (!sourceFolder.isDirectory())
+    {
+        error = "Import folder not found";
+        return false;
+    }
+
+    juce::Array<juce::File> files;
+    sourceFolder.findChildFiles(files, juce::File::findFiles, true);
+    return importFilesToLibrary(files, importedSlots, skippedFiles, error);
+}
+
+bool LSampler24AudioProcessor::exportLibraryArchive(const juce::File& requestedTarget,
+                                                     int& exportedSlots,
+                                                     int& exportedSamples,
+                                                     juce::String& error)
+{
+    exportedSlots = 0;
+    exportedSamples = 0;
+    error.clear();
+
+    juce::Array<juce::File> slotFiles;
+    library.slots().findChildFiles(slotFiles, juce::File::findFiles, true, "*" + juce::String(LibraryManager::slotExtension));
+
+    struct ExportPair { juce::File slot; juce::File sample; juce::String slotPath; juce::String samplePath; };
+    std::vector<ExportPair> valid;
+    std::set<juce::String> seenSamples;
+
+    for (const auto& slotFile : slotFiles)
+    {
+        juce::String readError;
+        auto tree = readPreset(slotFile, readError);
+        if (!tree.hasType("LSampler24Slot"))
+            continue;
+
+        auto reference = tree.getProperty("sampleReference").toString();
+        if (reference.isEmpty())
+            reference = tree.getProperty("samplePath").toString();
+        if (reference.isEmpty())
+            continue;
+
+        auto sample = library.resolveSampleReference(reference);
+        if (!sample.existsAsFile() || !sample.isAChildOf(library.samples()))
+            continue;
+
+        const auto slotRelative = slotFile.getRelativePathFrom(library.slots()).replaceCharacter('\\', '/');
+        const auto sampleRelative = sample.getRelativePathFrom(library.samples()).replaceCharacter('\\', '/');
+        valid.push_back({ slotFile, sample, "Library/Slots/" + slotRelative, "Library/Samples/" + sampleRelative });
+    }
+
+    if (valid.empty())
+    {
+        error = "No LSampler-24 library items found";
+        return false;
+    }
+
+    juce::File target = requestedTarget;
+    if (target.getFileExtension().toLowerCase() != ".ls24")
+        target = target.withFileExtension(".lsampler-24.ls24");
+    else if (!target.getFileName().endsWithIgnoreCase(".lsampler-24.ls24"))
+        target = target.getSiblingFile(target.getFileNameWithoutExtension() + ".lsampler-24.ls24");
+
+    target.getParentDirectory().createDirectory();
+    if (target.existsAsFile() && !target.deleteFile())
+    {
+        error = "Could not replace export file";
+        return false;
+    }
+
+    juce::ZipFile::Builder builder;
+    for (const auto& pair : valid)
+    {
+        builder.addFile(pair.slot, 9, pair.slotPath);
+        ++exportedSlots;
+
+        const auto sampleKey = pair.sample.getFullPathName().replaceCharacter('\\', '/').toLowerCase();
+        if (seenSamples.insert(sampleKey).second)
+        {
+            builder.addFile(pair.sample, 0, pair.samplePath);
+            ++exportedSamples;
+        }
+    }
+
+    auto stream = target.createOutputStream();
+    if (stream == nullptr)
+    {
+        error = "Could not create export file";
+        return false;
+    }
+
+    if (!builder.writeToStream(*stream, nullptr))
+    {
+        error = "Could not write LSampler-24 library export";
+        target.deleteFile();
+        return false;
+    }
+
+    stream->flush();
+    return true;
+}
+
+bool LSampler24AudioProcessor::importLibraryArchive(const juce::File& archiveFile,
+                                                       int& importedSlots,
+                                                       int& importedSamples,
+                                                       int& skippedItems,
+                                                       juce::String& error)
+{
+    importedSlots = 0;
+    importedSamples = 0;
+    skippedItems = 0;
+    error.clear();
+
+    if (!archiveFile.existsAsFile())
+    {
+        error = "Library file not found";
+        return false;
+    }
+
+    const auto tempRoot = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                              .getNonexistentChildFile("LSampler24_LibraryImport", juce::String(), true);
+    if (tempRoot.createDirectory().failed())
+    {
+        error = "Could not create temporary import folder";
+        return false;
+    }
+
+    struct TempCleanup { juce::File dir; ~TempCleanup() { if (dir.isDirectory()) dir.deleteRecursively(); } } cleanup { tempRoot };
+
+    juce::ZipFile zip(archiveFile);
+    if (zip.getNumEntries() <= 0)
+    {
+        error = "Invalid or empty LSampler-24 library";
+        return false;
+    }
+
+    auto unzipResult = zip.uncompressTo(tempRoot, true);
+    if (unzipResult.failed())
+    {
+        error = "Could not read LSampler-24 library";
+        return false;
+    }
+
+    auto importedSlotsDir = tempRoot.getChildFile("Library").getChildFile("Slots");
+    auto importedSamplesDir = tempRoot.getChildFile("Library").getChildFile("Samples");
+    if (!importedSlotsDir.isDirectory() || !importedSamplesDir.isDirectory())
+    {
+        error = "Invalid LSampler-24 library structure";
+        return false;
+    }
+
+    juce::Array<juce::File> slotFiles;
+    importedSlotsDir.findChildFiles(slotFiles, juce::File::findFiles, true,
+                                     "*" + juce::String(LibraryManager::slotExtension));
+
+    for (const auto& sourceSlot : slotFiles)
+    {
+        juce::String localError;
+        auto tree = readPreset(sourceSlot, localError);
+        if (!tree.hasType("LSampler24Slot"))
+        {
+            ++skippedItems;
+            continue;
+        }
+
+        auto reference = tree.getProperty("sampleReference").toString();
+        if (reference.isEmpty())
+            reference = tree.getProperty("samplePath").toString();
+        if (reference.isEmpty())
+        {
+            ++skippedItems;
+            continue;
+        }
+
+        juce::File archivedSample;
+        if (juce::File::isAbsolutePath(reference))
+        {
+            // Exported libraries are self-contained; absolute external references are not accepted.
+            ++skippedItems;
+            continue;
+        }
+        auto normalised = reference.replaceCharacter('\\', '/');
+        if (normalised.startsWithIgnoreCase("Library/Samples/"))
+            archivedSample = tempRoot.getChildFile(normalised.replaceCharacter('/', juce::File::getSeparatorChar()));
+        else
+            archivedSample = importedSamplesDir.getChildFile(juce::File(normalised).getFileName());
+
+        if (!archivedSample.existsAsFile())
+        {
+            ++skippedItems;
+            continue;
+        }
+
+        const bool sampleAlreadyPresent = [&]()
+        {
+            const auto sourceSize = archivedSample.getSize();
+            const juce::SHA256 sourceHash(archivedSample);
+            juce::Array<juce::File> existing;
+            library.samples().findChildFiles(existing, juce::File::findFiles, false);
+            for (const auto& candidate : existing)
+                if (candidate.getSize() == sourceSize && juce::SHA256(candidate).toHexString() == sourceHash.toHexString())
+                    return true;
+            return false;
+        }();
+
+        auto localSample = library.materialiseSample(archivedSample, localError);
+        if (!localSample.existsAsFile())
+        {
+            ++skippedItems;
+            continue;
+        }
+        if (!sampleAlreadyPresent)
+            ++importedSamples;
+
+        tree.setProperty("sampleReference", library.makeSampleReference(localSample), nullptr);
+        if (tree.hasProperty("samplePath"))
+            tree.removeProperty("samplePath", nullptr);
+
+        auto dest = library.slots().getChildFile(sourceSlot.getFileName());
+        if (dest.existsAsFile())
+            dest = library.slots().getNonexistentChildFile(sourceSlot.getFileNameWithoutExtension(),
+                                                            LibraryManager::slotExtension,
+                                                            false);
+        if (!writePreset(dest, tree, localError))
+        {
+            ++skippedItems;
+            continue;
+        }
+        ++importedSlots;
+    }
+
+    if (importedSlots == 0)
+    {
+        error = "No valid LSampler-24 library items found";
+        return false;
+    }
+    return true;
 }
 
 void LSampler24AudioProcessor::getStateInformation(juce::MemoryBlock& destData)

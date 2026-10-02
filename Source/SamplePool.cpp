@@ -88,9 +88,11 @@ std::shared_ptr<SharedSample> SamplePool::aliasFile(const juce::File& file, std:
 }
 
 
-bool SamplePool::canReadFile(const juce::File& file) const
+bool SamplePool::canReadFile(const juce::File& file)
 {
-    return formats.findFormatForFileExtension(file.getFileExtension()) != nullptr;
+    if (!file.existsAsFile() || formats.findFormatForFileExtension(file.getFileExtension()) == nullptr)
+        return false;
+    return formats.createReaderFor(file) != nullptr;
 }
 
 juce::String SamplePool::getSupportedAudioWildcard() const

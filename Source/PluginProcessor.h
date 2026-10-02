@@ -44,6 +44,12 @@ public:
     void requestImportPreviewToggle() noexcept { importPreviewToggleRequested.store(true); }
     void requestImportPreviewStop() noexcept { importPreviewStopRequested.store(true); }
     void requestImportPreviewSeek(double seconds) noexcept { importPreviewSeekSeconds.store(seconds); importPreviewSeekRequested.store(true); }
+    void requestImportPreviewLoop(double startSeconds, double endSeconds, bool enabled) noexcept
+    {
+        importPreviewLoopStartSeconds.store(startSeconds, std::memory_order_relaxed);
+        importPreviewLoopEndSeconds.store(endSeconds, std::memory_order_relaxed);
+        importPreviewLoopEnabled.store(enabled, std::memory_order_release);
+    }
     double getImportPreviewPositionSeconds() const noexcept { return importPreviewPositionSeconds.load(std::memory_order_relaxed); }
     double getImportPreviewLengthSeconds() const noexcept { return importPreviewLengthSeconds.load(std::memory_order_relaxed); }
     bool isImportPreviewPlaying() const noexcept { return importPreviewPlayingAtomic.load(std::memory_order_relaxed); }
@@ -51,6 +57,10 @@ public:
     bool loadSlotPreset(const juce::File& presetFile, juce::String& error);
     bool saveBankPreset(const juce::File& presetFile, juce::String& error);
     bool loadBankPreset(const juce::File& presetFile, juce::String& error);
+    bool importFilesToLibrary(const juce::Array<juce::File>& sourceFiles, int& importedSlots, int& skippedFiles, juce::String& error);
+    bool importFolderToLibrary(const juce::File& sourceFolder, int& importedSlots, int& skippedFiles, juce::String& error);
+    bool exportLibraryArchive(const juce::File& targetFile, int& exportedSlots, int& exportedSamples, juce::String& error);
+    bool importLibraryArchive(const juce::File& archiveFile, int& importedSlots, int& importedSamples, int& skippedItems, juce::String& error);
 
     bool copyCurrentSlot();
     bool cutCurrentSlot();
@@ -137,6 +147,9 @@ private:
     std::atomic<double> importPreviewPositionSeconds { 0.0 };
     std::atomic<double> importPreviewLengthSeconds { 0.0 };
     std::atomic<bool> importPreviewPlayingAtomic { false };
+    std::atomic<bool> importPreviewLoopEnabled { false };
+    std::atomic<double> importPreviewLoopStartSeconds { 0.0 };
+    std::atomic<double> importPreviewLoopEndSeconds { 0.0 };
     bool importPreviewPlaying = false;
     double importPreviewPosition = 0.0;
     uint64_t importPreviewSeenRevision = 0;

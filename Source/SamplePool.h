@@ -23,7 +23,7 @@ public:
     std::shared_ptr<SharedSample> load(const juce::File& file, juce::String& error);
     void pruneExpired();
     std::shared_ptr<SharedSample> aliasFile(const juce::File&, std::shared_ptr<SharedSample>);
-    bool canReadFile(const juce::File& file) const;
+    bool canReadFile(const juce::File& file);
     juce::String getSupportedAudioWildcard() const;
 
 private:
