@@ -521,6 +521,7 @@ juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slotIndex, const juc
     tree.setProperty("formatVersion", 3, nullptr);
     tree.setProperty("index", slotIndex, nullptr);
     tree.setProperty("sampleReference", library.makeSampleReference(s.sampleFile), nullptr);
+    tree.setProperty("sampleHash", library.makeSampleHash(s.sampleFile), nullptr);
     // Keep version-2 aliases for the existing state contract. Canonical values live in Parameters.
     tree.setProperty("lowKey", s.parameters[P::low], nullptr);
     tree.setProperty("highKey", s.parameters[P::high], nullptr);
@@ -557,7 +558,8 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
     if (reference.isEmpty())
         reference = tree.getProperty("samplePath").toString();
 
-    const juce::File file = library.resolveSampleReference(reference);
+    const auto sampleHash = tree.getProperty("sampleHash").toString();
+    const juce::File file = library.resolveSampleReference(reference, sampleHash);
     std::shared_ptr<SharedSample> loaded;
     juce::String statusText = "No sample loaded";
     bool ok = true;
@@ -686,7 +688,20 @@ bool LSampler24AudioProcessor::loadSlotPreset(const juce::File& presetFile, juce
         error = "Not an LSampler-24 slot preset";
         return false;
     }
-    return restoreSlotState(currentSlot.load(std::memory_order_relaxed), tree, error);
+    const int slotIndex = currentSlot.load(std::memory_order_relaxed);
+    const bool ok = restoreSlotState(slotIndex, tree, error);
+    if (ok)
+    {
+        juce::File actual;
+        { const juce::ScopedLock lock(stateLock); actual = slots[size_t(slotIndex)].sampleFile; }
+        if (actual.existsAsFile())
+        {
+            tree.setProperty("sampleReference", library.makeSampleReference(actual), nullptr);
+            tree.setProperty("sampleHash", library.makeSampleHash(actual), nullptr);
+            juce::String ignored; writePreset(presetFile, tree, ignored);
+        }
+    }
+    return ok;
 }
 
 bool LSampler24AudioProcessor::loadSlotPresetToSlot(const juce::File& presetFile, int slotIndex, juce::String& error)
@@ -697,7 +712,20 @@ bool LSampler24AudioProcessor::loadSlotPresetToSlot(const juce::File& presetFile
         error = "Not an LSampler-24 slot preset";
         return false;
     }
-    return restoreSlotState(juce::jlimit(0, slotCount - 1, slotIndex), tree, error);
+    slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
+    const bool ok = restoreSlotState(slotIndex, tree, error);
+    if (ok)
+    {
+        juce::File actual;
+        { const juce::ScopedLock lock(stateLock); actual = slots[size_t(slotIndex)].sampleFile; }
+        if (actual.existsAsFile())
+        {
+            tree.setProperty("sampleReference", library.makeSampleReference(actual), nullptr);
+            tree.setProperty("sampleHash", library.makeSampleHash(actual), nullptr);
+            juce::String ignored; writePreset(presetFile, tree, ignored);
+        }
+    }
+    return ok;
 }
 
 bool LSampler24AudioProcessor::prepareLibrarySlotPreview(const juce::File& presetFile, juce::String& error)
@@ -736,7 +764,8 @@ bool LSampler24AudioProcessor::prepareLibrarySlotPreview(const juce::File& prese
 
     auto reference = tree.getProperty("sampleReference").toString();
     if (reference.isEmpty()) reference = tree.getProperty("samplePath").toString();
-    const auto file = library.resolveSampleReference(reference);
+    const auto sampleHash = tree.getProperty("sampleHash").toString();
+    const auto file = library.resolveSampleReference(reference, sampleHash);
     if (!file.existsAsFile())
     {
         error = "Sample missing: " + file.getFileName();
@@ -744,6 +773,12 @@ bool LSampler24AudioProcessor::prepareLibrarySlotPreview(const juce::File& prese
     }
     auto loaded = SamplePool::instance().load(file, error);
     if (!loaded) return false;
+
+    // Browsing an old recipe upgrades it in place. If the WAV was manually
+    // moved below Library/Samples, store its current path and stable hash.
+    tree.setProperty("sampleReference", library.makeSampleReference(file), nullptr);
+    tree.setProperty("sampleHash", library.makeSampleHash(file), nullptr);
+    { juce::String ignored; writePreset(presetFile, tree, ignored); }
 
     libraryPreviewVoicePool.stopPreviewVoices();
     libraryPreviewOwners.fill({});
@@ -840,6 +875,7 @@ bool LSampler24AudioProcessor::importFilesToLibrary(const juce::Array<juce::File
         tree.setProperty("formatVersion", 3, nullptr);
         tree.setProperty("index", 0, nullptr);
         tree.setProperty("sampleReference", library.makeSampleReference(localSample), nullptr);
+        tree.setProperty("sampleHash", library.makeSampleHash(localSample), nullptr);
         tree.setProperty("lowKey", defaults[P::low], nullptr);
         tree.setProperty("highKey", defaults[P::high], nullptr);
         tree.setProperty("rootNote", defaults[P::root], nullptr);
@@ -941,6 +977,7 @@ bool LSampler24AudioProcessor::importFolderToLibrary(const juce::File& sourceFol
         tree.setProperty("formatVersion", 3, nullptr);
         tree.setProperty("index", 0, nullptr);
         tree.setProperty("sampleReference", library.makeSampleReference(localSample), nullptr);
+        tree.setProperty("sampleHash", library.makeSampleHash(localSample), nullptr);
         tree.setProperty("lowKey", defaults[P::low], nullptr);
         tree.setProperty("highKey", defaults[P::high], nullptr);
         tree.setProperty("rootNote", defaults[P::root], nullptr);
@@ -1026,7 +1063,7 @@ bool LSampler24AudioProcessor::exportLibraryArchive(const juce::File& requestedT
         if (reference.isEmpty())
             continue;
 
-        auto sample = library.resolveSampleReference(reference);
+        auto sample = library.resolveSampleReference(reference, tree.getProperty("sampleHash").toString());
         if (!sample.existsAsFile() || !sample.isAChildOf(library.samples()))
             continue;
 
@@ -1193,6 +1230,7 @@ bool LSampler24AudioProcessor::importLibraryArchive(const juce::File& archiveFil
             ++importedSamples;
 
         tree.setProperty("sampleReference", library.makeSampleReference(localSample), nullptr);
+        tree.setProperty("sampleHash", library.makeSampleHash(localSample), nullptr);
         if (tree.hasProperty("samplePath"))
             tree.removeProperty("samplePath", nullptr);
 

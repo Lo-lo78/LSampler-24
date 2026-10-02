@@ -14,7 +14,8 @@ public:
     juce::File materialiseSample(const juce::File& source, juce::String& error) const;
     juce::File materialiseSampleAtRelativePath(const juce::File& source, const juce::String& relativePath, juce::String& error) const;
     juce::String makeSampleReference(const juce::File& sampleFile) const;
-    juce::File resolveSampleReference(const juce::String& reference) const;
+    juce::String makeSampleHash(const juce::File& sampleFile) const;
+    juce::File resolveSampleReference(const juce::String& reference, const juce::String& expectedHash = {}) const;
 
     static constexpr const char* slotExtension = ".lsampler-24-s";
     static constexpr const char* bankExtension = ".lsampler-24-b";

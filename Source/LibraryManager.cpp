@@ -48,7 +48,7 @@ juce::File LibraryManager::materialiseSample(const juce::File& source, juce::Str
     const auto sourceSize = source.getSize();
     const juce::SHA256 sourceHash(source);
     juce::Array<juce::File> existing;
-    samplesDir.findChildFiles(existing, juce::File::findFiles, false);
+    samplesDir.findChildFiles(existing, juce::File::findFiles, true);
     for (const auto& candidate : existing)
     {
         if (candidate.getSize() == sourceSize && juce::SHA256(candidate).toHexString() == sourceHash.toHexString())
@@ -113,15 +113,43 @@ juce::String LibraryManager::makeSampleReference(const juce::File& sampleFile) c
     return sampleFile.getFullPathName();
 }
 
-juce::File LibraryManager::resolveSampleReference(const juce::String& reference) const
+juce::String LibraryManager::makeSampleHash(const juce::File& sampleFile) const
 {
-    if (reference.isEmpty())
+    if (!sampleFile.existsAsFile())
         return {};
+    return juce::SHA256(sampleFile).toHexString();
+}
 
-    if (juce::File::isAbsolutePath(reference))
-        return juce::File(reference);
+juce::File LibraryManager::resolveSampleReference(const juce::String& reference, const juce::String& expectedHash) const
+{
+    juce::File direct;
+    if (reference.isNotEmpty())
+    {
+        direct = juce::File::isAbsolutePath(reference)
+            ? juce::File(reference)
+            : rootDir.getChildFile(reference.replaceCharacter('/', juce::File::getSeparatorChar()));
 
-    return rootDir.getChildFile(reference.replaceCharacter('/', juce::File::getSeparatorChar()));
+        if (direct.existsAsFile())
+        {
+            if (expectedHash.isEmpty() || juce::SHA256(direct).toHexString().equalsIgnoreCase(expectedHash))
+                return direct;
+        }
+    }
+
+    // The path is only a fast hint. The SHA-256 is the stable identity of a
+    // Library sample, so manual reorganisation anywhere below Library/Samples
+    // does not break Slot recipes. This slower scan only happens after the
+    // saved path no longer resolves (or resolves to different contents).
+    if (expectedHash.isNotEmpty())
+    {
+        juce::Array<juce::File> files;
+        samplesDir.findChildFiles(files, juce::File::findFiles, true);
+        for (const auto& candidate : files)
+            if (juce::SHA256(candidate).toHexString().equalsIgnoreCase(expectedHash))
+                return candidate;
+    }
+
+    return direct;
 }
 
 juce::String LibraryManager::defaultName(const juce::String& prefix)

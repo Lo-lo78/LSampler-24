@@ -153,7 +153,8 @@ private:
 class LSamplerImportBrowserCell final : public juce::Component
 {
 public:
-    void setBrowserText(const juce::String& t) { text = t; setTitle(text); setName({}); setDescription({}); repaint(); }
+    void setBrowserText(const juce::String& t) { text = t; setName(text); setTitle({}); setDescription({}); repaint(); }
+    const juce::String& getBrowserText() const noexcept { return text; }
     void paint(juce::Graphics& g) override
     {
         g.setColour(findColour(juce::Label::textColourId));
@@ -242,6 +243,8 @@ private:
     void shiftSelectSlotLibraryEntry(int direction);
     void moveSlotLibraryDestination(int direction);
     void commitSlotLibrarySelection();
+    void copySlotLibraryEntry(bool cut);
+    void pasteSlotLibraryEntry();
     int nextSlotLibraryFreeSlot(int from) const;
     bool slotLibraryDestinationReserved(int slot) const;
     void chooseLoadSlot();
@@ -340,6 +343,8 @@ private:
     std::map<juce::String, juce::String> slotLibraryDirectorySelectionMemory;
     juce::File slotLibraryPendingPreview;
     int slotLibraryPreviewDelayTicks = 0;
+    juce::File slotLibraryClipboardFile;
+    bool slotLibraryClipboardCut = false;
 
     bool parameterPage = false;
     int selectedParameter = 0;

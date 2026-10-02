@@ -264,6 +264,13 @@ void LSampler24AudioProcessorEditor::resized()
     if (slotLibraryActive)
     {
         slotLibraryCell.setBounds(area.removeFromTop(42));
+        area.removeFromTop(10);
+        auto libraryButtons = area.removeFromTop(36);
+        const int gap = 8;
+        const int w = (libraryButtons.getWidth() - gap) / 2;
+        exportLibraryButton.setBounds(libraryButtons.removeFromLeft(w));
+        libraryButtons.removeFromLeft(gap);
+        importLibraryButton.setBounds(libraryButtons);
         return;
     }
 
@@ -594,7 +601,54 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (slotLibraryActive)
     {
+        const bool onExportLibrary = source == &exportLibraryButton;
+        const bool onImportLibrary = source == &importLibraryButton;
+        const bool onLibraryAction = onExportLibrary || onImportLibrary;
+        const auto focusSlotLibrary = [this]
+        {
+            slotLibraryCell.grabKeyboardFocus();
+            juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+            {
+                if (safeThis != nullptr && safeThis->slotLibraryActive)
+                    safeThis->announceSlotLibraryEntry();
+            });
+        };
+
+        if (code == juce::KeyPress::tabKey)
+        {
+            if (mods.isShiftDown())
+            {
+                if (onExportLibrary) focusSlotLibrary();
+                else if (onImportLibrary) exportLibraryButton.grabKeyboardFocus();
+                else importLibraryButton.grabKeyboardFocus();
+            }
+            else
+            {
+                if (onExportLibrary) importLibraryButton.grabKeyboardFocus();
+                else if (onImportLibrary) focusSlotLibrary();
+                else exportLibraryButton.grabKeyboardFocus();
+            }
+            return true;
+        }
+
         if (code == juce::KeyPress::escapeKey) { leaveSlotLibraryBrowser(true); return true; }
+
+        if (onLibraryAction)
+        {
+            if (code == juce::KeyPress::returnKey || code == juce::KeyPress::spaceKey)
+            {
+                if (onExportLibrary) chooseExportLibrary(); else chooseImportLibrary();
+                return true;
+            }
+            return true;
+        }
+        if (mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown())
+        {
+            const auto ctrlChar = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
+            if (ctrlChar == 'c') { copySlotLibraryEntry(false); return true; }
+            if (ctrlChar == 'x') { copySlotLibraryEntry(true); return true; }
+            if (ctrlChar == 'v') { pasteSlotLibraryEntry(); return true; }
+        }
         if (mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
             && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
         {
@@ -1361,8 +1415,8 @@ void LSampler24AudioProcessorEditor::selectImportEntry(int index, bool announce)
     {
         text = e.file.getFileName();
         if (text.isEmpty()) text = e.file.getFullPathName();
-        if (e.directory)
-            text += importDriveList ? ", drive" : ", folder";
+        if (e.directory && importDriveList)
+            text += ", drive";
         else
         {
             int selectedSlot = -1, sliceCount = 0;
@@ -1614,9 +1668,11 @@ void LSampler24AudioProcessorEditor::announceImportEntry()
     if (importEntries.empty())
     {
         lsampler::announceToActiveScreenReader(importBrowserCell, "Empty folder");
+        importBrowserCell.setDescription({});
         return;
     }
-    lsampler::announceToActiveScreenReader(importBrowserCell, importBrowserCell.getTitle());
+    lsampler::announceToActiveScreenReader(importBrowserCell, importBrowserCell.getBrowserText());
+    importBrowserCell.setDescription({});
 }
 
 void LSampler24AudioProcessorEditor::prepareImportPreviewForCurrent()
@@ -2121,6 +2177,8 @@ void LSampler24AudioProcessorEditor::chooseImportLibrary()
                     message = error.isNotEmpty() ? error : "Library import failed";
                 lsampler::announceToActiveScreenReader(safeThis->importLibraryButton, message);
             }
+            if (safeThis->slotLibraryActive)
+                safeThis->refreshSlotLibraryEntries();
             safeThis->importLibraryButton.grabKeyboardFocus();
         });
 }
@@ -2149,7 +2207,7 @@ void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser()
     loadBank.setVisible(false); saveBank.setVisible(false);
     parameterSelector.setVisible(false); parameterValue.setVisible(false);
     importBrowserCell.setVisible(false); importSourceCombo.setVisible(false);
-    exportLibraryButton.setVisible(false); importLibraryButton.setVisible(false);
+    exportLibraryButton.setVisible(true); importLibraryButton.setVisible(true);
     slotLibraryCell.setVisible(true);
     slotLibraryCell.setWantsKeyboardFocus(true);
     refreshSlotLibraryEntries();
@@ -2172,6 +2230,8 @@ void LSampler24AudioProcessorEditor::leaveSlotLibraryBrowser(bool announceSlot)
     slotLibraryActive = false;
     slotLibraryCell.setVisible(false);
     slotLibraryCell.setWantsKeyboardFocus(false);
+    exportLibraryButton.setVisible(false);
+    importLibraryButton.setVisible(false);
     for (int i = 0; i < static_cast<int>(slotCells.size()); ++i)
     {
         auto& cell = slotCells[size_t(i)];
@@ -2239,7 +2299,8 @@ void LSampler24AudioProcessorEditor::announceSlotLibraryEntry()
     if (slotLibraryEntries.empty())
         lsampler::announceToActiveScreenReader(slotLibraryCell, "Empty folder");
     else
-        lsampler::announceToActiveScreenReader(slotLibraryCell, slotLibraryCell.getTitle());
+        lsampler::announceToActiveScreenReader(slotLibraryCell, slotLibraryCell.getBrowserText());
+    slotLibraryCell.setDescription({});
 }
 
 void LSampler24AudioProcessorEditor::cycleSlotLibraryEntryByInitial(juce::juce_wchar initial)
@@ -2352,6 +2413,83 @@ void LSampler24AudioProcessorEditor::shiftSelectSlotLibraryEntry(int direction)
     slotLibraryCell.setBrowserText(text);
     announceSlotLibraryEntry();
     updateSlotLibraryPreviewForSelection();
+}
+
+void LSampler24AudioProcessorEditor::copySlotLibraryEntry(bool cut)
+{
+    if (slotLibraryEntries.empty()) return;
+    const auto& e = slotLibraryEntries[size_t(slotLibraryEntryIndex)];
+    slotLibraryClipboardFile = e.file;
+    slotLibraryClipboardCut = cut;
+    lsampler::announceToActiveScreenReader(slotLibraryCell,
+        juce::String(cut ? "Cut " : "Copied ") + (e.directory ? "Folder " + e.file.getFileName() : cleanLibrarySlotName(e.file)));
+}
+
+void LSampler24AudioProcessorEditor::pasteSlotLibraryEntry()
+{
+    if (slotLibraryClipboardFile.getFullPathName().isEmpty() || !slotLibraryClipboardFile.exists())
+        return;
+
+    const auto source = slotLibraryClipboardFile;
+    if (!source.isAChildOf(slotLibraryRoot) && source != slotLibraryRoot)
+    {
+        lsampler::announceToActiveScreenReader(slotLibraryCell, "Clipboard item is outside Slots");
+        return;
+    }
+
+    if (source.isDirectory() && (slotLibraryDirectory == source || slotLibraryDirectory.isAChildOf(source)))
+    {
+        lsampler::announceToActiveScreenReader(slotLibraryCell, "Cannot paste a folder inside itself");
+        return;
+    }
+
+    auto makeUnique = [](const juce::File& folder, const juce::File& item)
+    {
+        auto candidate = folder.getChildFile(item.getFileName());
+        if (!candidate.exists()) return candidate;
+        const auto ext = item.isDirectory() ? juce::String{} : item.getFileExtension();
+        const auto base = item.isDirectory() ? item.getFileName() : item.getFileNameWithoutExtension();
+        for (int n = 2; n < 100000; ++n)
+        {
+            auto alt = folder.getChildFile(base + "_" + juce::String(n) + ext);
+            if (!alt.exists()) return alt;
+        }
+        return folder.getChildFile(base + "_copy" + ext);
+    };
+
+    if (slotLibraryClipboardCut && source.getParentDirectory() == slotLibraryDirectory)
+        return; // already in this folder: silent, Explorer-like no-op
+
+    const auto destination = makeUnique(slotLibraryDirectory, source);
+    bool ok = false;
+    if (slotLibraryClipboardCut)
+        ok = source.moveFileTo(destination);
+    else if (source.isDirectory())
+        ok = source.copyDirectoryTo(destination);
+    else
+        ok = source.copyFileTo(destination);
+
+    if (!ok)
+    {
+        lsampler::announceToActiveScreenReader(slotLibraryCell, slotLibraryClipboardCut ? "Move failed" : "Copy failed");
+        return;
+    }
+
+    if (slotLibraryClipboardCut)
+    {
+        slotLibraryClipboardFile = {};
+        slotLibraryClipboardCut = false;
+    }
+
+    slotLibraryDirectorySelectionMemory[slotLibraryDirectory.getFullPathName()] = destination.getFullPathName();
+    refreshSlotLibraryEntries();
+    for (int i = 0; i < int(slotLibraryEntries.size()); ++i)
+        if (slotLibraryEntries[size_t(i)].file == destination)
+        {
+            selectSlotLibraryEntry(i, true);
+            return;
+        }
+    announceSlotLibraryEntry();
 }
 
 void LSampler24AudioProcessorEditor::commitSlotLibrarySelection()
