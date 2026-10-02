@@ -720,8 +720,8 @@ void LSampler24AudioProcessorEditor::chooseSample()
                 juce::String error;
                 const bool ok = safeThis->processor.loadSample(file, error);
                 safeThis->showResult(ok, error, safeThis->processor.getSampleStatus());
-                safeThis->returnToCurrentSlotAndAnnounce();
             }
+            safeThis->returnToCurrentSlotAndAnnounce();
         });
 }
 
@@ -738,28 +738,44 @@ void LSampler24AudioProcessorEditor::chooseLoadSlot()
                 juce::String error;
                 const bool ok = safeThis->processor.loadSlotPreset(file, error);
                 safeThis->showResult(ok, error, "Slot loaded: " + file.getFileNameWithoutExtension());
-                safeThis->returnToCurrentSlotAndAnnounce();
             }
+            safeThis->returnToCurrentSlotAndAnnounce();
         });
 }
 
 void LSampler24AudioProcessorEditor::chooseSaveSlot()
 {
-    auto initial = processor.getLibrary().slots().getChildFile(LibraryManager::defaultName("Slot") + LibraryManager::slotExtension);
+    // The native Save dialog shows only the editable logical slot name.
+    // Prefix and LSampler extension are added after the user confirms.
+    auto logicalName = processor.getCurrentSampleFile().getFileNameWithoutExtension();
+    if (logicalName.isEmpty())
+        logicalName = LibraryManager::defaultName("Slot");
+
+    auto initial = processor.getLibrary().slots().getChildFile(logicalName);
     chooser = std::make_unique<juce::FileChooser>("Save Slot", initial, "*.lsampler-24-s");
     chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const juce::FileChooser& fc)
         {
             if (safeThis == nullptr) return;
-            auto file = fc.getResult();
-            if (file.getFullPathName().isNotEmpty())
+            auto chosen = fc.getResult();
+            if (chosen.getFullPathName().isNotEmpty())
             {
-                if (!file.hasFileExtension(LibraryManager::slotExtension)) file = file.withFileExtension(LibraryManager::slotExtension);
+                auto enteredName = chosen.getFileName();
+                if (enteredName.endsWithIgnoreCase(LibraryManager::slotExtension))
+                    enteredName = enteredName.dropLastCharacters((int) juce::String(LibraryManager::slotExtension).length());
+                if (enteredName.startsWithIgnoreCase("Slot_"))
+                    enteredName = enteredName.substring(5);
+
+                enteredName = juce::File::createLegalFileName(enteredName.trim());
+                if (enteredName.isEmpty())
+                    enteredName = "Slot";
+
+                auto file = chosen.getParentDirectory().getChildFile("Slot_" + enteredName + LibraryManager::slotExtension);
                 juce::String error;
                 const bool ok = safeThis->processor.saveSlotPreset(file, error);
                 safeThis->showResult(ok, error, "Slot saved: " + file.getFileNameWithoutExtension());
-                safeThis->returnToCurrentSlotAndAnnounce();
             }
+            safeThis->returnToCurrentSlotAndAnnounce();
         });
 }
 
@@ -776,8 +792,8 @@ void LSampler24AudioProcessorEditor::chooseLoadBank()
                 juce::String error;
                 const bool ok = safeThis->processor.loadBankPreset(file, error);
                 safeThis->showResult(ok, error, "Bank loaded: " + file.getFileNameWithoutExtension());
-                safeThis->returnToCurrentSlotAndAnnounce();
             }
+            safeThis->returnToCurrentSlotAndAnnounce();
         });
 }
 
@@ -796,7 +812,7 @@ void LSampler24AudioProcessorEditor::chooseSaveBank()
                 juce::String error;
                 const bool ok = safeThis->processor.saveBankPreset(file, error);
                 safeThis->showResult(ok, error, "Bank saved: " + file.getFileNameWithoutExtension());
-                safeThis->returnToCurrentSlotAndAnnounce();
             }
+            safeThis->returnToCurrentSlotAndAnnounce();
         });
 }

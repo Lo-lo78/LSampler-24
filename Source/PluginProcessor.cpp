@@ -134,7 +134,7 @@ juce::String LSampler24AudioProcessor::getSlotLabel(int slotIndex) const
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
     const juce::ScopedLock lock(stateLock);
     const auto& s = slots[static_cast<size_t>(slotIndex)];
-    const auto name = s.sampleFile.getFileName();
+    const auto name = s.sampleFile.getFileNameWithoutExtension();
     return "Slot " + juce::String(slotIndex + 1) + ", " + (name.isNotEmpty() ? name : "empty");
 }
 
