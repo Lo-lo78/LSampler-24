@@ -577,7 +577,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     // Ctrl+Left/Right scrubs Sample Play Start without moving Grid/Value focus.
     // If Space preview is already playing, restart it from the new start position.
-    if (parameterPage && mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown()
+    if (parameterPage && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
         && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
     {
         int sampleStartIndex = -1;
@@ -768,7 +768,9 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                     selectParameter(selectedParameter + 1, true);
                 return true;
             }
-            if (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey) {
+            if (!mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown() && !mods.isCommandDown()
+                && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
+            {
                 moveParameterPage(code == juce::KeyPress::leftKey ? -1 : 1);
                 return true;
             }
