@@ -26,7 +26,35 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 {
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
-    voiceBank.render(buffer, midi);
+
+    juce::MidiBuffer filtered;
+    const int low = activeLowKey.load();
+    const int high = activeHighKey.load();
+
+    for (const auto metadata : midi)
+    {
+        const auto message = metadata.getMessage();
+        if (message.isNoteOn())
+        {
+            const int note = message.getNoteNumber();
+            if (note >= low && note <= high)
+                filtered.addEvent(message, metadata.samplePosition);
+        }
+        else
+        {
+            // Note Off and global note-off messages are always allowed through
+            // so a previously sounding voice can never become stuck.
+            filtered.addEvent(message, metadata.samplePosition);
+        }
+    }
+
+    if (previewRequested.exchange(false))
+    {
+        const int previewNote = getRootNote();
+        filtered.addEvent(juce::MidiMessage::noteOn(1, previewNote, (juce::uint8) 100), 0);
+    }
+
+    voiceBank.render(buffer, filtered);
 }
 
 juce::AudioProcessorEditor* LSampler24AudioProcessor::createEditor()
@@ -41,6 +69,8 @@ void LSampler24AudioProcessor::applyCurrentSlotToVoiceBank()
     voiceBank.setSample(s.sample);
     voiceBank.setRootNote(s.rootNote);
     voiceBank.setGain(s.volume);
+    activeLowKey.store(s.lowKey);
+    activeHighKey.store(s.highKey);
 }
 
 void LSampler24AudioProcessor::setCurrentSlot(int slotIndex)
@@ -92,6 +122,7 @@ void LSampler24AudioProcessor::setLowKey(int note)
 {
     auto& s = slots[static_cast<size_t>(currentSlot)];
     s.lowKey = juce::jlimit(0, 127, note);
+    activeLowKey.store(s.lowKey);
 }
 
 int LSampler24AudioProcessor::getHighKey() const noexcept
@@ -103,6 +134,7 @@ void LSampler24AudioProcessor::setHighKey(int note)
 {
     auto& s = slots[static_cast<size_t>(currentSlot)];
     s.highKey = juce::jlimit(0, 127, note);
+    activeHighKey.store(s.highKey);
 }
 
 int LSampler24AudioProcessor::getRootNote() const noexcept
@@ -127,6 +159,8 @@ void LSampler24AudioProcessor::setVolume(float newVolume)
     auto& s = slots[static_cast<size_t>(currentSlot)];
     s.volume = juce::jlimit(0.0f, 1.0f, newVolume);
     voiceBank.setGain(s.volume);
+    activeLowKey.store(s.lowKey);
+    activeHighKey.store(s.highKey);
 }
 
 juce::File LSampler24AudioProcessor::getCurrentSampleFile() const
