@@ -1,125 +1,108 @@
 #include "SamplerVoice.h"
 #include <cmath>
 
-void VoiceBank::prepare(double sampleRate)
+void GlobalVoicePool::prepare(double sampleRate)
 {
     hostSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
     allNotesOff();
 }
 
-void VoiceBank::setSample(std::shared_ptr<SharedSample> newSample)
+GlobalVoicePool::Voice& GlobalVoicePool::chooseVoice()
 {
-    sample = std::move(newSample);
-    allNotesOff();
-}
-
-void VoiceBank::setRootNote(int midiNote)
-{
-    rootNote = juce::jlimit(0, 127, midiNote);
-}
-
-void VoiceBank::setGain(float linearGain)
-{
-    gain = juce::jlimit(0.0f, 2.0f, linearGain);
-}
-
-VoiceBank::Voice& VoiceBank::chooseVoice()
-{
-    for (auto& v : voices)
-        if (!v.active)
-            return v;
+    for (auto& voice : voices)
+        if (!voice.active)
+            return voice;
 
     auto* oldest = &voices.front();
-    for (auto& v : voices)
-        if (v.age < oldest->age)
-            oldest = &v;
+    for (auto& voice : voices)
+        if (voice.age < oldest->age)
+            oldest = &voice;
     return *oldest;
 }
 
-void VoiceBank::noteOn(int note, float velocity)
+void GlobalVoicePool::noteOn(int slotIndex, int note, float velocity,
+                             std::shared_ptr<SharedSample> sampleToUse,
+                             int rootNote, float linearGain, bool isPreview)
 {
-    if (!sample || sample->audio.getNumSamples() == 0)
+    if (!sampleToUse || sampleToUse->audio.getNumSamples() < 2)
         return;
 
     auto& voice = chooseVoice();
-    const auto idx = static_cast<size_t>(&voice - voices.data());
+    voice = {};
     voice.active = true;
-    voice.note = note;
+    voice.preview = isPreview;
+    voice.slotIndex = slotIndex;
+    voice.note = juce::jlimit(0, 127, note);
     voice.position = 0.0;
     voice.age = ++ageCounter;
-    voice.increment = std::pow(2.0, (note - rootNote) / 12.0)
-                    * (sample->sourceSampleRate / hostSampleRate);
-    velocityGain[idx] = juce::jlimit(0.0f, 1.0f, velocity);
+    voice.sample = std::move(sampleToUse);
+    voice.gain = juce::jlimit(0.0f, 2.0f, linearGain)
+               * juce::jlimit(0.0f, 1.0f, velocity);
+    voice.increment = std::pow(2.0, (voice.note - juce::jlimit(0, 127, rootNote)) / 12.0)
+                    * (voice.sample->sourceSampleRate / hostSampleRate);
 }
 
-void VoiceBank::noteOff(int note)
+void GlobalVoicePool::noteOff(int note)
 {
     for (auto& voice : voices)
-        if (voice.active && voice.note == note)
+        if (voice.active && !voice.preview && voice.note == note)
             voice.active = false;
 }
 
-void VoiceBank::allNotesOff()
+void GlobalVoicePool::allNotesOff()
 {
     for (auto& voice : voices)
         voice = {};
 }
 
+void GlobalVoicePool::stopPreviewVoices(int slotIndex)
+{
+    for (auto& voice : voices)
+        if (voice.active && voice.preview && (slotIndex < 0 || voice.slotIndex == slotIndex))
+            voice = {};
+}
 
-bool VoiceBank::hasActiveVoices() const noexcept
+bool GlobalVoicePool::hasPreviewVoices(int slotIndex) const noexcept
 {
     for (const auto& voice : voices)
-        if (voice.active)
+        if (voice.active && voice.preview && (slotIndex < 0 || voice.slotIndex == slotIndex))
             return true;
     return false;
 }
 
-void VoiceBank::render(juce::AudioBuffer<float>& output, juce::MidiBuffer& midi)
+void GlobalVoicePool::render(juce::AudioBuffer<float>& output)
 {
-    for (const auto metadata : midi)
+    for (auto& voice : voices)
     {
-        const auto message = metadata.getMessage();
-        if (message.isNoteOn())
-            noteOn(message.getNoteNumber(), message.getFloatVelocity());
-        else if (message.isNoteOff())
-            noteOff(message.getNoteNumber());
-        else if (message.isAllNotesOff() || message.isAllSoundOff())
-            allNotesOff();
-    }
-
-    if (!sample)
-        return;
-
-    const int sourceSamples = sample->audio.getNumSamples();
-    const int sourceChannels = sample->audio.getNumChannels();
-    if (sourceSamples < 2 || sourceChannels == 0)
-        return;
-
-    for (size_t voiceIndex = 0; voiceIndex < voices.size(); ++voiceIndex)
-    {
-        auto& voice = voices[voiceIndex];
-        if (!voice.active)
+        if (!voice.active || !voice.sample)
             continue;
+
+        const int sourceSamples = voice.sample->audio.getNumSamples();
+        const int sourceChannels = voice.sample->audio.getNumChannels();
+        if (sourceSamples < 2 || sourceChannels == 0)
+        {
+            voice = {};
+            continue;
+        }
 
         for (int outSample = 0; outSample < output.getNumSamples(); ++outSample)
         {
             const int i0 = static_cast<int>(voice.position);
             if (i0 >= sourceSamples - 1)
             {
-                voice.active = false;
+                voice = {};
                 break;
             }
 
             const int i1 = i0 + 1;
             const float frac = static_cast<float>(voice.position - i0);
-            const float voiceGain = gain * velocityGain[voiceIndex];
 
             for (int ch = 0; ch < output.getNumChannels(); ++ch)
             {
                 const int srcCh = sourceChannels == 1 ? 0 : juce::jmin(ch, sourceChannels - 1);
-                const float a = sample->audio.getSample(srcCh, i0);
-                const float b = sample->audio.getSample(srcCh, i1);
-                output.addSample(ch, outSample, (a + (b - a) * frac) * voiceGain);
+                const float a = voice.sample->audio.getSample(srcCh, i0);
+                const float b = voice.sample->audio.getSample(srcCh, i1);
+                output.addSample(ch, outSample, (a + (b - a) * frac) * voice.gain);
             }
 
             voice.position += voice.increment;

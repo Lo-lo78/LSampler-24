@@ -1,39 +1,35 @@
-# LSampler-24 — TEST2 24 Slots + Slot Parameters
+# LSampler-24 — accessible 24-slot layering + global 96-voice pool
 
-Diagnostic build based on the stable TEST2 audio engine.
+This build continues from the stable TEST2-derived line.
 
-Added in this step only:
-- 24-slot 3 x 8 slot grid.
-- Silent/contained arrow-key borders.
-- Agreed keyboard shortcuts.
-- Enter on a slot opens that slot's parameter controls.
-- Esc returns to the same slot.
-- Slot parameters currently stored/saved: Low Key, High Key, Original Pitch, Volume.
-- New-slot defaults: Low Key 0, High Key 127, Original Pitch 60.
-- MIDI note display follows the Lua convention: MIDI number + note name + octave.
-
-Important diagnostic limitation:
-The audio engine is still the original single VoiceBank from TEST2. Only the currently selected slot is connected to playback. Low/High Key are persisted but are not yet used for multi-slot MIDI routing. Overlapping regions will be enabled in the next isolated step after this build proves stable.
-
-## Keyboard focus fix
-- Slot buttons, action buttons and parameter sliders explicitly forward keyboard events to the editor KeyListener.
-- Enter on a focused slot opens the slot parameter page.
-- Escape from a parameter control returns to the same slot.
-- Arrow/Home/End keys on Load/Save action buttons are consumed so focus cannot escape to the host.
-
-## TEST update - LJuno value speech and preview toggle
-- Parameter value changes announce only the new value, both from the parameter grid and Value.
-- Value step widths match LJuno-116: 1, 5, 10, 15, 20.
-- Page Up/Down uses the selected step x40.
-- Space previews the current slot as a true Play/Stop toggle: Play starts from the beginning; Stop silences it; the next Play starts from the beginning. Preview voices never layer over themselves.
-
-## Current accessibility / multi-slot test
-
-- Slots are focusable elements in the 3x8 grid, not buttons.
+## Slots and layering
+- 24 real slots in a 3 x 8 accessible grid.
+- Slots are focusable elements, not buttons.
 - Ctrl+Home / Ctrl+End move to Slot 1 / Slot 24.
-- Enter opens the LJuno-style parameter grid.
-- The parameter grid is a single ComboBox-style accessible grid control; Value is a separate slider with Alt+V.
-- Tab/Shift+Tab entry announcements follow the LJuno-116 Grid/Value pattern.
-- Space toggles exclusive preview for the selected slot.
-- All loaded slots can sound simultaneously; Low Key / High Key regions may overlap freely.
-- This stage intentionally uses one proven TEST2 VoiceBank per slot (16 voices each). The global 96-voice allocator is deferred until this layering stage is validated.
+- Low Key / High Key regions may overlap freely; every matching slot sounds.
+- All slots share one global pool of 96 voices. Voices are allocated dynamically and the oldest voice is stolen only when all 96 are active.
+- Original Pitch remains per slot and defaults to MIDI 60 (C 4).
+
+## Parameter page / LJuno-style navigation
+- Enter on a slot opens the parameter grid.
+- Grid parameters: Low Key, High Key, Original Pitch, Volume.
+- Alt+V enters Value.
+- Tab cycle: Grid -> Value -> numeric edit -> Grid.
+- Shift+Tab moves in the reverse direction.
+- Enter from Value returns to Grid.
+- Enter from numeric edit commits the typed value and returns to Grid.
+- Alt+V from numeric edit commits and returns to Value using the same accessible entry path as Grid -> Value.
+- Escape from numeric edit returns directly to the current slot.
+- Alt+L is not used.
+- Grid entry metadata no longer advertises Alt+L.
+- Value entry keeps the LJuno-style Alt+V accessibility hint.
+- Value changes announce only the new value.
+- Value step widths: 1, 5, 10, 15, 20; Page Up/Down uses current step x40.
+
+## Preview
+- Space is NOT intercepted on the 24-slot page, so REAPER transport can use Space normally.
+- Space is intercepted only while inside the current slot parameter page (Grid / Value / numeric edit).
+- Preview is a true Play/Stop toggle: first Space starts from the beginning, second stops, next starts from the beginning. Preview voices do not stack with themselves.
+
+## Load focus
+- After loading a sample, focus returns to the current slot and its slot label is announced.

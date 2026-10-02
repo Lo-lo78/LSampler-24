@@ -8,16 +8,14 @@ LSampler24AudioProcessor::LSampler24AudioProcessor()
 
 void LSampler24AudioProcessor::prepareToPlay(double sampleRate, int)
 {
-    for (auto& bank : voiceBanks)
-        bank.prepare(sampleRate);
+    voicePool.prepare(sampleRate);
     appliedAudioStateRevision = 0;
-    syncVoiceBanksFromState();
+    syncAudioStateFromSlots();
 }
 
 void LSampler24AudioProcessor::releaseResources()
 {
-    for (auto& bank : voiceBanks)
-        bank.allNotesOff();
+    voicePool.allNotesOff();
     previewPlaying = false;
     previewPlayingSlot = -1;
 }
@@ -32,39 +30,23 @@ void LSampler24AudioProcessor::markAudioStateDirty() noexcept
     audioStateRevision.fetch_add(1, std::memory_order_release);
 }
 
-void LSampler24AudioProcessor::syncVoiceBanksFromState()
+void LSampler24AudioProcessor::syncAudioStateFromSlots()
 {
     const auto requested = audioStateRevision.load(std::memory_order_acquire);
     if (requested == appliedAudioStateRevision)
         return;
-
-    std::array<std::shared_ptr<SharedSample>, slotCount> samples;
-    std::array<int, slotCount> roots {};
-    std::array<float, slotCount> gains {};
-    std::array<int, slotCount> lows {};
-    std::array<int, slotCount> highs {};
 
     {
         const juce::ScopedLock lock(stateLock);
         for (int i = 0; i < slotCount; ++i)
         {
             const auto& slot = slots[static_cast<size_t>(i)];
-            samples[static_cast<size_t>(i)] = slot.sample;
-            roots[static_cast<size_t>(i)] = slot.rootNote;
-            gains[static_cast<size_t>(i)] = slot.volume;
-            lows[static_cast<size_t>(i)] = slot.lowKey;
-            highs[static_cast<size_t>(i)] = slot.highKey;
+            audioSamples[static_cast<size_t>(i)] = slot.sample;
+            audioRootNotes[static_cast<size_t>(i)] = slot.rootNote;
+            audioGains[static_cast<size_t>(i)] = slot.volume;
+            audioLowKeys[static_cast<size_t>(i)] = slot.lowKey;
+            audioHighKeys[static_cast<size_t>(i)] = slot.highKey;
         }
-    }
-
-    for (int i = 0; i < slotCount; ++i)
-    {
-        auto& bank = voiceBanks[static_cast<size_t>(i)];
-        bank.setSample(samples[static_cast<size_t>(i)]);
-        bank.setRootNote(roots[static_cast<size_t>(i)]);
-        bank.setGain(gains[static_cast<size_t>(i)]);
-        audioLowKeys[static_cast<size_t>(i)] = lows[static_cast<size_t>(i)];
-        audioHighKeys[static_cast<size_t>(i)] = highs[static_cast<size_t>(i)];
     }
 
     appliedAudioStateRevision = requested;
@@ -74,7 +56,7 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 {
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
-    syncVoiceBanksFromState();
+    syncAudioStateFromSlots();
 
     const bool previewRequest = previewToggleRequested.exchange(false);
     const int requestedPreviewSlot = juce::jlimit(0, slotCount - 1, previewTargetSlot.load());
@@ -83,58 +65,54 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     {
         if (previewPlaying)
         {
-            if (juce::isPositiveAndBelow(previewPlayingSlot, slotCount))
-                voiceBanks[static_cast<size_t>(previewPlayingSlot)].allNotesOff();
+            voicePool.stopPreviewVoices(previewPlayingSlot);
             previewPlaying = false;
             previewPlayingSlot = -1;
         }
         else
         {
-            voiceBanks[static_cast<size_t>(requestedPreviewSlot)].allNotesOff();
-            previewPlaying = true;
-            previewPlayingSlot = requestedPreviewSlot;
+            voicePool.stopPreviewVoices();
+            const auto idx = static_cast<size_t>(requestedPreviewSlot);
+            if (audioSamples[idx])
+            {
+                voicePool.noteOn(requestedPreviewSlot, audioRootNotes[idx], 1.0f,
+                                 audioSamples[idx], audioRootNotes[idx], audioGains[idx], true);
+                previewPlaying = true;
+                previewPlayingSlot = requestedPreviewSlot;
+            }
         }
     }
 
-    for (int slotIndex = 0; slotIndex < slotCount; ++slotIndex)
+    for (const auto metadata : midi)
     {
-        juce::MidiBuffer filtered;
-        const int low = audioLowKeys[static_cast<size_t>(slotIndex)];
-        const int high = audioHighKeys[static_cast<size_t>(slotIndex)];
-
-        for (const auto metadata : midi)
+        const auto message = metadata.getMessage();
+        if (message.isNoteOn())
         {
-            const auto message = metadata.getMessage();
-            if (message.isNoteOn())
+            const int note = message.getNoteNumber();
+            const float velocity = message.getFloatVelocity();
+            for (int slotIndex = 0; slotIndex < slotCount; ++slotIndex)
             {
-                const int note = message.getNoteNumber();
-                if (note >= low && note <= high)
-                    filtered.addEvent(message, metadata.samplePosition);
-            }
-            else
-            {
-                // Always pass note-off/global note-off messages so no slot can
-                // retain a voice if its region is edited while a note is held.
-                filtered.addEvent(message, metadata.samplePosition);
+                const auto idx = static_cast<size_t>(slotIndex);
+                if (note >= audioLowKeys[idx] && note <= audioHighKeys[idx] && audioSamples[idx])
+                    voicePool.noteOn(slotIndex, note, velocity, audioSamples[idx],
+                                     audioRootNotes[idx], audioGains[idx], false);
             }
         }
-
-        if (previewRequest && previewPlaying && slotIndex == previewPlayingSlot)
+        else if (message.isNoteOff())
         {
-            int previewNote = 60;
-            {
-                const juce::ScopedLock lock(stateLock);
-                previewNote = slots[static_cast<size_t>(slotIndex)].rootNote;
-            }
-            filtered.addEvent(juce::MidiMessage::noteOn(1, previewNote, (juce::uint8) 100), 0);
+            voicePool.noteOff(message.getNoteNumber());
         }
-
-        voiceBanks[static_cast<size_t>(slotIndex)].render(buffer, filtered);
+        else if (message.isAllNotesOff() || message.isAllSoundOff())
+        {
+            voicePool.allNotesOff();
+            previewPlaying = false;
+            previewPlayingSlot = -1;
+        }
     }
 
-    if (previewPlaying
-        && juce::isPositiveAndBelow(previewPlayingSlot, slotCount)
-        && !voiceBanks[static_cast<size_t>(previewPlayingSlot)].hasActiveVoices())
+    voicePool.render(buffer);
+
+    if (previewPlaying && !voicePool.hasPreviewVoices(previewPlayingSlot))
     {
         previewPlaying = false;
         previewPlayingSlot = -1;

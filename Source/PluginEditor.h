@@ -4,17 +4,38 @@
 #include <array>
 #include <functional>
 
-class LSamplerSlotCell final : public juce::Label
+class LSamplerSlotCell final : public juce::Component
 {
 public:
     std::function<void()> onActivate;
 
-    void mouseDown(const juce::MouseEvent& e) override
+    void setSlotText(const juce::String& newText)
+    {
+        slotText = newText;
+        setTitle(slotText);
+        setName({});
+        setDescription({});
+        repaint();
+    }
+
+    const juce::String& getSlotText() const noexcept { return slotText; }
+
+    void paint(juce::Graphics& g) override
+    {
+        g.setColour(findColour(juce::Label::textColourId));
+        g.setFont(15.0f);
+        g.drawText(slotText, getLocalBounds().reduced(4, 0), juce::Justification::centredLeft, true);
+    }
+
+    void mouseDown(const juce::MouseEvent&) override
     {
         if (onActivate)
             onActivate();
-        juce::Label::mouseDown(e);
+        grabKeyboardFocus();
     }
+
+private:
+    juce::String slotText;
 };
 
 class LSamplerParameterComboBox final : public juce::ComboBox
@@ -29,7 +50,7 @@ public:
     void setEntryAccessibility()
     {
         setTitle("Grid");
-        setDescription("Alt+L");
+        setDescription({});
     }
 
     void focusGained(FocusChangeType cause) override
@@ -112,6 +133,7 @@ private:
     void showResult(bool ok, const juce::String& error, const juce::String& okMessage);
     void selectSlot(int slotIndex, bool moveKeyboardFocus);
     void refreshSlotCells();
+    void returnToCurrentSlotAndAnnounce();
 
     void enterSlotParameters();
     void leaveSlotParameters();

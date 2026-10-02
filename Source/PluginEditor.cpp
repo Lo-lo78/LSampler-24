@@ -118,8 +118,6 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     {
         auto& cell = slotCells[static_cast<size_t>(i)];
         cell.setAccessible(true);
-        cell.setEditable(false, false, false);
-        cell.setJustificationType(juce::Justification::centredLeft);
         cell.setWantsKeyboardFocus(i == processor.getCurrentSlot());
         cell.setExplicitFocusOrder(1);
         cell.addKeyListener(this);
@@ -141,8 +139,9 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     addButton(saveBank, 6);
 
     status.setText(processor.getSampleStatus(), juce::dontSendNotification);
-    status.setAccessible(true);
-    status.setTitle("Sample status");
+    status.setAccessible(false);
+    status.setTitle({});
+    status.setDescription({});
     status.setWantsKeyboardFocus(false);
     addAndMakeVisible(status);
 
@@ -261,6 +260,29 @@ void LSampler24AudioProcessorEditor::selectSlot(int slotIndex, bool moveKeyboard
         slotCells[static_cast<size_t>(slotIndex)].grabKeyboardFocus();
 }
 
+
+void LSampler24AudioProcessorEditor::returnToCurrentSlotAndAnnounce()
+{
+    const int slot = processor.getCurrentSlot();
+    refreshSlotCells();
+
+    juce::Timer::callAfterDelay(60,
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), slot]
+        {
+            if (safeThis == nullptr) return;
+            auto& cell = safeThis->slotCells[static_cast<size_t>(slot)];
+            cell.grabKeyboardFocus();
+
+            juce::Timer::callAfterDelay(90,
+                [safeThis, slot]
+                {
+                    if (safeThis == nullptr) return;
+                    auto& currentCell = safeThis->slotCells[static_cast<size_t>(slot)];
+                    lsampler::announceToActiveScreenReader(currentCell, safeThis->processor.getSlotLabel(slot));
+                });
+        });
+}
+
 void LSampler24AudioProcessorEditor::refreshSlotCells()
 {
     const int selected = processor.getCurrentSlot();
@@ -268,9 +290,7 @@ void LSampler24AudioProcessorEditor::refreshSlotCells()
     {
         auto& cell = slotCells[static_cast<size_t>(i)];
         const auto label = processor.getSlotLabel(i);
-        cell.setText(label, juce::dontSendNotification);
-        cell.setTitle({});
-        cell.setDescription({});
+        cell.setSlotText(label);
         cell.setWantsKeyboardFocus(!parameterPage && i == selected);
     }
 }
@@ -492,7 +512,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     const bool sourceIsValueEditor = dynamic_cast<juce::TextEditor*>(source) != nullptr
                                   && parameterValue.isParentOf(source);
 
-    if (code == juce::KeyPress::spaceKey && (parameterPage || sourceIsSlot))
+    if (code == juce::KeyPress::spaceKey && parameterPage)
     {
         processor.requestPreviewToggle();
         return true;
@@ -500,17 +520,10 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
     {
-        if (ch == 'l' && !mods.isShiftDown())
-        {
-            if (!parameterPage)
-                enterSlotParameters();
-            focusParameterGrid();
-            return true;
-        }
         if (ch == 'o' && !mods.isShiftDown()) { chooseSample(); return true; }
         if (ch == 's') { mods.isShiftDown() ? chooseSaveSlot() : chooseLoadSlot(); return true; }
         if (ch == 'b') { mods.isShiftDown() ? chooseSaveBank() : chooseLoadBank(); return true; }
-        if (ch == 'v' && parameterPage) { focusValue(); return true; }
+        if (ch == 'v' && parameterPage && !sourceIsValueEditor) { focusValue(); return true; }
 
         if (parameterPage && source != &parameterValue)
         {
@@ -527,9 +540,56 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (sourceIsValueEditor)
     {
-        if (code == juce::KeyPress::returnKey) { focusParameterGrid(); return true; }
-        if (code == juce::KeyPress::escapeKey) { focusValue(); return true; }
-        if (code == juce::KeyPress::tabKey && !mods.isShiftDown()) { focusParameterGrid(); return true; }
+        auto commitEditorValue = [this, source]()
+        {
+            if (auto* editor = dynamic_cast<juce::TextEditor*>(source))
+            {
+                const auto typed = editor->getText().getDoubleValue();
+                const double maximum = selectedParameter == static_cast<int>(SlotParameter::volume) ? 1.0 : 127.0;
+                setSelectedParameterValue(juce::jlimit(0.0, maximum, typed));
+                refreshParameterGrid();
+            }
+        };
+
+        auto closeEditorThen = [this](std::function<void()> next, bool discard)
+        {
+            parameterValue.hideTextBox(discard);
+            juce::MessageManager::callAsync(
+                [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this),
+                 next = std::move(next)]() mutable
+                {
+                    if (safeThis != nullptr && next)
+                        next();
+                });
+        };
+
+        if (mods.isAltDown() && ch == 'v' && !mods.isCtrlDown() && !mods.isCommandDown())
+        {
+            commitEditorValue();
+            closeEditorThen([this] { focusValue(); }, false);
+            return true;
+        }
+        if (code == juce::KeyPress::returnKey)
+        {
+            commitEditorValue();
+            closeEditorThen([this] { focusParameterGrid(); }, false);
+            return true;
+        }
+        if (code == juce::KeyPress::tabKey && !mods.isShiftDown())
+        {
+            commitEditorValue();
+            closeEditorThen([this] { focusParameterGrid(); }, false);
+            return true;
+        }
+        if (code == juce::KeyPress::escapeKey)
+        {
+            closeEditorThen([this]
+            {
+                leaveSlotParameters();
+                selectSlot(processor.getCurrentSlot(), true);
+            }, true);
+            return true;
+        }
     }
 
     if (parameterPage)
@@ -660,16 +720,7 @@ void LSampler24AudioProcessorEditor::chooseSample()
                 juce::String error;
                 const bool ok = safeThis->processor.loadSample(file, error);
                 safeThis->showResult(ok, error, safeThis->processor.getSampleStatus());
-                if (ok)
-                {
-                    const int slot = safeThis->processor.getCurrentSlot();
-                    juce::Timer::callAfterDelay(80,
-                        [safeThis, slot]
-                        {
-                            if (safeThis != nullptr)
-                                safeThis->selectSlot(slot, true);
-                        });
-                }
+                safeThis->returnToCurrentSlotAndAnnounce();
             }
         });
 }
@@ -687,8 +738,7 @@ void LSampler24AudioProcessorEditor::chooseLoadSlot()
                 juce::String error;
                 const bool ok = safeThis->processor.loadSlotPreset(file, error);
                 safeThis->showResult(ok, error, "Slot loaded: " + file.getFileNameWithoutExtension());
-                if (ok)
-                    safeThis->selectSlot(safeThis->processor.getCurrentSlot(), true);
+                safeThis->returnToCurrentSlotAndAnnounce();
             }
         });
 }
@@ -708,6 +758,7 @@ void LSampler24AudioProcessorEditor::chooseSaveSlot()
                 juce::String error;
                 const bool ok = safeThis->processor.saveSlotPreset(file, error);
                 safeThis->showResult(ok, error, "Slot saved: " + file.getFileNameWithoutExtension());
+                safeThis->returnToCurrentSlotAndAnnounce();
             }
         });
 }
@@ -725,7 +776,7 @@ void LSampler24AudioProcessorEditor::chooseLoadBank()
                 juce::String error;
                 const bool ok = safeThis->processor.loadBankPreset(file, error);
                 safeThis->showResult(ok, error, "Bank loaded: " + file.getFileNameWithoutExtension());
-                safeThis->selectSlot(safeThis->processor.getCurrentSlot(), true);
+                safeThis->returnToCurrentSlotAndAnnounce();
             }
         });
 }
@@ -745,6 +796,7 @@ void LSampler24AudioProcessorEditor::chooseSaveBank()
                 juce::String error;
                 const bool ok = safeThis->processor.saveBankPreset(file, error);
                 safeThis->showResult(ok, error, "Bank saved: " + file.getFileNameWithoutExtension());
+                safeThis->returnToCurrentSlotAndAnnounce();
             }
         });
 }

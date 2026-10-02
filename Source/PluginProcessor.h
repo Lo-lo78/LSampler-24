@@ -82,7 +82,7 @@ private:
     juce::ValueTree readPreset(const juce::File& file, juce::String& error) const;
     bool materialiseSlotSample(int slotIndex, juce::String& error);
     void markAudioStateDirty() noexcept;
-    void syncVoiceBanksFromState();
+    void syncAudioStateFromSlots();
 
     mutable juce::CriticalSection stateLock;
     std::array<SlotState, slotCount> slots;
@@ -94,10 +94,10 @@ private:
     bool previewPlaying = false;
     int previewPlayingSlot = -1;
 
-    // Transitional multi-slot engine: the proven TEST2 VoiceBank is reused
-    // independently per slot.  A later stage can replace these with the
-    // shared global 96-voice allocator without changing slot mapping.
-    std::array<VoiceBank, slotCount> voiceBanks;
+    GlobalVoicePool voicePool;
+    std::array<std::shared_ptr<SharedSample>, slotCount> audioSamples;
+    std::array<int, slotCount> audioRootNotes {};
+    std::array<float, slotCount> audioGains {};
     std::array<int, slotCount> audioLowKeys {};
     std::array<int, slotCount> audioHighKeys {};
     LibraryManager library;
