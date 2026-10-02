@@ -1,0 +1,34 @@
+name: Build LSampler-24 VST3
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File Tools/build-windows.ps1
+
+      - name: Package VST3
+        shell: powershell
+        run: |
+          $vst3 = "build\make-release\LSampler24_artefacts\Release\VST3\LSampler-24.vst3"
+          if (-not (Test-Path -LiteralPath $vst3)) {
+            throw "VST3 bundle not found: $vst3"
+          }
+          Compress-Archive -Path $vst3 -DestinationPath "LSampler-24-Windows-VST3.zip" -Force
+
+      - name: Upload VST3 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LSampler-24-Windows-VST3
+          path: LSampler-24-Windows-VST3.zip
+          if-no-files-found: error

@@ -1,0 +1,35 @@
+LSampler-24 TEST2 validation
+
+FILE MODEL
+1. Build on GitHub Actions.
+2. Insert LSampler-24 VST3 in REAPER.
+3. Verify these folders are created under the current user's Documents folder:
+   Documents/LSampler-24/Library/Samples
+   Documents/LSampler-24/Library/Slots
+   Documents/LSampler-24/Library/Banks
+
+RAW AUDIO
+4. Use Load Sample to choose a WAV/AIFF/FLAC/OGG from any disk or folder.
+5. Verify the original audio file keeps its real extension and is not copied merely by loading it.
+6. Send MIDI notes. MIDI 60 is the default root note and notes transpose chromatically.
+7. Save the REAPER project, close it and reopen it. The unsaved external sample should restore directly from its original path, with no Lua/startup loader.
+
+SLOT FILE
+8. Use Save Slot. Default name is date/time and remains editable.
+9. Verify the audio is copied once into Library/Samples while keeping its real audio extension.
+10. Verify the slot preset is saved in Library/Slots with extension .lsampler-24-s.
+11. Verify the live slot now points to the Library sample, not the external original.
+12. Move/rename the original external file and confirm the saved slot still loads from the Library copy.
+13. Load the .lsampler-24-s and verify sample, root note and volume restore.
+
+BANK FILE
+14. Use Save Bank. Verify extension .lsampler-24-b in Library/Banks.
+15. TEST2 bank file must contain 24 explicit slot records: slot 1 current state, slots 2..24 empty placeholders.
+16. Load Bank and verify slot 1 restores correctly.
+
+SHARING
+17. Save several Slot/Bank presets that all refer to the same Library WAV. They must reference the same audio file rather than embedding/copying audio into each preset.
+18. Duplicate the plugin instance and load the same Library sample path in both. The process-wide SamplePool should reuse one SharedSample object for that canonical path.
+
+FAILURE SAFETY
+19. Temporarily remove a Library sample referenced by a preset/project. LSampler-24 must remain stable and report Sample missing.
