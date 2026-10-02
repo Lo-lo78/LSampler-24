@@ -195,6 +195,8 @@ private:
     void leaveImportBrowser(bool announceSlot);
     void refreshImportEntries();
     void selectImportEntry(int index, bool announce);
+    void cycleImportEntryByInitial(juce_wchar initial);
+    void updateImportPreviewForSelection();
     void announceImportEntry();
     void prepareImportPreviewForCurrent();
     void seekImportPreview(double deltaSeconds);
@@ -264,6 +266,8 @@ private:
     juce::File importSliceFile;
     double importSliceStart = 0.0;
     bool importBrowserActive = false;
+    bool importPreviewEnabled = false;
+    bool importDriveList = false;
 
     bool parameterPage = false;
     int selectedParameter = 0;

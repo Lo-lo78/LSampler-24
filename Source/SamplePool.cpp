@@ -86,3 +86,14 @@ std::shared_ptr<SharedSample> SamplePool::aliasFile(const juce::File& file, std:
     samples[key] = sample;
     return sample;
 }
+
+
+bool SamplePool::canReadFile(const juce::File& file) const
+{
+    return formats.findFormatForFileExtension(file.getFileExtension()) != nullptr;
+}
+
+juce::String SamplePool::getSupportedAudioWildcard() const
+{
+    return formats.getWildcardForAllFormats();
+}
