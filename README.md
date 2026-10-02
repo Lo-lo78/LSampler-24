@@ -14,3 +14,9 @@ Added in this step only:
 
 Important diagnostic limitation:
 The audio engine is still the original single VoiceBank from TEST2. Only the currently selected slot is connected to playback. Low/High Key are persisted but are not yet used for multi-slot MIDI routing. Overlapping regions will be enabled in the next isolated step after this build proves stable.
+
+## Keyboard focus fix
+- Slot buttons, action buttons and parameter sliders explicitly forward keyboard events to the editor KeyListener.
+- Enter on a focused slot opens the slot parameter page.
+- Escape from a parameter control returns to the same slot.
+- Arrow/Home/End keys on Load/Save action buttons are consumed so focus cannot escape to the host.

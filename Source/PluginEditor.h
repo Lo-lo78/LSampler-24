@@ -4,7 +4,8 @@
 #include <array>
 
 class LSampler24AudioProcessorEditor : public juce::AudioProcessorEditor,
-                                       private juce::Timer
+                                       private juce::Timer,
+                                       private juce::KeyListener
 {
 public:
     explicit LSampler24AudioProcessorEditor(LSampler24AudioProcessor&);
@@ -13,6 +14,7 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     bool keyPressed(const juce::KeyPress& key) override;
+    bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
 
 private:
     void timerCallback() override;
@@ -28,6 +30,9 @@ private:
     void leaveSlotParameters();
     void refreshParameterValues();
     static juce::String midiNoteText(int note);
+    bool handleKeyPress(const juce::KeyPress& key, juce::Component* source);
+    bool isActionButton(const juce::Component* component) const;
+    bool isSlotButton(const juce::Component* component) const;
 
     LSampler24AudioProcessor& processor;
     std::array<juce::TextButton, LSampler24AudioProcessor::slotCount> slotButtons;

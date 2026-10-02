@@ -29,12 +29,14 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
         b.setTitle(processor.getSlotLabel(i));
         b.setWantsKeyboardFocus(i == processor.getCurrentSlot());
         b.onClick = [this, i] { selectSlot(i, false); };
+        b.addKeyListener(this);
         addAndMakeVisible(b);
     }
 
     auto addButton = [this](juce::TextButton& b)
     {
         b.setWantsKeyboardFocus(true);
+        b.addKeyListener(this);
         addAndMakeVisible(b);
     };
     addButton(loadSample);
@@ -52,18 +54,21 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     addAndMakeVisible(lowKeyLabel);
     configureNoteSlider(lowKey, "Low Key");
     lowKey.setValue(processor.getLowKey(), juce::dontSendNotification);
+    lowKey.addKeyListener(this);
     addAndMakeVisible(lowKey);
 
     highKeyLabel.setText("High Key", juce::dontSendNotification);
     addAndMakeVisible(highKeyLabel);
     configureNoteSlider(highKey, "High Key");
     highKey.setValue(processor.getHighKey(), juce::dontSendNotification);
+    highKey.addKeyListener(this);
     addAndMakeVisible(highKey);
 
     rootLabel.setText("Original Pitch", juce::dontSendNotification);
     addAndMakeVisible(rootLabel);
     configureNoteSlider(rootNote, "Original Pitch");
     rootNote.setValue(processor.getRootNote(), juce::dontSendNotification);
+    rootNote.addKeyListener(this);
     addAndMakeVisible(rootNote);
 
     volumeLabel.setText("Volume", juce::dontSendNotification);
@@ -74,6 +79,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     volume.setTextBoxStyle(juce::Slider::TextBoxRight, false, 70, 24);
     volume.setTitle("Volume");
     volume.setWantsKeyboardFocus(true);
+    volume.addKeyListener(this);
     addAndMakeVisible(volume);
 
     loadSample.onClick = [this] { chooseSample(); };
@@ -216,12 +222,36 @@ void LSampler24AudioProcessorEditor::leaveSlotParameters()
     volumeLabel.setVisible(false); volume.setVisible(false);
 }
 
+bool LSampler24AudioProcessorEditor::isActionButton(const juce::Component* component) const
+{
+    return component == &loadSample || component == &loadSlot || component == &saveSlot
+        || component == &loadBank || component == &saveBank;
+}
+
+bool LSampler24AudioProcessorEditor::isSlotButton(const juce::Component* component) const
+{
+    for (const auto& b : slotButtons)
+        if (component == &b)
+            return true;
+    return false;
+}
+
 bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key)
+{
+    return handleKeyPress(key, juce::Component::getCurrentlyFocusedComponent());
+}
+
+bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent)
+{
+    return handleKeyPress(key, originatingComponent);
+}
+
+bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, juce::Component* source)
 {
     const auto mods = key.getModifiers();
     const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
 
-    // Global accessible shortcuts.  Load uses the plain Alt letter; Save uses
+    // Global accessible shortcuts. Load uses the plain Alt letter; Save uses
     // the same letter with Shift so Slot and Bank are symmetrical.
     if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
     {
@@ -250,8 +280,6 @@ bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key)
         }
     }
 
-    const auto* focused = juce::Component::getCurrentlyFocusedComponent();
-
     if (parameterPage)
     {
         if (key.getKeyCode() == juce::KeyPress::escapeKey)
@@ -260,15 +288,24 @@ bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key)
             selectSlot(processor.getCurrentSlot(), true);
             return true;
         }
-        return AudioProcessorEditor::keyPressed(key);
+        // Parameter controls keep their native arrow/value behaviour.
+        return false;
     }
 
-    bool onSlot = false;
-    for (auto& b : slotButtons)
-        if (focused == &b) { onSlot = true; break; }
+    // The five action buttons must not hand arrow keys to JUCE's focus
+    // traversal or to the host. At any edge, an arrow is simply silent.
+    if (isActionButton(source))
+    {
+        const int code = key.getKeyCode();
+        if (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey
+            || code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
+            || code == juce::KeyPress::homeKey || code == juce::KeyPress::endKey)
+            return true;
+        return false;
+    }
 
-    if (!onSlot)
-        return AudioProcessorEditor::keyPressed(key);
+    if (!isSlotButton(source))
+        return false;
 
     if (key.getKeyCode() == juce::KeyPress::returnKey)
     {
@@ -280,9 +317,7 @@ bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key)
     const int row = slot % 8;
     const int col = slot / 8;
 
-    // The slot grid owns all four arrow keys, including at its borders.
-    // Consuming an edge key without moving keeps keyboard focus inside the
-    // 3 x 8 grid instead of letting JUCE move it to another component/host.
+    // The slot grid owns all navigation keys, including at its borders.
     if (key.getKeyCode() == juce::KeyPress::upKey)
     {
         if (row > 0) selectSlot(slot - 1, true);
@@ -314,7 +349,7 @@ bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key)
         return true;
     }
 
-    return AudioProcessorEditor::keyPressed(key);
+    return false;
 }
 
 void LSampler24AudioProcessorEditor::timerCallback()
