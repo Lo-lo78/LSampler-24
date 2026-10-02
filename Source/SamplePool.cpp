@@ -53,8 +53,20 @@ std::shared_ptr<SharedSample> SamplePool::load(const juce::File& file, juce::Str
     sample->audio.setSize(channels, static_cast<int>(reader->lengthInSamples));
     reader->read(&sample->audio, 0, sample->audio.getNumSamples(), 0, true, true);
 
+    // One shared analysis pass at decode time, outside all realtime paths.
+    for (int ch = 0; ch < channels; ++ch) {
+        double sum = 0;
+        const auto* data = sample->audio.getReadPointer(ch);
+        for (int i = 0; i < sample->audio.getNumSamples(); ++i) {
+            sum += data[i]; sample->peak = std::max(sample->peak, double(std::abs(data[i])));
+        }
+        sample->dc[size_t(ch)] = sum / sample->audio.getNumSamples();
+    }
+    if (channels == 1) sample->dc[1] = sample->dc[0];
     {
         std::lock_guard<std::mutex> lock(mutex);
+        // Concurrent decodes may race; reuse the winner rather than retaining duplicate audio.
+        if (auto existing = samples[key].lock()) return existing;
         samples[key] = sample;
     }
     return sample;
@@ -65,4 +77,12 @@ void SamplePool::pruneExpired()
     std::lock_guard<std::mutex> lock(mutex);
     for (auto it = samples.begin(); it != samples.end();)
         if (it->second.expired()) it = samples.erase(it); else ++it;
+}
+
+std::shared_ptr<SharedSample> SamplePool::aliasFile(const juce::File& file, std::shared_ptr<SharedSample> sample) {
+    const auto key = keyFor(file);
+    std::lock_guard<std::mutex> lock(mutex);
+    if(auto existing = samples[key].lock()) return existing;
+    samples[key] = sample;
+    return sample;
 }

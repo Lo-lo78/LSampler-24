@@ -2,6 +2,8 @@
 #include "ScreenReaderAnnouncer.h"
 #include <cmath>
 #include <utility>
+#include <cstring>
+using namespace lsampler;
 
 namespace
 {
@@ -47,7 +49,8 @@ public:
 
         if ((key.getKeyCode() == juce::KeyPress::returnKey
              || key.getKeyCode() == juce::KeyPress::escapeKey
-             || key.getKeyCode() == juce::KeyPress::tabKey)
+             || key.getKeyCode() == juce::KeyPress::tabKey
+             || key.getKeyCode() == juce::KeyPress::spaceKey)
             && shortcut)
         {
             if (shortcut(key, this))
@@ -78,7 +81,7 @@ protected:
     juce::TextEditor* createEditorComponent() override
     {
         auto* editor = new ShortcutValueTextEditor(getName(), shortcut);
-        editor->setInputRestrictions(0, "0123456789.");
+        editor->setInputRestrictions(0, "-0123456789.");
         editor->applyFontToAllText(getLookAndFeel().getLabelFont(*this));
         return editor;
     }
@@ -148,7 +151,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     parameterSelector.setWantsKeyboardFocus(true);
     parameterSelector.setExplicitFocusOrder(1);
     parameterSelector.addKeyListener(this);
-    for (int i = 0; i < static_cast<int>(SlotParameter::count); ++i)
+    for (int i = 0; i < static_cast<int>(lsampler::grid.size()); ++i)
         parameterSelector.addItem(parameterCellText(i), i + 1);
     parameterSelector.setSelectedItemIndex(selectedParameter, juce::dontSendNotification);
     parameterSelector.onChange = [this]
@@ -302,83 +305,88 @@ juce::String LSampler24AudioProcessorEditor::midiNoteText(int note)
     return juce::String(note) + " " + names[note % 12] + " " + juce::String((note / 12) - 1);
 }
 
-juce::String LSampler24AudioProcessorEditor::selectedParameterName() const
-{
-    switch (static_cast<SlotParameter>(selectedParameter))
-    {
-        case SlotParameter::lowKey:        return "Low Key";
-        case SlotParameter::highKey:       return "High Key";
-        case SlotParameter::originalPitch: return "Original Pitch";
-        case SlotParameter::volume:        return "Volume";
-        default:                           return "Parameter";
+const GridEntry& LSampler24AudioProcessorEditor::selectedEntry() const {return lsampler::grid[size_t(selectedParameter)];}
+int LSampler24AudioProcessorEditor::categoryBegin(int index) const {
+    const auto* name=lsampler::grid[size_t(index)].category;
+    while(index>0 && std::strcmp(lsampler::grid[size_t(index-1)].category,name)==0)--index;
+    return index;
+}
+int LSampler24AudioProcessorEditor::categoryEnd(int index) const {
+    const auto* name=lsampler::grid[size_t(index)].category;
+    while(index+1<int(lsampler::grid.size()) && std::strcmp(lsampler::grid[size_t(index+1)].category,name)==0)++index;
+    return index;
+}
+bool LSampler24AudioProcessorEditor::selectedRateIsSynced() const {
+    const auto id=selectedEntry().parameter;
+    if(id!=int(P::lfo1_rate)&&id!=int(P::lfo2_rate))return false;
+    const auto sync=id==int(P::lfo1_rate)?P::lfo1_bpm_sync:P::lfo2_bpm_sync;
+    for(size_t i=0;i<lsampler::grid.size();++i)if(lsampler::grid[i].parameter==int(sync))return processor.getSlotParameter(int(i))!=0;
+    return false;
+}
+juce::String LSampler24AudioProcessorEditor::selectedParameterName() const {
+    const auto& e=selectedEntry();
+    return (std::strcmp(e.category,"Loops")==0?"Loop "+juce::String(selectedLoop+1)+" ":juce::String())+descriptor(e).name;
+}
+double LSampler24AudioProcessorEditor::getSelectedParameterValue() const {return processor.getSlotParameter(selectedParameter,selectedLoop);}
+void LSampler24AudioProcessorEditor::setSelectedParameterValue(double value) {processor.setSlotParameter(selectedParameter,value,selectedLoop);}
+juce::String LSampler24AudioProcessorEditor::formatParameter(int index,double value) const {
+    const auto& e=lsampler::grid[size_t(index)];const auto& d=descriptor(e);
+    if(d.kind==Kind::note)return value<0?juce::String("Off"):midiNoteText(juce::roundToInt(value));
+    if(d.kind==Kind::enumeration||d.kind==Kind::action) {
+        const auto labels=juce::StringArray::fromTokens(d.labels,"|","");
+        return labels[juce::jlimit(0,labels.size()-1,juce::roundToInt(value-d.minimum))];
     }
-}
-
-double LSampler24AudioProcessorEditor::getSelectedParameterValue() const
-{
-    switch (static_cast<SlotParameter>(selectedParameter))
-    {
-        case SlotParameter::lowKey:        return processor.getLowKey();
-        case SlotParameter::highKey:       return processor.getHighKey();
-        case SlotParameter::originalPitch: return processor.getRootNote();
-        case SlotParameter::volume:        return processor.getVolume();
-        default:                           return 0.0;
+    if(e.loop==int(L::repeats)&&value==0)return "0, infinite";
+    if(e.parameter==int(P::lfo1_rate)||e.parameter==int(P::lfo2_rate)) {
+        const auto sync=e.parameter==int(P::lfo1_rate)?P::lfo1_bpm_sync:P::lfo2_bpm_sync;
+        bool synced=false;
+        for(size_t i=0;i<lsampler::grid.size();++i)if(lsampler::grid[i].parameter==int(sync)){synced=processor.getSlotParameter(int(i))!=0;break;}
+        if(!synced)return juce::String(value,3)+" Hz";
+        juce::String label;
+        const std::pair<double,const char*> anchors[]{{.125,"8 bars"},{.25,"4 bars"},{.5,"2 bars"},{1,"1 bar"},{2,"half bar"},
+            {4,"1 beat"},{8,"eighth"},{16,"sixteenth"},{32,"thirty second"},{64,"sixty fourth"},{128,"one twenty eighth"},
+            {256,"one two fifty sixth"},{512,"one five twelfth"},{1.5,"bar triplet"},{3,"half bar triplet"},{6,"beat triplet"},
+            {12,"eighth triplet"},{24,"sixteenth triplet"},{48,"thirty second triplet"},{96,"sixty fourth triplet"},{192,"one twenty eighth triplet"},{384,"one two fifty sixth triplet"},
+            {5,"four fifths beat"},{10,"two fifths beat"},{20,"one fifth beat"},{40,"one tenth beat"},{80,"one twentieth beat"}};
+        for(const auto& a:anchors)if(std::abs(value-a.first)<.000001){label=", "+juce::String(a.second);break;}
+        return juce::String(value,3)+label;
     }
+    return juce::String(value,d.decimals)+(juce::String(d.unit).isEmpty()?juce::String():" "+juce::String(d.unit));
 }
-
-void LSampler24AudioProcessorEditor::setSelectedParameterValue(double value)
-{
-    switch (static_cast<SlotParameter>(selectedParameter))
-    {
-        case SlotParameter::lowKey:        processor.setLowKey(juce::roundToInt(value)); break;
-        case SlotParameter::highKey:       processor.setHighKey(juce::roundToInt(value)); break;
-        case SlotParameter::originalPitch: processor.setRootNote(juce::roundToInt(value)); break;
-        case SlotParameter::volume:        processor.setVolume(static_cast<float>(value)); break;
-        default: break;
-    }
+juce::String LSampler24AudioProcessorEditor::selectedParameterValueText() const {return formatParameter(selectedParameter,getSelectedParameterValue());}
+juce::String LSampler24AudioProcessorEditor::parameterCellText(int index) const {
+    const auto& e=lsampler::grid[size_t(index)];
+    const juce::String prefix=std::strcmp(e.category,"Loops")==0?"Loop "+juce::String(selectedLoop+1)+" ":juce::String();
+    return prefix+descriptor(e).name+", "+formatParameter(index,processor.getSlotParameter(index,selectedLoop));
 }
-
-juce::String LSampler24AudioProcessorEditor::selectedParameterValueText() const
-{
-    if (selectedParameter == static_cast<int>(SlotParameter::volume))
-        return juce::String(processor.getVolume(), 2);
-    return midiNoteText(juce::roundToInt(getSelectedParameterValue()));
-}
-
-juce::String LSampler24AudioProcessorEditor::parameterCellText(int index) const
-{
-    const auto old = selectedParameter;
-    const_cast<LSampler24AudioProcessorEditor*>(this)->selectedParameter = juce::jlimit(0, 3, index);
-    const auto text = selectedParameterName() + ", " + selectedParameterValueText();
-    const_cast<LSampler24AudioProcessorEditor*>(this)->selectedParameter = old;
-    return text;
-}
-
-void LSampler24AudioProcessorEditor::refreshParameterGrid()
-{
-    for (int i = 0; i < static_cast<int>(SlotParameter::count); ++i)
-        parameterSelector.changeItemText(i + 1, parameterCellText(i));
-
-    parameterSelector.setSelectedItemIndex(selectedParameter, juce::dontSendNotification);
+void LSampler24AudioProcessorEditor::refreshParameterGrid() {
+    for(int i=0;i<int(lsampler::grid.size());++i)parameterSelector.changeItemText(i+1,parameterCellText(i));
+    parameterSelector.setSelectedItemIndex(selectedParameter,juce::dontSendNotification);
     configureValueForSelectedParameter();
 }
-
-void LSampler24AudioProcessorEditor::configureValueForSelectedParameter()
-{
-    const bool volume = selectedParameter == static_cast<int>(SlotParameter::volume);
-    if (volume)
-    {
-        parameterValue.setRange(0.0, 1.0, 0.0);
-        parameterValue.textFromValueFunction = [](double v) { return juce::String(v, 2); };
-    }
-    else
-    {
-        parameterValue.setRange(0.0, 127.0, 1.0);
-        parameterValue.textFromValueFunction = [](double v) { return midiNoteText(juce::roundToInt(v)); };
-    }
-
+void LSampler24AudioProcessorEditor::configureValueForSelectedParameter() {
+    const auto& d=descriptor(selectedEntry());
+    parameterValue.setRange(selectedRateIsSynced()?.125:d.minimum,d.maximum,
+        d.kind==Kind::integer||d.kind==Kind::enumeration||d.kind==Kind::note||d.kind==Kind::action?1.0:0.0);
+    parameterValue.textFromValueFunction=[this](double v){return formatParameter(selectedParameter,v);};
+    parameterValue.valueFromTextFunction=[this](const juce::String& text) {
+        const auto& desc=descriptor(selectedEntry());
+        if(desc.kind==Kind::enumeration||desc.kind==Kind::action) {
+            const auto labels=juce::StringArray::fromTokens(desc.labels,"|","");
+            const int found=labels.indexOf(text.trim(),true);if(found>=0)return desc.minimum+found;
+        }
+        if(text.trim().equalsIgnoreCase("Off")&&desc.kind==Kind::note)return -1.0;
+        return text.getDoubleValue();
+    };
     parameterValue.setParameterAccessibilityName(selectedParameterName());
-    parameterValue.setValue(getSelectedParameterValue(), juce::dontSendNotification);
+    parameterValue.setValue(getSelectedParameterValue(),juce::dontSendNotification);
+}
+void LSampler24AudioProcessorEditor::openValueEditor() {
+    parameterValue.showTextBox();
+    if(auto* editor=dynamic_cast<juce::TextEditor*>(juce::Component::getCurrentlyFocusedComponent())) {
+        editor->setText(juce::String(getSelectedParameterValue(),descriptor(selectedEntry()).decimals),false);
+        editor->selectAll();
+    }
 }
 
 void LSampler24AudioProcessorEditor::enterSlotParameters()
@@ -389,7 +397,7 @@ void LSampler24AudioProcessorEditor::enterSlotParameters()
     loadBank.setVisible(false); saveBank.setVisible(false);
     parameterSelector.setVisible(true);
     parameterValue.setVisible(true);
-    selectedParameter = juce::jlimit(0, 3, selectedParameter);
+    selectedParameter = juce::jlimit(0, int(lsampler::grid.size())-1, selectedParameter);
     refreshParameterGrid();
     resized();
     parameterSelector.grabKeyboardFocus();
@@ -409,7 +417,9 @@ void LSampler24AudioProcessorEditor::leaveSlotParameters()
 
 void LSampler24AudioProcessorEditor::selectParameter(int index, bool announce)
 {
-    selectedParameter = juce::jlimit(0, static_cast<int>(SlotParameter::count) - 1, index);
+    index = juce::jlimit(0, static_cast<int>(lsampler::grid.size()) - 1, index);
+    if(index==selectedParameter)return;
+    selectedParameter = index;
     parameterSelector.setSelectedItemIndex(selectedParameter,
         announce ? juce::sendNotificationSync : juce::dontSendNotification);
     configureValueForSelectedParameter();
@@ -434,7 +444,7 @@ void LSampler24AudioProcessorEditor::announceSelectedValue()
     auto* source = juce::Component::getCurrentlyFocusedComponent();
     if (source == nullptr)
         source = &status;
-    lsampler::announceToActiveScreenReader(*source, selectedParameterValueText());
+    lsampler::announceToActiveScreenReader(*source, selectedEntry().action!=Action::none?juce::String("Applied"):selectedParameterValueText());
 }
 
 void LSampler24AudioProcessorEditor::changeStepWidth(int direction)
@@ -452,13 +462,14 @@ void LSampler24AudioProcessorEditor::changeStepWidth(int direction)
 
 void LSampler24AudioProcessorEditor::changeSelectedParameterValue(int direction, bool coarse)
 {
-    const double baseStep = selectedParameter == static_cast<int>(SlotParameter::volume) ? 0.01 : 1.0;
+    const auto& d=descriptor(selectedEntry());
+    const double baseStep = d.step;
     const double multiplier = static_cast<double>(stepWidths[static_cast<size_t>(stepWidthIndex)])
                             * (coarse ? static_cast<double>(valuePageStep) : 1.0);
-    const double step = baseStep * multiplier;
-    const double maximum = selectedParameter == static_cast<int>(SlotParameter::volume) ? 1.0 : 127.0;
+    const double step = selectedRateIsSynced()?.125:baseStep*multiplier;
+    const double maximum = d.maximum;
     const auto current = getSelectedParameterValue();
-    const auto next = juce::jlimit(0.0, maximum, current + direction * step);
+    const auto next = juce::jlimit(selectedRateIsSynced()?.125:d.minimum, maximum, current + direction * step);
     if (std::abs(next - current) < 1.0e-9)
         return;
     setSelectedParameterValue(next);
@@ -468,9 +479,8 @@ void LSampler24AudioProcessorEditor::changeSelectedParameterValue(int direction,
 
 void LSampler24AudioProcessorEditor::setSelectedParameterBoundary(bool maximum)
 {
-    const double value = maximum
-        ? (selectedParameter == static_cast<int>(SlotParameter::volume) ? 1.0 : 127.0)
-        : 0.0;
+    const auto& d=descriptor(selectedEntry());
+    const double value = maximum?d.maximum:(selectedRateIsSynced()?.125:d.minimum);
     if (std::abs(value - getSelectedParameterValue()) < 1.0e-9)
         return;
     setSelectedParameterValue(value);
@@ -503,6 +513,8 @@ bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key, juce:
 
 bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, juce::Component* source)
 {
+    // Modal editors own every key before main grid or host shortcut dispatch.
+    if(activeModalSurface!=nullptr){activeModalSurface->handleKey(key);return true;}
     const auto mods = key.getModifiers();
     const auto code = key.getKeyCode();
     const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
@@ -555,9 +567,9 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         {
             if (auto* editor = dynamic_cast<juce::TextEditor*>(source))
             {
-                const auto typed = editor->getText().getDoubleValue();
-                const double maximum = selectedParameter == static_cast<int>(SlotParameter::volume) ? 1.0 : 127.0;
-                setSelectedParameterValue(juce::jlimit(0.0, maximum, typed));
+                const auto typed = parameterValue.getValueFromText(editor->getText());
+                const auto& d=descriptor(selectedEntry());
+                setSelectedParameterValue(juce::jlimit(d.minimum,d.maximum,typed));
                 refreshParameterGrid();
             }
         };
@@ -586,10 +598,11 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             closeEditorThen([this] { focusParameterGrid(); }, false);
             return true;
         }
-        if (code == juce::KeyPress::tabKey && !mods.isShiftDown())
+        if (code == juce::KeyPress::tabKey)
         {
             commitEditorValue();
-            closeEditorThen([this] { focusParameterGrid(); }, false);
+            if(mods.isShiftDown())closeEditorThen([this] { focusValue(); }, false);
+            else closeEditorThen([this] { focusParameterGrid(); }, false);
             return true;
         }
         if (code == juce::KeyPress::escapeKey)
@@ -603,8 +616,18 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         }
     }
 
+    if (sourceIsValueEditor) return false;
     if (parameterPage)
     {
+        if(mods.isShiftDown()&&!mods.isCtrlDown()&&!mods.isAltDown()
+            &&std::strcmp(selectedEntry().category,"Loops")==0
+            &&(code==juce::KeyPress::upKey||code==juce::KeyPress::downKey)) {
+            const int next=juce::jlimit(0,9,selectedLoop+(code==juce::KeyPress::upKey?-1:1));
+            if(next!=selectedLoop) {selectedLoop=next;refreshParameterGrid();
+                lsampler::announceToActiveScreenReader(*source,parameterCellText(selectedParameter));}
+            return true;
+        }
+        if(code==juce::KeyPress::backspaceKey) {processor.resetSlotParameter(selectedParameter,selectedLoop);refreshParameterGrid();announceSelectedValue();return true;}
         if (code == juce::KeyPress::escapeKey)
         {
             leaveSlotParameters();
@@ -614,9 +637,9 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
         if (source == &parameterValue)
         {
-            if (code == juce::KeyPress::tabKey && !mods.isShiftDown())
+            if (code == juce::KeyPress::tabKey)
             {
-                parameterValue.showTextBox();
+                if(mods.isShiftDown())focusParameterGrid();else openValueEditor();
                 return true;
             }
             if (code == juce::KeyPress::returnKey) { focusParameterGrid(); return true; }
@@ -628,47 +651,58 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             if (code == juce::KeyPress::pageDownKey) { changeSelectedParameterValue(-1, true); return true; }
             if (code == juce::KeyPress::homeKey)   { setSelectedParameterBoundary(true); return true; }
             if (code == juce::KeyPress::endKey)    { setSelectedParameterBoundary(false); return true; }
-            return false;
+            return true;
         }
 
         if (source == &parameterSelector)
         {
             parameterSelector.setLineReadingMode();
 
-            if (code == juce::KeyPress::returnKey) { focusValue(); return true; }
+            if(code==juce::KeyPress::tabKey) {if(mods.isShiftDown())openValueEditor();else focusValue();return true;}
+            if (code == juce::KeyPress::returnKey) {
+                if(selectedEntry().action!=Action::none){setSelectedParameterValue(1);refreshParameterGrid();announceSelectedValue();}
+                else focusValue();
+                return true;
+            }
             if (mods.isCtrlDown() && code == juce::KeyPress::homeKey) { selectParameter(0, true); return true; }
             if (mods.isCtrlDown() && code == juce::KeyPress::endKey)
             {
-                selectParameter(static_cast<int>(SlotParameter::count) - 1, true);
+                selectParameter(static_cast<int>(lsampler::grid.size()) - 1, true);
                 return true;
             }
-            if (code == juce::KeyPress::homeKey) { selectParameter(0, true); return true; }
-            if (code == juce::KeyPress::endKey)
-            {
-                selectParameter(static_cast<int>(SlotParameter::count) - 1, true);
-                return true;
-            }
-            if (code == juce::KeyPress::pageUpKey) { selectParameter(juce::jmax(0, selectedParameter - 3), true); return true; }
-            if (code == juce::KeyPress::pageDownKey)
-            {
-                selectParameter(juce::jmin(static_cast<int>(SlotParameter::count) - 1, selectedParameter + 3), true);
-                return true;
-            }
+            if (code == juce::KeyPress::homeKey) { selectParameter(categoryBegin(selectedParameter), true); return true; }
+            if (code == juce::KeyPress::endKey) { selectParameter(categoryEnd(selectedParameter), true); return true; }
+            if (code == juce::KeyPress::pageUpKey) { selectParameter(juce::jmax(categoryBegin(selectedParameter), selectedParameter - 8), true); return true; }
+            if (code == juce::KeyPress::pageDownKey) { selectParameter(juce::jmin(categoryEnd(selectedParameter), selectedParameter + 8), true); return true; }
             if (code == juce::KeyPress::upKey)
             {
-                if (selectedParameter > 0) selectParameter(selectedParameter - 1, true);
+                if (selectedParameter > categoryBegin(selectedParameter)) selectParameter(selectedParameter - 1, true);
                 return true;
             }
             if (code == juce::KeyPress::downKey)
             {
-                if (selectedParameter + 1 < static_cast<int>(SlotParameter::count))
+                if (selectedParameter < categoryEnd(selectedParameter))
                     selectParameter(selectedParameter + 1, true);
                 return true;
             }
-            if (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey)
+            if (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey) {
+                const int begin=categoryBegin(selectedParameter),end=categoryEnd(selectedParameter),row=selectedParameter-begin;
+                if(code==juce::KeyPress::leftKey&&begin>0) {
+                    const int previous=categoryBegin(begin-1);selectParameter(juce::jmin(previous+row,begin-1),true);
+                } else if(code==juce::KeyPress::rightKey&&end+1<int(lsampler::grid.size()))
+                    selectParameter(juce::jmin(end+1+row,categoryEnd(end+1)),true);
                 return true;
+            }
+            if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isCommandDown()&&juce::CharacterFunctions::isLetterOrDigit(ch)) {
+                for(int distance=1;distance<=int(lsampler::grid.size());++distance) {
+                    const int next=(selectedParameter+distance)%int(lsampler::grid.size());
+                    const auto name=juce::String(descriptor(lsampler::grid[size_t(next)]).name);
+                    if(juce::CharacterFunctions::toLowerCase(name[0])==ch){selectParameter(next,true);break;}
+                }
+                return true;
+            }
         }
-        return false;
+        return true; // The parameter surface owns unmatched host shortcuts, including Ctrl keys.
     }
 
     if (isActionButton(source))

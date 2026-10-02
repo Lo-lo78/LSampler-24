@@ -4,7 +4,7 @@
 class LibraryManager
 {
 public:
-    LibraryManager();
+    explicit LibraryManager(const juce::File& rootOverride = {});
 
     const juce::File& root() const noexcept { return rootDir; }
     const juce::File& samples() const noexcept { return samplesDir; }

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(LSampler24 VERSION 0.2.0 LANGUAGES C CXX)
+project(LSampler24 VERSION 0.3.0 LANGUAGES C CXX)
 
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -42,6 +42,9 @@ target_sources(LSampler24 PRIVATE
     Source/ScreenReaderAnnouncer.h
     Source/SamplePool.cpp
     Source/SamplePool.h
+    Source/Parameters.h
+    Source/SlotAudioState.h
+    Source/SlotAudioState.cpp
     Source/SamplerVoice.cpp
     Source/SamplerVoice.h
     Source/LibraryManager.cpp
@@ -65,3 +68,13 @@ if(WIN32)
     target_link_libraries(LSampler24 PRIVATE Uiautomationcore OleAut32)
 endif()
 
+
+option(LSAMPLER_BUILD_TESTS "Build native sampler regression tests" OFF)
+if(LSAMPLER_BUILD_TESTS)
+    enable_testing()
+    juce_add_console_app(LSampler24Tests PRODUCT_NAME "LSampler-24 Regression Tests")
+    target_sources(LSampler24Tests PRIVATE Tests/SamplerTests.cpp)
+    target_compile_features(LSampler24Tests PRIVATE cxx_std_20)
+    target_link_libraries(LSampler24Tests PRIVATE LSampler24 juce::juce_audio_utils)
+    add_test(NAME sampler-regression COMMAND LSampler24Tests)
+endif()

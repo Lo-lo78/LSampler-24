@@ -4,14 +4,15 @@
 #include "SamplerVoice.h"
 #include "LibraryManager.h"
 #include <array>
+#include <vector>
 
 class LSampler24AudioProcessor : public juce::AudioProcessor
 {
 public:
     static constexpr int slotCount = 24;
 
-    LSampler24AudioProcessor();
-    ~LSampler24AudioProcessor() override = default;
+    explicit LSampler24AudioProcessor(const juce::File& libraryRootOverride = {});
+    ~LSampler24AudioProcessor() override;
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
@@ -48,7 +49,7 @@ public:
     void clearCurrentSlot();
     void clearBank();
 
-    int getCurrentSlot() const noexcept { return currentSlot; }
+    int getCurrentSlot() const noexcept { return currentSlot.load(std::memory_order_relaxed); }
     void setCurrentSlot(int slotIndex);
     juce::String getSlotLabel(int slotIndex) const;
 
@@ -64,9 +65,16 @@ public:
     void setVolume(float newVolume);
     void requestPreviewToggle() noexcept
     {
-        previewTargetSlot.store(currentSlot);
+        previewTargetSlot.store(currentSlot.load(std::memory_order_relaxed));
         previewToggleRequested.store(true);
     }
+
+    double getSlotParameter(int gridIndex, int loopIndex = 0) const;
+    void setSlotParameter(int gridIndex, double value, int loopIndex = 0);
+    void resetSlotParameter(int gridIndex, int loopIndex = 0);
+    void applyZeroCrossing(bool loopWindow, int loopIndex = 0);
+    // Diagnostics used by offline regression tests, never by the screen reader.
+    int getActiveVoiceCount() const noexcept { return voicePool.activeVoiceCount(); }
 
     LibraryManager& getLibrary() noexcept { return library; }
 
@@ -75,10 +83,7 @@ private:
     {
         std::shared_ptr<SharedSample> sample;
         juce::File sampleFile;
-        int lowKey = 0;
-        int highKey = 127;
-        int rootNote = 60;
-        float volume = 1.0f;
+        lsampler::SlotParameters parameters;
         juce::String status = "No sample loaded";
     };
 
@@ -87,26 +92,31 @@ private:
     bool writePreset(const juce::File& file, const juce::ValueTree& tree, juce::String& error) const;
     juce::ValueTree readPreset(const juce::File& file, juce::String& error) const;
     bool materialiseSlotSample(int slotIndex, juce::String& error);
-    void markAudioStateDirty() noexcept;
+    void markAudioStateDirty();
     void syncAudioStateFromSlots();
 
     mutable juce::CriticalSection stateLock;
     std::array<SlotState, slotCount> slots;
-    int currentSlot = 0;
+    std::atomic<int> currentSlot { 0 };
     std::atomic<bool> previewToggleRequested { false };
     std::atomic<int> previewTargetSlot { 0 };
-    std::atomic<uint64_t> audioStateRevision { 1 };
-    std::atomic<int> stopVoicesRequest { -2 }; // -2 none, -1 all, 0..23 one slot
-    uint64_t appliedAudioStateRevision = 0;
+    std::atomic<uint32_t> stopVoicesMask { 0 };
     bool previewPlaying = false;
     int previewPlayingSlot = -1;
 
+    struct AudioSnapshot {
+        std::array<lsampler::SlotAudioState, slotCount> states;
+        std::array<std::shared_ptr<SharedSample>, slotCount> owners;
+    };
+    // Single writer (stateLock), single audio reader. Only the writer touches owners.
+    // Dirty flag and buffer index travel in the same lock-free atomic exchange.
+    std::array<AudioSnapshot, 3> snapshots;
+    std::atomic<int> middleSnapshot { 1 };
+    int writerSnapshot = 2, readerSnapshot = 0;
+    uint64_t nextRevision = 0;
+    double preparedSampleRate = 44100;
+    std::vector<std::shared_ptr<SharedSample>> retiredSamples;
     GlobalVoicePool voicePool;
-    std::array<std::shared_ptr<SharedSample>, slotCount> audioSamples;
-    std::array<int, slotCount> audioRootNotes {};
-    std::array<float, slotCount> audioGains {};
-    std::array<int, slotCount> audioLowKeys {};
-    std::array<int, slotCount> audioHighKeys {};
     LibraryManager library;
     SlotState slotClipboard;
     bool slotClipboardHasData = false;

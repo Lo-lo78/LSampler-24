@@ -122,7 +122,19 @@ public:
     bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
 
 private:
-    enum class SlotParameter { lowKey = 0, highKey, originalPitch, volume, count };
+    // Future dedicated Slice Editor routes through this owned modal surface first.
+    // No Slice state or Alt+E command is implemented in this phase.
+    struct ModalKeyboardSurface {
+        virtual ~ModalKeyboardSurface() = default;
+        virtual bool handleKey(const juce::KeyPress&) = 0;
+    };
+    ModalKeyboardSurface* activeModalSurface = nullptr;
+    void openValueEditor();
+    const lsampler::GridEntry& selectedEntry() const;
+    bool selectedRateIsSynced() const;
+    juce::String formatParameter(int index, double value) const;
+    int categoryBegin(int index) const;
+    int categoryEnd(int index) const;
 
     void timerCallback() override;
     void chooseSample();
@@ -174,6 +186,7 @@ private:
     bool parameterPage = false;
     int selectedParameter = 0;
     int stepWidthIndex = 0;
+    int selectedLoop = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LSampler24AudioProcessorEditor)
 };

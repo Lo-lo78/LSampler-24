@@ -1,10 +1,10 @@
 #include "LibraryManager.h"
 #include <juce_cryptography/juce_cryptography.h>
 
-LibraryManager::LibraryManager()
+LibraryManager::LibraryManager(const juce::File& rootOverride)
 {
-    rootDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-                  .getChildFile("LSampler-24");
+    rootDir = rootOverride.getFullPathName().isNotEmpty() ? rootOverride
+        : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("LSampler-24");
     samplesDir = rootDir.getChildFile("Library").getChildFile("Samples");
     slotsDir   = rootDir.getChildFile("Library").getChildFile("Slots");
     banksDir   = rootDir.getChildFile("Library").getChildFile("Banks");

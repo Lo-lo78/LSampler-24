@@ -1,0 +1,50 @@
+LSampler-24 Astra F2 Migration Report
+====================================
+
+Base
+----
+The supplied LSampler-24 TEST2 24-slot JUCE project was extended in place.
+The existing 24-slot layout, 3 columns x 8 slots, shared samples, project/slot/bank naming, and global 96-voice pool remain the base architecture.
+
+Files changed
+-------------
+- Source/Parameters.h: data-driven native per-slot catalog and ten loop memories.
+- Source/SlotAudioState.h/.cpp: immutable/precomputed audio state, coefficient cache and bypass flags.
+- Source/PluginProcessor.h/.cpp: expanded SlotState, schema v3 persistence, native zero-crossing, MIDI mapping, host tempo, multi-output buses and snapshot publication.
+- Source/SamplerVoice.h/.cpp: shared 96-voice engine with mono/poly, cap, legato, portamento, sustain, pitch bend, choke and native DSP.
+- Source/SamplePool.h/.cpp: shared decoded samples, one-time peak/DC analysis and reference aliases.
+- Source/PluginEditor.h/.cpp: catalog-driven Grid/Value editing, loop selection, search, preview and modal keyboard extension point.
+- CMakeLists.txt: new sources and optional native regression target.
+- Tests/SamplerTests.cpp: offline regression suite.
+
+Migrated per-slot categories
+----------------------------
+Slot/performance, mapping, sample window, audio sculpt, machine character, amplitude envelope, LP/HP filters and filter envelopes, LFO 1/2, ten-stage loops, Drive, compressor/gate, Ring, Degrade and FM.
+
+DSP behavior
+------------
+The native engine follows the supplied JSFX equations where the handoff assigns JSFX precedence: source-window playback, reverse, interpolation, downsample quantization, velocity start, velocity gain, ADSR, filters, LFO waveforms and BPM conversion, ring/FM waveforms, tape/soft/digital Drive, compressor/gate, transient shaping, Degrade and Machine Character. Optional modules use precomputed flags and bypass paths.
+
+Persistence
+-----------
+Slot, bank and project state now use schema version 3. Existing version 2 XML aliases (lowKey, highKey, rootNote, volume and samplePath) still load. New fields receive catalog defaults when missing. Save/load, copy/cut/paste and all ten loop memories use one SlotState model.
+
+Realtime and CPU
+----------------
+No file access, ValueTree parsing, screen-reader calls, locks or heap ownership changes occur in processBlock/render. Slot audio states are prepared outside the audio thread and published through a three-buffer atomic snapshot. SamplePool decodes once and slots retain shared references. Disabled filters, LFO destinations, dynamics, Drive, Ring, FM, Degrade, transient and Machine Character paths sleep or bypass.
+
+Accessibility
+-------------
+The current accessible slot workflow remains. The parameter surface is data-driven and follows the LJuno reference: Grid, Value, numeric edit, Tab/Shift+Tab, Alt+V, Enter/Esc, Home/End, Ctrl+Home/Ctrl+End, Page navigation, initial-letter cycling, loop selection with Shift+Up/Down, and Space preview only inside parameters. The modal keyboard hook is reserved for the future Slice Editor.
+
+Deferred by specification
+-------------------------
+Slice and Slice Editor/Alt+E, legacy capture/recording, Slot Length, Memory Free, GMEM/request counters, RAM preview technical bridge controls, destructive Print Sample Window, technical clipboard/load/clear sliders, and legacy 12-minute allocation accounting are not implemented.
+
+Output routing
+--------------
+The plugin declares Main 1/2 plus 24 optional stereo output buses. A slot route is sent only when the corresponding host bus is enabled; it is never falsely folded into Main 1/2.
+
+Verification
+------------
+The optional LSampler24Tests target covered 36,589 checks: catalog/default precedence, clean-path equality, optional DSP bypass, global 96 voice cap, slot cap, mono/poly/legato/portamento/sustain/pitch bend/choke, MIDI offsets, overlapping layering, sample sharing, all slot/bank/project persistence, version 2 compatibility, ten-stage loop progression, routing, concurrent state publication, zero realtime allocations/deletions under guard, and keyboard routing. GitHub Actions remains the authoritative Windows build.
