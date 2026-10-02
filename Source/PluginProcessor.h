@@ -55,6 +55,11 @@ public:
     bool isImportPreviewPlaying() const noexcept { return importPreviewPlayingAtomic.load(std::memory_order_relaxed); }
     bool saveSlotPreset(const juce::File& presetFile, juce::String& error);
     bool loadSlotPreset(const juce::File& presetFile, juce::String& error);
+    bool loadSlotPresetToSlot(const juce::File& presetFile, int slotIndex, juce::String& error);
+    bool prepareLibrarySlotPreview(const juce::File& presetFile, juce::String& error);
+    void requestLibraryPreviewToggle() noexcept { libraryPreviewToggleRequested.store(true); }
+    void requestLibraryPreviewStop() noexcept { libraryPreviewStopRequested.store(true); }
+    bool isLibraryPreviewPlaying() const noexcept { return libraryPreviewPlayingAtomic.load(std::memory_order_relaxed); }
     bool saveBankPreset(const juce::File& presetFile, juce::String& error);
     bool loadBankPreset(const juce::File& presetFile, juce::String& error);
     bool importFilesToLibrary(const juce::Array<juce::File>& sourceFiles, int& importedSlots, int& skippedFiles, juce::String& error);
@@ -167,6 +172,14 @@ private:
     double preparedSampleRate = 44100;
     std::vector<std::shared_ptr<SharedSample>> retiredSamples;
     GlobalVoicePool voicePool;
+    GlobalVoicePool libraryPreviewVoicePool;
+    std::array<lsampler::SlotAudioState, GlobalVoicePool::slotCount> libraryPreviewStates {};
+    std::array<std::shared_ptr<SharedSample>, GlobalVoicePool::slotCount> libraryPreviewOwners {};
+    std::atomic<bool> libraryPreviewToggleRequested { false };
+    std::atomic<bool> libraryPreviewStopRequested { false };
+    std::atomic<bool> libraryPreviewPlayingAtomic { false };
+    bool libraryPreviewPlaying = false;
+    int libraryPreviewNote = 60;
     LibraryManager library;
     SlotState slotClipboard;
     bool slotClipboardHasData = false;

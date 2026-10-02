@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
+#include <map>
 #include "PluginProcessor.h"
 #include <array>
 #include <functional>
@@ -51,7 +52,8 @@ public:
         const auto code = key.getKeyCode();
         const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
         const bool dedicated = (mods.isCtrlDown() && !mods.isAltDown()
-                                && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
+                                && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
+                                    || code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
                             || (mods.isAltDown() && !mods.isCtrlDown() && ch == 'l');
         if (dedicated && shortcut && shortcut(key, this))
             return true;
@@ -99,7 +101,8 @@ public:
         const auto code = key.getKeyCode();
         const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
         const bool dedicated = (mods.isCtrlDown() && !mods.isAltDown()
-                                && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
+                                && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
+                                    || code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
                             || (mods.isAltDown() && !mods.isCtrlDown() && ch == 'l');
         if (dedicated && shortcut && shortcut(key, this))
             return true;
@@ -228,6 +231,19 @@ private:
     void chooseImportFolder();
     void chooseExportLibrary();
     void chooseImportLibrary();
+    void enterSlotLibraryBrowser();
+    void leaveSlotLibraryBrowser(bool announceSlot);
+    void refreshSlotLibraryEntries();
+    void selectSlotLibraryEntry(int index, bool announce);
+    void cycleSlotLibraryEntryByInitial(juce::juce_wchar initial);
+    void announceSlotLibraryEntry();
+    void updateSlotLibraryPreviewForSelection();
+    void toggleSlotLibrarySelection();
+    void shiftSelectSlotLibraryEntry(int direction);
+    void moveSlotLibraryDestination(int direction);
+    void commitSlotLibrarySelection();
+    int nextSlotLibraryFreeSlot(int from) const;
+    bool slotLibraryDestinationReserved(int slot) const;
     void chooseLoadSlot();
     void chooseSaveSlot();
     void chooseLoadBank();
@@ -305,6 +321,25 @@ private:
     juce::juce_wchar importLastInitial = 0;
     juce::String importRememberedEntryPath;
     double importRememberedPosition = 0.0;
+    std::map<juce::String, juce::String> importDirectorySelectionMemory;
+
+
+    struct SlotLibraryEntry { juce::File file; bool directory = false; };
+    struct SlotLibrarySelection { juce::File file; int slot = -1; };
+    LSamplerImportBrowserCell slotLibraryCell;
+    juce::File slotLibraryRoot;
+    juce::File slotLibraryDirectory;
+    std::vector<SlotLibraryEntry> slotLibraryEntries;
+    std::vector<SlotLibrarySelection> slotLibrarySelection;
+    int slotLibraryEntryIndex = 0;
+    int slotLibraryStartSlot = 0;
+    bool slotLibraryActive = false;
+    bool slotLibraryPreviewEnabled = false;
+    bool slotLibraryShiftSelectionActive = false;
+    juce::juce_wchar slotLibraryLastInitial = 0;
+    std::map<juce::String, juce::String> slotLibraryDirectorySelectionMemory;
+    juce::File slotLibraryPendingPreview;
+    int slotLibraryPreviewDelayTicks = 0;
 
     bool parameterPage = false;
     int selectedParameter = 0;

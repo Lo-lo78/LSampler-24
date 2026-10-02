@@ -64,6 +64,43 @@ juce::File LibraryManager::materialiseSample(const juce::File& source, juce::Str
     return dest;
 }
 
+juce::File LibraryManager::materialiseSampleAtRelativePath(const juce::File& source,
+                                                            const juce::String& relativePath,
+                                                            juce::String& error) const
+{
+    error.clear();
+    if (!source.existsAsFile())
+    {
+        error = "Source sample not found";
+        return {};
+    }
+
+    auto normalised = relativePath.replaceCharacter('\\', '/').trimCharactersAtStart("/");
+    if (normalised.isEmpty())
+        normalised = source.getFileName();
+
+    auto desired = samplesDir.getChildFile(normalised.replaceCharacter('/', juce::File::getSeparatorChar()));
+    desired.getParentDirectory().createDirectory();
+
+    const auto sourceSize = source.getSize();
+    const juce::SHA256 sourceHash(source);
+
+    if (desired.existsAsFile())
+    {
+        if (desired.getSize() == sourceSize && juce::SHA256(desired).toHexString() == sourceHash.toHexString())
+            return desired;
+
+        desired = uniqueDestination(desired.getParentDirectory(), desired.getFileName());
+    }
+
+    if (!source.copyFileTo(desired))
+    {
+        error = "Could not copy sample into the LSampler-24 Library";
+        return {};
+    }
+    return desired;
+}
+
 juce::String LibraryManager::makeSampleReference(const juce::File& sampleFile) const
 {
     if (sampleFile.getFullPathName().isEmpty())

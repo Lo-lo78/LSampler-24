@@ -202,6 +202,12 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     addChildComponent(importBrowserCell);
     importBrowserCell.setVisible(false);
 
+    slotLibraryCell.setWantsKeyboardFocus(true);
+    slotLibraryCell.setExplicitFocusOrder(1);
+    slotLibraryCell.addKeyListener(this);
+    addChildComponent(slotLibraryCell);
+    slotLibraryCell.setVisible(false);
+
     importSourceCombo.setWantsKeyboardFocus(true);
     importSourceCombo.setExplicitFocusOrder(2);
     importSourceCombo.setName("Import to Library");
@@ -225,7 +231,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     importLibraryButton.setVisible(false);
 
     loadSample.onClick = [this] { enterImportBrowser(); };
-    loadSlot.onClick   = [this] { chooseLoadSlot(); };
+    loadSlot.onClick   = [this] { enterSlotLibraryBrowser(); };
     saveSlot.onClick   = [this] { chooseSaveSlot(); };
     loadBank.onClick   = [this] { chooseLoadBank(); };
     saveBank.onClick   = [this] { chooseSaveBank(); };
@@ -234,7 +240,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
 
     refreshSlotCells();
     leaveSlotParameters();
-    startTimerHz(5);
+    startTimerHz(10);
 }
 
 LSampler24AudioProcessorEditor::~LSampler24AudioProcessorEditor()
@@ -254,6 +260,12 @@ void LSampler24AudioProcessorEditor::resized()
 {
     auto area = getLocalBounds().reduced(16);
     area.removeFromTop(42);
+
+    if (slotLibraryActive)
+    {
+        slotLibraryCell.setBounds(area.removeFromTop(42));
+        return;
+    }
 
     if (importBrowserActive)
     {
@@ -580,6 +592,82 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     const bool sourceIsValueEditor = dynamic_cast<juce::TextEditor*>(source) != nullptr
                                   && parameterValue.isParentOf(source);
 
+    if (slotLibraryActive)
+    {
+        if (code == juce::KeyPress::escapeKey) { leaveSlotLibraryBrowser(true); return true; }
+        if (mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
+            && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
+        {
+            moveSlotLibraryDestination(code == juce::KeyPress::upKey ? -1 : 1); return true;
+        }
+        if (mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown()
+            && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
+        {
+            shiftSelectSlotLibraryEntry(code == juce::KeyPress::upKey ? -1 : 1); return true;
+        }
+        if (code == juce::KeyPress::upKey && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown()) { selectSlotLibraryEntry(slotLibraryEntryIndex - 1, true); return true; }
+        if (code == juce::KeyPress::downKey && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown()) { selectSlotLibraryEntry(slotLibraryEntryIndex + 1, true); return true; }
+        if (code == juce::KeyPress::pageUpKey) { selectSlotLibraryEntry(slotLibraryEntryIndex - 10, true); return true; }
+        if (code == juce::KeyPress::pageDownKey) { selectSlotLibraryEntry(slotLibraryEntryIndex + 10, true); return true; }
+        if (code == juce::KeyPress::homeKey) { selectSlotLibraryEntry(0, true); return true; }
+        if (code == juce::KeyPress::endKey) { selectSlotLibraryEntry(int(slotLibraryEntries.size()) - 1, true); return true; }
+        if (code == juce::KeyPress::backspaceKey)
+        {
+            if (slotLibraryDirectory == slotLibraryRoot) return true;
+            const auto child = slotLibraryDirectory;
+            auto parent = slotLibraryDirectory.getParentDirectory();
+            if (!parent.isAChildOf(slotLibraryRoot) && parent != slotLibraryRoot) parent = slotLibraryRoot;
+            slotLibraryDirectorySelectionMemory[parent.getFullPathName()] = child.getFullPathName();
+            slotLibraryDirectory = parent;
+            refreshSlotLibraryEntries();
+            selectSlotLibraryEntry(slotLibraryEntryIndex, true);
+            return true;
+        }
+        if (code == juce::KeyPress::spaceKey && mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown())
+        { toggleSlotLibrarySelection(); return true; }
+        if (code == juce::KeyPress::spaceKey && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown())
+        {
+            if (slotLibraryEntries.empty()) return true;
+            const auto& e = slotLibraryEntries[size_t(slotLibraryEntryIndex)];
+            if (e.directory) return true;
+            if (slotLibraryPreviewEnabled)
+            {
+                slotLibraryPreviewEnabled = false;
+                slotLibraryPendingPreview = {};
+                slotLibraryPreviewDelayTicks = 0;
+                processor.requestLibraryPreviewStop();
+            }
+            else
+            {
+                juce::String error;
+                if (processor.prepareLibrarySlotPreview(e.file, error))
+                {
+                    slotLibraryPreviewEnabled = true;
+                    processor.requestLibraryPreviewToggle();
+                }
+                else lsampler::announceToActiveScreenReader(slotLibraryCell, error);
+            }
+            return true;
+        }
+        if (code == juce::KeyPress::returnKey)
+        {
+            if (slotLibraryEntries.empty()) return true;
+            const auto& e = slotLibraryEntries[size_t(slotLibraryEntryIndex)];
+            if (e.directory)
+            {
+                slotLibraryDirectorySelectionMemory[slotLibraryDirectory.getFullPathName()] = e.file.getFullPathName();
+                slotLibraryDirectory = e.file; refreshSlotLibraryEntries(); selectSlotLibraryEntry(slotLibraryEntryIndex, true); return true;
+            }
+            commitSlotLibrarySelection(); return true;
+        }
+        if (!mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown() && !mods.isShiftDown())
+        {
+            auto typed = key.getTextCharacter();
+            if (typed >= 33 && typed != 127) { cycleSlotLibraryEntryByInitial(typed); return true; }
+        }
+        return true;
+    }
+
     if (importBrowserActive)
     {
         const bool onImportSource = source == &importSourceCombo;
@@ -661,20 +749,25 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         {
             if (importRecentPathsMode) { leaveImportRecentPaths(); return true; }
             if (importDriveList) return true;
+            const auto childWeCameFrom = importDirectory;
             auto parent = importDirectory.getParentDirectory();
             if (parent != importDirectory)
             {
                 importDirectory = parent;
+                importDirectorySelectionMemory[parent.getFullPathName()] = childWeCameFrom.getFullPathName();
                 addImportRecentPath(importDirectory);
                 refreshImportEntries();
-                selectImportEntry(0, true);
+                selectImportEntry(importEntryIndex, true);
                 saveImportSettings();
             }
             else
             {
                 importDriveList = true;
                 refreshImportEntries();
-                selectImportEntry(0, true);
+                int rootIndex = 0;
+                for (int i = 0; i < static_cast<int>(importEntries.size()); ++i)
+                    if (importEntries[static_cast<size_t>(i)].file == childWeCameFrom) { rootIndex = i; break; }
+                selectImportEntry(rootIndex, true);
             }
             return true;
         }
@@ -734,12 +827,14 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             const auto& entry = importEntries[static_cast<size_t>(importEntryIndex)];
             if (entry.directory)
             {
+                if (!importDriveList && importDirectory.isDirectory())
+                    importDirectorySelectionMemory[importDirectory.getFullPathName()] = entry.file.getFullPathName();
                 importDirectory = entry.file;
                 importDriveList = false;
                 importRecentPathsMode = false;
                 addImportRecentPath(importDirectory);
                 refreshImportEntries();
-                selectImportEntry(0, true);
+                selectImportEntry(importEntryIndex, true);
                 saveImportSettings();
             }
             else commitImportPlan();
@@ -795,6 +890,23 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         return true;
     }
 
+    // Ctrl+Up/Down changes the current slot while keeping the parameter grid open.
+    if (parameterPage && !sourceIsValueEditor && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
+        && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
+    {
+        const int current = processor.getCurrentSlot();
+        const int next = current + (code == juce::KeyPress::upKey ? -1 : 1);
+        if (next >= 0 && next < LSampler24AudioProcessor::slotCount)
+        {
+            processor.setCurrentSlot(next);
+            refreshSlotCells();
+            refreshParameterGrid();
+            configureValueForSelectedParameter();
+            lsampler::announceToActiveScreenReader(parameterSelector, processor.getSlotLabel(next) + ". " + parameterCellText(selectedParameter));
+        }
+        return true;
+    }
+
     // Ctrl+Left/Right scrubs Sample Play Start without moving Grid/Value focus.
     // If Space preview is already playing, restart it from the new start position.
     if (parameterPage && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
@@ -830,7 +942,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
     {
         if (ch == 'o' && !mods.isShiftDown()) { enterImportBrowser(); return true; }
-        if (ch == 's' && !mods.isShiftDown()) { chooseLoadSlot(); return true; }
+        if (ch == 's' && !mods.isShiftDown()) { enterSlotLibraryBrowser(); return true; }
         if (ch == 'b' && !mods.isShiftDown()) { chooseLoadBank(); return true; }
         if (ch == 's' && mods.isShiftDown()) { chooseSaveSlot(); return true; }
         if (ch == 'b' && mods.isShiftDown()) { chooseSaveBank(); return true; }
@@ -1085,6 +1197,16 @@ void LSampler24AudioProcessorEditor::timerCallback()
     refreshSlotCells();
     if (parameterPage)
         refreshParameterGrid();
+    if (slotLibraryActive && slotLibraryPreviewDelayTicks > 0)
+    {
+        --slotLibraryPreviewDelayTicks;
+        if (slotLibraryPreviewDelayTicks == 0 && slotLibraryPreviewEnabled && slotLibraryPendingPreview.existsAsFile())
+        {
+            juce::String error;
+            if (processor.prepareLibrarySlotPreview(slotLibraryPendingPreview, error))
+                processor.requestLibraryPreviewToggle();
+        }
+    }
 }
 
 void LSampler24AudioProcessorEditor::showResult(bool ok, const juce::String& error, const juce::String& okMessage)
@@ -1210,6 +1332,14 @@ void LSampler24AudioProcessorEditor::refreshImportEntries()
                 importEntries.push_back({ f, false });
     }
     importEntryIndex = importEntries.empty() ? 0 : juce::jlimit(0, int(importEntries.size()) - 1, importEntryIndex);
+    if (!importEntries.empty() && !importRecentPathsMode && !importDriveList && importDirectory.isDirectory())
+    {
+        const auto it = importDirectorySelectionMemory.find(importDirectory.getFullPathName());
+        if (it != importDirectorySelectionMemory.end())
+            for (int i = 0; i < static_cast<int>(importEntries.size()); ++i)
+                if (importEntries[static_cast<size_t>(i)].file.getFullPathName() == it->second)
+                { importEntryIndex = i; break; }
+    }
     if (importEntries.empty()) importBrowserCell.setBrowserText(importRecentPathsMode ? "No recent paths" : (importDriveList ? "No drives" : "Empty folder"));
     else selectImportEntry(importEntryIndex, false);
 }
@@ -1250,6 +1380,8 @@ void LSampler24AudioProcessorEditor::selectImportEntry(int index, bool announce)
     }
 
     importBrowserCell.setBrowserText(text);
+    if (!importRecentPathsMode && !importDriveList && importDirectory.isDirectory())
+        importDirectorySelectionMemory[importDirectory.getFullPathName()] = e.file.getFullPathName();
     if (announce) announceImportEntry();
     updateImportPreviewForSelection();
     if (!importRecentPathsMode) saveImportSettings();
@@ -1991,6 +2123,268 @@ void LSampler24AudioProcessorEditor::chooseImportLibrary()
             }
             safeThis->importLibraryButton.grabKeyboardFocus();
         });
+}
+
+
+void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser()
+{
+    if (slotLibraryActive) return;
+    processor.requestPreviewStop();
+    processor.requestImportPreviewStop();
+    processor.requestLibraryPreviewStop();
+    parameterPage = false;
+    importBrowserActive = false;
+    slotLibraryActive = true;
+    slotLibraryPreviewEnabled = false;
+    slotLibraryShiftSelectionActive = false;
+    slotLibrarySelection.clear();
+    slotLibraryStartSlot = processor.getCurrentSlot();
+    slotLibraryRoot = processor.getLibrary().slots();
+    slotLibraryRoot.createDirectory();
+    if (!slotLibraryDirectory.isDirectory() || (slotLibraryDirectory != slotLibraryRoot && !slotLibraryDirectory.isAChildOf(slotLibraryRoot)))
+        slotLibraryDirectory = slotLibraryRoot;
+
+    for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
+    loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
+    loadBank.setVisible(false); saveBank.setVisible(false);
+    parameterSelector.setVisible(false); parameterValue.setVisible(false);
+    importBrowserCell.setVisible(false); importSourceCombo.setVisible(false);
+    exportLibraryButton.setVisible(false); importLibraryButton.setVisible(false);
+    slotLibraryCell.setVisible(true);
+    slotLibraryCell.setWantsKeyboardFocus(true);
+    refreshSlotLibraryEntries();
+    resized();
+    slotLibraryCell.grabKeyboardFocus();
+    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+    {
+        if (safeThis != nullptr && safeThis->slotLibraryActive)
+            safeThis->announceSlotLibraryEntry();
+    });
+}
+
+void LSampler24AudioProcessorEditor::leaveSlotLibraryBrowser(bool announceSlot)
+{
+    if (!slotLibraryActive) return;
+    processor.requestLibraryPreviewStop();
+    slotLibraryPendingPreview = {};
+    slotLibraryPreviewDelayTicks = 0;
+    slotLibraryPreviewEnabled = false;
+    slotLibraryActive = false;
+    slotLibraryCell.setVisible(false);
+    slotLibraryCell.setWantsKeyboardFocus(false);
+    for (int i = 0; i < static_cast<int>(slotCells.size()); ++i)
+    {
+        auto& cell = slotCells[size_t(i)];
+        cell.setVisible(true);
+        cell.setWantsKeyboardFocus(i == processor.getCurrentSlot());
+    }
+    loadSample.setVisible(true); loadSlot.setVisible(true); saveSlot.setVisible(true);
+    loadBank.setVisible(true); saveBank.setVisible(true);
+    parameterSelector.setVisible(false); parameterValue.setVisible(false);
+    resized();
+    if (announceSlot) returnToCurrentSlotAndAnnounce();
+}
+
+static juce::String cleanLibrarySlotName(const juce::File& file)
+{
+    auto name = file.getFileName();
+    const juce::String ext = LibraryManager::slotExtension;
+    if (name.endsWithIgnoreCase(ext)) name = name.dropLastCharacters(ext.length());
+    if (name.startsWithIgnoreCase("Slot_")) name = name.substring(5);
+    return name;
+}
+
+void LSampler24AudioProcessorEditor::refreshSlotLibraryEntries()
+{
+    slotLibraryEntries.clear();
+    if (!slotLibraryDirectory.isDirectory()) slotLibraryDirectory = slotLibraryRoot;
+    juce::Array<juce::File> dirs, files;
+    slotLibraryDirectory.findChildFiles(dirs, juce::File::findDirectories, false);
+    slotLibraryDirectory.findChildFiles(files, juce::File::findFiles, false,
+        "*" + juce::String(LibraryManager::slotExtension));
+    for (const auto& f : dirs) slotLibraryEntries.push_back({ f, true });
+    for (const auto& f : files) slotLibraryEntries.push_back({ f, false });
+    slotLibraryEntryIndex = slotLibraryEntries.empty() ? 0 : juce::jlimit(0, int(slotLibraryEntries.size()) - 1, slotLibraryEntryIndex);
+    const auto it = slotLibraryDirectorySelectionMemory.find(slotLibraryDirectory.getFullPathName());
+    if (it != slotLibraryDirectorySelectionMemory.end())
+        for (int i = 0; i < static_cast<int>(slotLibraryEntries.size()); ++i)
+            if (slotLibraryEntries[size_t(i)].file.getFullPathName() == it->second) { slotLibraryEntryIndex = i; break; }
+    if (slotLibraryEntries.empty()) slotLibraryCell.setBrowserText("Empty folder");
+    else selectSlotLibraryEntry(slotLibraryEntryIndex, false);
+}
+
+void LSampler24AudioProcessorEditor::selectSlotLibraryEntry(int index, bool announce)
+{
+    if (slotLibraryEntries.empty()) { slotLibraryCell.setBrowserText("Empty folder"); return; }
+    slotLibraryEntryIndex = juce::jlimit(0, int(slotLibraryEntries.size()) - 1, index);
+    const auto& e = slotLibraryEntries[size_t(slotLibraryEntryIndex)];
+    juce::String text;
+    if (e.directory) text = "Folder " + e.file.getFileName();
+    else
+    {
+        text = cleanLibrarySlotName(e.file);
+        int target = -1;
+        for (const auto& selected : slotLibrarySelection) if (selected.file == e.file) { target = selected.slot; break; }
+        if (target >= 0) text = "Selected. Slot " + juce::String(target + 1) + ", " + text;
+    }
+    slotLibraryCell.setBrowserText(text);
+    slotLibraryDirectorySelectionMemory[slotLibraryDirectory.getFullPathName()] = e.file.getFullPathName();
+    slotLibraryShiftSelectionActive = false;
+    if (announce) announceSlotLibraryEntry();
+    updateSlotLibraryPreviewForSelection();
+}
+
+void LSampler24AudioProcessorEditor::announceSlotLibraryEntry()
+{
+    if (slotLibraryEntries.empty())
+        lsampler::announceToActiveScreenReader(slotLibraryCell, "Empty folder");
+    else
+        lsampler::announceToActiveScreenReader(slotLibraryCell, slotLibraryCell.getTitle());
+}
+
+void LSampler24AudioProcessorEditor::cycleSlotLibraryEntryByInitial(juce::juce_wchar initial)
+{
+    if (slotLibraryEntries.empty()) return;
+    const auto target = juce::CharacterFunctions::toLowerCase(initial);
+    slotLibraryLastInitial = target;
+    const int count = int(slotLibraryEntries.size());
+    for (int offset = 1; offset <= count; ++offset)
+    {
+        const int index = (slotLibraryEntryIndex + offset) % count;
+        auto name = slotLibraryEntries[size_t(index)].directory ? slotLibraryEntries[size_t(index)].file.getFileName()
+                                                                  : cleanLibrarySlotName(slotLibraryEntries[size_t(index)].file);
+        if (name.isNotEmpty() && juce::CharacterFunctions::toLowerCase(name[0]) == target)
+        { selectSlotLibraryEntry(index, true); return; }
+    }
+}
+
+void LSampler24AudioProcessorEditor::updateSlotLibraryPreviewForSelection()
+{
+    processor.requestLibraryPreviewStop();
+    slotLibraryPendingPreview = {};
+    slotLibraryPreviewDelayTicks = 0;
+    if (!slotLibraryPreviewEnabled || slotLibraryEntries.empty()) return;
+    const auto& e = slotLibraryEntries[size_t(slotLibraryEntryIndex)];
+    if (e.directory) return;
+    slotLibraryPendingPreview = e.file;
+    slotLibraryPreviewDelayTicks = 1; // 10 Hz timer: short debounce while rapidly browsing
+}
+
+bool LSampler24AudioProcessorEditor::slotLibraryDestinationReserved(int slot) const
+{
+    for (const auto& item : slotLibrarySelection) if (item.slot == slot) return true;
+    return false;
+}
+
+int LSampler24AudioProcessorEditor::nextSlotLibraryFreeSlot(int from) const
+{
+    for (int slot = juce::jmax(0, from); slot < LSampler24AudioProcessor::slotCount; ++slot)
+        if (!processor.isSlotOccupied(slot) && !slotLibraryDestinationReserved(slot)) return slot;
+    return -1;
+}
+
+void LSampler24AudioProcessorEditor::moveSlotLibraryDestination(int direction)
+{
+    int slot = slotLibraryStartSlot;
+    while (true)
+    {
+        slot += direction < 0 ? -1 : 1;
+        if (slot < 0 || slot >= LSampler24AudioProcessor::slotCount) return; // silent border
+        if (!processor.isSlotOccupied(slot) && !slotLibraryDestinationReserved(slot))
+        {
+            slotLibraryStartSlot = slot;
+            processor.setCurrentSlot(slot);
+            lsampler::announceToActiveScreenReader(slotLibraryCell, "Slot " + juce::String(slot + 1));
+            return;
+        }
+    }
+}
+
+void LSampler24AudioProcessorEditor::toggleSlotLibrarySelection()
+{
+    if (slotLibraryEntries.empty()) return;
+    const auto& e = slotLibraryEntries[size_t(slotLibraryEntryIndex)];
+    if (e.directory) return;
+    for (auto it = slotLibrarySelection.begin(); it != slotLibrarySelection.end(); ++it)
+        if (it->file == e.file)
+        {
+            slotLibrarySelection.erase(it);
+            selectSlotLibraryEntry(slotLibraryEntryIndex, true);
+            return;
+        }
+    const int slot = nextSlotLibraryFreeSlot(slotLibraryStartSlot);
+    if (slot < 0) { lsampler::announceToActiveScreenReader(slotLibraryCell, "No free slots"); return; }
+    slotLibrarySelection.push_back({ e.file, slot });
+    slotLibraryStartSlot = slot;
+    selectSlotLibraryEntry(slotLibraryEntryIndex, true);
+}
+
+void LSampler24AudioProcessorEditor::shiftSelectSlotLibraryEntry(int direction)
+{
+    if (slotLibraryEntries.empty()) return;
+    const auto current = slotLibraryEntryIndex;
+    if (!slotLibraryShiftSelectionActive)
+    {
+        const auto& e = slotLibraryEntries[size_t(current)];
+        if (!e.directory)
+        {
+            bool found = false; for (const auto& x : slotLibrarySelection) if (x.file == e.file) found = true;
+            if (!found) toggleSlotLibrarySelection();
+        }
+        slotLibraryShiftSelectionActive = true;
+    }
+    const int next = juce::jlimit(0, int(slotLibraryEntries.size()) - 1, current + direction);
+    if (next == current) return;
+    slotLibraryEntryIndex = next;
+    const auto& e = slotLibraryEntries[size_t(next)];
+    if (!e.directory)
+    {
+        bool found = false; for (const auto& x : slotLibrarySelection) if (x.file == e.file) found = true;
+        if (!found)
+        {
+            const int slot = nextSlotLibraryFreeSlot(slotLibraryStartSlot);
+            if (slot >= 0) { slotLibrarySelection.push_back({ e.file, slot }); slotLibraryStartSlot = slot; }
+        }
+    }
+    juce::String text = e.directory ? "Folder " + e.file.getFileName() : cleanLibrarySlotName(e.file);
+    if (!e.directory)
+        for (const auto& x : slotLibrarySelection) if (x.file == e.file) text = "Selected. Slot " + juce::String(x.slot + 1) + ", " + text;
+    slotLibraryCell.setBrowserText(text);
+    announceSlotLibraryEntry();
+    updateSlotLibraryPreviewForSelection();
+}
+
+void LSampler24AudioProcessorEditor::commitSlotLibrarySelection()
+{
+    if (slotLibraryEntries.empty()) return;
+    processor.requestLibraryPreviewStop();
+    std::vector<SlotLibrarySelection> work = slotLibrarySelection;
+    if (work.empty())
+    {
+        const auto& e = slotLibraryEntries[size_t(slotLibraryEntryIndex)];
+        if (e.directory) return;
+        int target = processor.getCurrentSlot();
+        work.push_back({ e.file, target });
+    }
+    juce::String firstError;
+    int highest = -1;
+    bool any = false;
+    for (const auto& item : work)
+    {
+        juce::String error;
+        if (processor.loadSlotPresetToSlot(item.file, item.slot, error))
+        {
+            highest = juce::jmax(highest, item.slot); any = true;
+        }
+        else if (firstError.isEmpty()) firstError = error;
+    }
+    if (!any)
+    {
+        if (firstError.isNotEmpty()) lsampler::announceToActiveScreenReader(slotLibraryCell, firstError);
+        return;
+    }
+    processor.setCurrentSlot(highest);
+    leaveSlotLibraryBrowser(true);
 }
 
 void LSampler24AudioProcessorEditor::chooseLoadSlot()
