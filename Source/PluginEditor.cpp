@@ -1056,7 +1056,7 @@ void LSampler24AudioProcessorEditor::selectImportEntry(int index, bool announce)
     updateImportPreviewForSelection();
 }
 
-void LSampler24AudioProcessorEditor::cycleImportEntryByInitial(juce_wchar initial)
+void LSampler24AudioProcessorEditor::cycleImportEntryByInitial(juce::juce_wchar initial)
 {
     if (importEntries.empty()) return;
     const auto target = juce::CharacterFunctions::toLowerCase(initial);

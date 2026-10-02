@@ -195,7 +195,7 @@ private:
     void leaveImportBrowser(bool announceSlot);
     void refreshImportEntries();
     void selectImportEntry(int index, bool announce);
-    void cycleImportEntryByInitial(juce_wchar initial);
+    void cycleImportEntryByInitial(juce::juce_wchar initial);
     void updateImportPreviewForSelection();
     void announceImportEntry();
     void prepareImportPreviewForCurrent();
