@@ -580,7 +580,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             return true;
         }
         if (code == juce::KeyPress::spaceKey && mods.isShiftDown()) { toggleImportFileSelection(); return true; }
-        const auto logicalKey = juce::CharacterFunctions::toLowerCase(static_cast<juce_wchar>(code));
+        const auto logicalKey = juce::CharacterFunctions::toLowerCase(static_cast<juce::juce_wchar>(code));
         if (mods.isCtrlDown() && !mods.isAltDown() && logicalKey == 'q') { markImportSliceStart(); return true; }
         if (mods.isCtrlDown() && !mods.isAltDown() && logicalKey == 'w') { markImportSliceEnd(); return true; }
         if (mods.isCtrlDown() && (code == juce::KeyPress::homeKey || code == juce::KeyPress::endKey))
