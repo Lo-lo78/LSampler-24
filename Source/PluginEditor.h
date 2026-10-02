@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 #include <array>
 #include <functional>
+#include <vector>
 
 class LSamplerSlotCell final : public juce::Component
 {
@@ -145,6 +146,21 @@ private:
     Shortcut shortcut;
 };
 
+
+class LSamplerImportBrowserCell final : public juce::Component
+{
+public:
+    void setBrowserText(const juce::String& t) { text = t; setTitle(text); setName({}); setDescription({}); repaint(); }
+    void paint(juce::Graphics& g) override
+    {
+        g.setColour(findColour(juce::Label::textColourId));
+        g.setFont(16.0f);
+        g.drawText(text, getLocalBounds().reduced(6), juce::Justification::centredLeft, true);
+    }
+private:
+    juce::String text;
+};
+
 class LSampler24AudioProcessorEditor : public juce::AudioProcessorEditor,
                                        private juce::Timer,
                                        private juce::KeyListener
@@ -175,6 +191,20 @@ private:
 
     void timerCallback() override;
     void chooseSample();
+    void enterImportBrowser();
+    void leaveImportBrowser(bool announceSlot);
+    void refreshImportEntries();
+    void selectImportEntry(int index, bool announce);
+    void announceImportEntry();
+    void prepareImportPreviewForCurrent();
+    void seekImportPreview(double deltaSeconds);
+    void markImportSliceStart();
+    void markImportSliceEnd();
+    void toggleImportFileSelection();
+    void deleteImportPlanItemAtCursor();
+    void commitImportPlan();
+    int nextImportFreeSlot() const;
+    bool importSlotReserved(int slot) const;
     void chooseLoadSlot();
     void chooseSaveSlot();
     void chooseLoadBank();
@@ -220,6 +250,21 @@ private:
     std::unique_ptr<juce::LookAndFeel_V4> valueLookAndFeel;
 
     std::unique_ptr<juce::FileChooser> chooser;
+
+    struct ImportEntry { juce::File file; bool directory = false; };
+    struct ImportPlanItem { juce::File file; int slot = -1; bool slice = false; double start = 0.0, end = 0.0; };
+    LSamplerImportBrowserCell importBrowserCell;
+    juce::File importDirectory;
+    std::vector<ImportEntry> importEntries;
+    std::vector<ImportPlanItem> importPlan;
+    int importEntryIndex = 0;
+    int importStartSlot = 0;
+    juce::File importPreviewFile;
+    bool importSlicePending = false;
+    juce::File importSliceFile;
+    double importSliceStart = 0.0;
+    bool importBrowserActive = false;
+
     bool parameterPage = false;
     int selectedParameter = 0;
     int stepWidthIndex = 0;

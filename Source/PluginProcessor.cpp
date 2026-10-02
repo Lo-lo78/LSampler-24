@@ -35,6 +35,8 @@ void LSampler24AudioProcessor::releaseResources()
     voicePool.allNotesOff();
     previewPlaying = false;
     previewPlayingSlot = -1;
+    importPreviewPlaying = false;
+    importPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
 }
 
 bool LSampler24AudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -78,6 +80,49 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
     syncAudioStateFromSlots();
+    if ((importPreviewMiddle.load(std::memory_order_acquire) & 4) != 0)
+    {
+        importPreviewReader = importPreviewMiddle.exchange(importPreviewReader, std::memory_order_acq_rel) & 3;
+        const auto& p = importPreviewSnapshots[static_cast<size_t>(importPreviewReader)];
+        if (p.revision != importPreviewSeenRevision)
+        {
+            importPreviewSeenRevision = p.revision;
+            importPreviewPosition = 0.0;
+            importPreviewPositionSeconds.store(0.0, std::memory_order_relaxed);
+            importPreviewPlaying = false;
+            importPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
+        }
+    }
+    const auto& importPreview = importPreviewSnapshots[static_cast<size_t>(importPreviewReader)];
+    if (importPreviewStopRequested.exchange(false, std::memory_order_acq_rel))
+    {
+        importPreviewPlaying = false;
+        importPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
+    }
+    if (importPreviewSeekRequested.exchange(false, std::memory_order_acq_rel))
+    {
+        if (importPreview.sample != nullptr)
+        {
+            const double rate = importPreview.sample->sourceSampleRate > 0.0 ? importPreview.sample->sourceSampleRate : preparedSampleRate;
+            const double seconds = juce::jlimit(0.0, importPreviewLengthSeconds.load(std::memory_order_relaxed), importPreviewSeekSeconds.load(std::memory_order_relaxed));
+            importPreviewPosition = seconds * rate;
+            importPreviewPositionSeconds.store(seconds, std::memory_order_relaxed);
+        }
+    }
+    if (importPreviewToggleRequested.exchange(false, std::memory_order_acq_rel))
+    {
+        if (importPreview.sample != nullptr)
+        {
+            if (importPreviewPlaying)
+                importPreviewPlaying = false;
+            else
+            {
+                if (importPreviewPosition >= importPreview.sample->audio.getNumSamples() - 1) importPreviewPosition = 0.0;
+                importPreviewPlaying = true;
+            }
+            importPreviewPlayingAtomic.store(importPreviewPlaying, std::memory_order_relaxed);
+        }
+    }
     const auto& audio = snapshots[size_t(readerSnapshot)].states;
     const auto stop = stopVoicesMask.exchange(0, std::memory_order_acq_rel);
     for (int i = 0; i < slotCount; ++i) if ((stop & (1u << i)) != 0) voicePool.stopSlotVoices(i);
@@ -154,6 +199,41 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             voicePool.pitchBend(channel, (int(d[1] & 127) | (int(d[2] & 127) << 7)) - 8192);
     }
     voicePool.render(buffer, offset, buffer.getNumSamples()-offset);
+
+    // F3-style import browser preview: a lightweight direct source audition.
+    // It never changes slot state and performs no optional slot DSP.
+    if (importPreviewPlaying && importPreview.sample != nullptr && buffer.getNumChannels() > 0)
+    {
+        const auto& src = importPreview.sample->audio;
+        const int n = src.getNumSamples();
+        const int channels = src.getNumChannels();
+        const double sourceRate = importPreview.sample->sourceSampleRate > 0.0 ? importPreview.sample->sourceSampleRate : preparedSampleRate;
+        const double inc = sourceRate / juce::jmax(1.0, preparedSampleRate);
+        auto* outL = buffer.getWritePointer(0);
+        auto* outR = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : outL;
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+        {
+            if (importPreviewPosition >= n - 1)
+            {
+                importPreviewPosition = juce::jmax(0.0, double(n - 1));
+                importPreviewPlaying = false;
+                importPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
+                break;
+            }
+            const int a = juce::jlimit(0, n - 1, int(importPreviewPosition));
+            const int b = juce::jmin(n - 1, a + 1);
+            const float frac = float(importPreviewPosition - a);
+            auto read = [&](int ch) noexcept
+            {
+                const auto* d = src.getReadPointer(juce::jmin(ch, channels - 1));
+                return d[a] + (d[b] - d[a]) * frac;
+            };
+            const float l = read(0), r = channels > 1 ? read(1) : l;
+            outL[i] += l; outR[i] += r;
+            importPreviewPosition += inc;
+        }
+        importPreviewPositionSeconds.store(importPreviewPosition / juce::jmax(1.0, sourceRate), std::memory_order_relaxed);
+    }
     midi.clear();
     if (previewPlaying && !voicePool.hasPreviewVoices(previewPlayingSlot)) { previewPlaying = false; previewPlayingSlot = -1; }
 }
@@ -195,6 +275,67 @@ bool LSampler24AudioProcessor::loadSample(const juce::File& file, juce::String& 
         s.status = "Loaded: " + file.getFileName();
         markAudioStateDirty();
     }
+    return true;
+}
+
+
+bool LSampler24AudioProcessor::isSlotOccupied(int slotIndex) const
+{
+    slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
+    const juce::ScopedLock lock(stateLock);
+    return slots[static_cast<size_t>(slotIndex)].sample != nullptr;
+}
+
+bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int slotIndex, double startSeconds, double endSeconds, juce::String& error)
+{
+    slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
+    auto loaded = SamplePool::instance().load(file, error);
+    if (!loaded) return false;
+
+    const double sourceRate = loaded->sourceSampleRate > 0.0 ? loaded->sourceSampleRate : preparedSampleRate;
+    const double totalSeconds = loaded->audio.getNumSamples() / juce::jmax(1.0, sourceRate);
+    const bool hasSlice = endSeconds > startSeconds + 0.0005 && totalSeconds > 0.0;
+    double startPct = 0.0, endPct = 100.0;
+    if (hasSlice)
+    {
+        startSeconds = juce::jlimit(0.0, totalSeconds, startSeconds);
+        endSeconds = juce::jlimit(startSeconds + 0.0005, totalSeconds, endSeconds);
+        startPct = 100.0 * startSeconds / totalSeconds;
+        endPct = 100.0 * endSeconds / totalSeconds;
+    }
+
+    {
+        const juce::ScopedLock lock(stateLock);
+        auto& slot = slots[static_cast<size_t>(slotIndex)];
+        slot.sample = std::move(loaded);
+        slot.sampleFile = file;
+        slot.parameters = lsampler::SlotParameters{};
+        slot.parameters[lsampler::P::root] = 60.0;
+        slot.parameters[lsampler::P::low] = 0.0;
+        slot.parameters[lsampler::P::high] = 127.0;
+        slot.parameters[lsampler::P::sample_start] = startPct;
+        slot.parameters[lsampler::P::sample_end] = endPct;
+        slot.parameters[lsampler::P::sample_play_start] = 0.0;
+        slot.status = "Loaded: " + file.getFileName();
+        markAudioStateDirty();
+    }
+    return true;
+}
+
+bool LSampler24AudioProcessor::prepareImportPreview(const juce::File& file, juce::String& error)
+{
+    auto loaded = SamplePool::instance().load(file, error);
+    if (!loaded) return false;
+    auto& target = importPreviewSnapshots[static_cast<size_t>(importPreviewWriter)];
+    target.owner = std::move(loaded);
+    target.sample = target.owner.get();
+    target.revision = ++importPreviewRevision;
+    const double rate = target.sample->sourceSampleRate > 0.0 ? target.sample->sourceSampleRate : preparedSampleRate;
+    importPreviewLengthSeconds.store(target.sample->audio.getNumSamples() / juce::jmax(1.0, rate), std::memory_order_relaxed);
+    importPreviewWriter = importPreviewMiddle.exchange(importPreviewWriter | 4, std::memory_order_acq_rel) & 3;
+    importPreviewSeekSeconds.store(0.0, std::memory_order_relaxed);
+    importPreviewSeekRequested.store(true, std::memory_order_release);
+    importPreviewStopRequested.store(true, std::memory_order_release);
     return true;
 }
 

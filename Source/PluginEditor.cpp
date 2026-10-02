@@ -194,7 +194,12 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     };
     addAndMakeVisible(parameterValue);
 
-    loadSample.onClick = [this] { chooseSample(); };
+    importBrowserCell.setWantsKeyboardFocus(true);
+    importBrowserCell.addKeyListener(this);
+    addChildComponent(importBrowserCell);
+    importBrowserCell.setVisible(false);
+
+    loadSample.onClick = [this] { enterImportBrowser(); };
     loadSlot.onClick   = [this] { chooseLoadSlot(); };
     saveSlot.onClick   = [this] { chooseSaveSlot(); };
     loadBank.onClick   = [this] { chooseLoadBank(); };
@@ -222,6 +227,12 @@ void LSampler24AudioProcessorEditor::resized()
 {
     auto area = getLocalBounds().reduced(16);
     area.removeFromTop(42);
+
+    if (importBrowserActive)
+    {
+        importBrowserCell.setBounds(area.removeFromTop(42));
+        return;
+    }
 
     if (!parameterPage)
     {
@@ -533,6 +544,53 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     const bool sourceIsValueEditor = dynamic_cast<juce::TextEditor*>(source) != nullptr
                                   && parameterValue.isParentOf(source);
 
+    if (importBrowserActive)
+    {
+        if (code == juce::KeyPress::escapeKey) { leaveImportBrowser(true); return true; }
+        if (code == juce::KeyPress::upKey && !mods.isShiftDown() && !mods.isCtrlDown()) { selectImportEntry(importEntryIndex - 1, true); return true; }
+        if (code == juce::KeyPress::downKey && !mods.isShiftDown() && !mods.isCtrlDown()) { selectImportEntry(importEntryIndex + 1, true); return true; }
+        if (code == juce::KeyPress::pageUpKey) { selectImportEntry(importEntryIndex - 10, true); return true; }
+        if (code == juce::KeyPress::pageDownKey) { selectImportEntry(importEntryIndex + 10, true); return true; }
+        if (code == juce::KeyPress::homeKey && !mods.isCtrlDown()) { selectImportEntry(0, true); return true; }
+        if (code == juce::KeyPress::endKey && !mods.isCtrlDown()) { selectImportEntry(int(importEntries.size()) - 1, true); return true; }
+        if (code == juce::KeyPress::backspaceKey)
+        {
+            auto parent = importDirectory.getParentDirectory();
+            if (parent != importDirectory) { importDirectory = parent; refreshImportEntries(); selectImportEntry(0, true); }
+            return true;
+        }
+        if (code == juce::KeyPress::spaceKey && !mods.isShiftDown())
+        {
+            prepareImportPreviewForCurrent();
+            processor.requestImportPreviewToggle();
+            return true;
+        }
+        if (code == juce::KeyPress::spaceKey && mods.isShiftDown()) { toggleImportFileSelection(); return true; }
+        if (mods.isCtrlDown() && !mods.isAltDown() && (ch == 'q')) { markImportSliceStart(); return true; }
+        if (mods.isCtrlDown() && !mods.isAltDown() && (ch == 'w')) { markImportSliceEnd(); return true; }
+        if (mods.isCtrlDown() && (code == juce::KeyPress::homeKey || code == juce::KeyPress::endKey))
+        {
+            prepareImportPreviewForCurrent();
+            processor.requestImportPreviewSeek(code == juce::KeyPress::homeKey ? 0.0 : processor.getImportPreviewLengthSeconds());
+            return true;
+        }
+        if (!mods.isCtrlDown() && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
+        {
+            seekImportPreview(code == juce::KeyPress::leftKey ? -1.0 : 1.0);
+            return true;
+        }
+        if (code == juce::KeyPress::deleteKey) { deleteImportPlanItemAtCursor(); return true; }
+        if (code == juce::KeyPress::returnKey)
+        {
+            if (importEntries.empty()) return true;
+            const auto& entry = importEntries[static_cast<size_t>(importEntryIndex)];
+            if (entry.directory) { importDirectory = entry.file; refreshImportEntries(); selectImportEntry(0, true); }
+            else commitImportPlan();
+            return true;
+        }
+        return true;
+    }
+
     const auto moveParameterPage = [this](int direction)
     {
         const int begin = categoryBegin(selectedParameter);
@@ -609,7 +667,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
     {
-        if (ch == 'o' && !mods.isShiftDown()) { chooseSample(); return true; }
+        if (ch == 'o' && !mods.isShiftDown()) { enterImportBrowser(); return true; }
         if (ch == 's' && !mods.isShiftDown()) { chooseLoadSlot(); return true; }
         if (ch == 'b' && !mods.isShiftDown()) { chooseLoadBank(); return true; }
         if (ch == 's' && mods.isShiftDown()) { chooseSaveSlot(); return true; }
@@ -872,6 +930,248 @@ void LSampler24AudioProcessorEditor::showResult(bool ok, const juce::String& err
     status.setText(ok ? okMessage : error, juce::sendNotificationAsync);
     refreshSlotCells();
     if (parameterPage) refreshParameterGrid();
+}
+
+void LSampler24AudioProcessorEditor::enterImportBrowser()
+{
+    processor.requestPreviewStop();
+    processor.requestImportPreviewStop();
+    importBrowserActive = true;
+    parameterPage = false;
+    importPlan.clear();
+    importSlicePending = false;
+    importPreviewFile = {};
+    importStartSlot = processor.getCurrentSlot();
+
+    const auto current = processor.getCurrentSampleFile();
+    importDirectory = current.existsAsFile() ? current.getParentDirectory()
+                                             : juce::File::getSpecialLocation(juce::File::userHomeDirectory);
+    if (!importDirectory.isDirectory())
+        importDirectory = juce::File::getSpecialLocation(juce::File::userHomeDirectory);
+
+    for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
+    loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
+    loadBank.setVisible(false); saveBank.setVisible(false);
+    parameterSelector.setVisible(false); parameterValue.setVisible(false);
+    importBrowserCell.setVisible(true);
+    importBrowserCell.setWantsKeyboardFocus(true);
+    refreshImportEntries();
+    resized();
+    importBrowserCell.grabKeyboardFocus();
+}
+
+void LSampler24AudioProcessorEditor::leaveImportBrowser(bool announceSlot)
+{
+    processor.requestImportPreviewStop();
+    importBrowserActive = false;
+    importBrowserCell.setVisible(false);
+    importBrowserCell.setWantsKeyboardFocus(false);
+    for (auto& cell : slotCells) { cell.setVisible(true); cell.setWantsKeyboardFocus(true); }
+    loadSample.setVisible(true); loadSlot.setVisible(true); saveSlot.setVisible(true);
+    loadBank.setVisible(true); saveBank.setVisible(true);
+    resized();
+    if (announceSlot) returnToCurrentSlotAndAnnounce();
+}
+
+void LSampler24AudioProcessorEditor::refreshImportEntries()
+{
+    importEntries.clear();
+    if (!importDirectory.isDirectory()) return;
+    juce::Array<juce::File> dirs, files;
+    importDirectory.findChildFiles(dirs, juce::File::findDirectories, false);
+    importDirectory.findChildFiles(files, juce::File::findFiles, false);
+    for (const auto& f : dirs) importEntries.push_back({ f, true });
+    for (const auto& f : files)
+        {
+            const auto ext = f.getFileExtension().toLowerCase();
+            if (ext == ".wav" || ext == ".aif" || ext == ".aiff" || ext == ".flac" || ext == ".ogg")
+                importEntries.push_back({ f, false });
+        }
+    importEntryIndex = importEntries.empty() ? 0 : juce::jlimit(0, int(importEntries.size()) - 1, importEntryIndex);
+    if (importEntries.empty()) importBrowserCell.setBrowserText("Empty folder");
+    else selectImportEntry(importEntryIndex, false);
+}
+
+void LSampler24AudioProcessorEditor::selectImportEntry(int index, bool announce)
+{
+    if (importEntries.empty()) { importEntryIndex = 0; importBrowserCell.setBrowserText("Empty folder"); return; }
+    importEntryIndex = juce::jlimit(0, int(importEntries.size()) - 1, index);
+    const auto& e = importEntries[static_cast<size_t>(importEntryIndex)];
+    if (importPreviewFile.getFullPathName().isNotEmpty() && importPreviewFile != e.file)
+    {
+        processor.requestImportPreviewStop();
+        importPreviewFile = {};
+    }
+    juce::String text = e.file.getFileName();
+    if (e.directory) text += ", folder";
+    else
+    {
+        int selectedSlot = -1, sliceCount = 0;
+        for (const auto& item : importPlan)
+        {
+            if (item.file == e.file)
+            {
+                if (!item.slice) selectedSlot = item.slot;
+                else ++sliceCount;
+            }
+        }
+        if (selectedSlot >= 0) text += ", selected slot " + juce::String(selectedSlot + 1);
+        if (sliceCount > 0) text += ", " + juce::String(sliceCount) + (sliceCount == 1 ? " slice" : " slices");
+    }
+    importBrowserCell.setBrowserText(text);
+    if (announce) announceImportEntry();
+}
+
+void LSampler24AudioProcessorEditor::announceImportEntry()
+{
+    if (importEntries.empty())
+    {
+        lsampler::announceToActiveScreenReader(importBrowserCell, "Empty folder");
+        return;
+    }
+    lsampler::announceToActiveScreenReader(importBrowserCell, importBrowserCell.getTitle());
+}
+
+void LSampler24AudioProcessorEditor::prepareImportPreviewForCurrent()
+{
+    if (importEntries.empty()) return;
+    const auto& e = importEntries[static_cast<size_t>(importEntryIndex)];
+    if (e.directory) return;
+    if (importPreviewFile == e.file) return;
+    juce::String error;
+    if (processor.prepareImportPreview(e.file, error)) importPreviewFile = e.file;
+    else lsampler::announceToActiveScreenReader(importBrowserCell, error.isNotEmpty() ? error : "Cannot preview");
+}
+
+void LSampler24AudioProcessorEditor::seekImportPreview(double deltaSeconds)
+{
+    prepareImportPreviewForCurrent();
+    const auto length = processor.getImportPreviewLengthSeconds();
+    const auto pos = juce::jlimit(0.0, length, processor.getImportPreviewPositionSeconds() + deltaSeconds);
+    processor.requestImportPreviewSeek(pos);
+}
+
+bool LSampler24AudioProcessorEditor::importSlotReserved(int slot) const
+{
+    for (const auto& item : importPlan) if (item.slot == slot) return true;
+    return false;
+}
+
+int LSampler24AudioProcessorEditor::nextImportFreeSlot() const
+{
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        const int begin = pass == 0 ? importStartSlot : 0;
+        const int end = pass == 0 ? LSampler24AudioProcessor::slotCount : importStartSlot;
+        for (int slot = begin; slot < end; ++slot)
+            if (!processor.isSlotOccupied(slot) && !importSlotReserved(slot)) return slot;
+    }
+    return -1;
+}
+
+void LSampler24AudioProcessorEditor::toggleImportFileSelection()
+{
+    if (importEntries.empty()) return;
+    const auto& e = importEntries[static_cast<size_t>(importEntryIndex)];
+    if (e.directory) { announceImportEntry(); return; }
+    for (auto it = importPlan.begin(); it != importPlan.end(); ++it)
+        if (!it->slice && it->file == e.file)
+        {
+            importPlan.erase(it);
+            selectImportEntry(importEntryIndex, true);
+            return;
+        }
+    const int slot = nextImportFreeSlot();
+    if (slot < 0) { lsampler::announceToActiveScreenReader(importBrowserCell, "Slots occupied"); return; }
+    importPlan.push_back({ e.file, slot, false, 0.0, 0.0 });
+    selectImportEntry(importEntryIndex, true);
+}
+
+void LSampler24AudioProcessorEditor::markImportSliceStart()
+{
+    if (importEntries.empty()) return;
+    const auto& e = importEntries[static_cast<size_t>(importEntryIndex)];
+    if (e.directory) { lsampler::announceToActiveScreenReader(importBrowserCell, "No audio file"); return; }
+    prepareImportPreviewForCurrent();
+    const int slot = nextImportFreeSlot();
+    if (slot < 0) { lsampler::announceToActiveScreenReader(importBrowserCell, "Slots occupied"); return; }
+    importSlicePending = true;
+    importSliceFile = e.file;
+    importSliceStart = processor.getImportPreviewPositionSeconds();
+    int sliceNumber = 1;
+    for (const auto& item : importPlan) if (item.slice) ++sliceNumber;
+    lsampler::announceToActiveScreenReader(importBrowserCell,
+        "Slice " + juce::String(sliceNumber) + " slot " + juce::String(slot + 1) + " start " + juce::String(importSliceStart, 3));
+}
+
+void LSampler24AudioProcessorEditor::markImportSliceEnd()
+{
+    if (!importSlicePending) { lsampler::announceToActiveScreenReader(importBrowserCell, "No slice start"); return; }
+    if (importEntries.empty()) return;
+    const auto& e = importEntries[static_cast<size_t>(importEntryIndex)];
+    if (e.directory || e.file != importSliceFile) { lsampler::announceToActiveScreenReader(importBrowserCell, "Slice source changed"); return; }
+    double end = processor.getImportPreviewPositionSeconds();
+    double start = importSliceStart;
+    if (end < start) std::swap(start, end);
+    if (end - start <= 0.001) { lsampler::announceToActiveScreenReader(importBrowserCell, "Slice end not valid"); return; }
+    const int slot = nextImportFreeSlot();
+    if (slot < 0) { lsampler::announceToActiveScreenReader(importBrowserCell, "Slots occupied"); return; }
+    importPlan.push_back({ e.file, slot, true, start, end });
+    importSlicePending = false;
+    int sliceNumber = 0; for (const auto& item : importPlan) if (item.slice) ++sliceNumber;
+    selectImportEntry(importEntryIndex, false);
+    lsampler::announceToActiveScreenReader(importBrowserCell,
+        "Slice " + juce::String(sliceNumber) + " slot " + juce::String(slot + 1) + " end " + juce::String(end, 3)
+        + ", length " + juce::String(end - start, 3));
+}
+
+void LSampler24AudioProcessorEditor::deleteImportPlanItemAtCursor()
+{
+    if (importEntries.empty()) return;
+    const auto& e = importEntries[static_cast<size_t>(importEntryIndex)];
+    if (e.directory) return;
+    const double pos = processor.getImportPreviewPositionSeconds();
+    for (auto it = importPlan.begin(); it != importPlan.end(); ++it)
+        if (it->slice && it->file == e.file && pos >= it->start && pos <= it->end)
+        {
+            importPlan.erase(it); importSlicePending = false; selectImportEntry(importEntryIndex, false);
+            lsampler::announceToActiveScreenReader(importBrowserCell, "Slice deleted"); return;
+        }
+    for (auto it = importPlan.begin(); it != importPlan.end(); ++it)
+        if (!it->slice && it->file == e.file)
+        {
+            importPlan.erase(it); selectImportEntry(importEntryIndex, true); return;
+        }
+}
+
+void LSampler24AudioProcessorEditor::commitImportPlan()
+{
+    if (importEntries.empty()) return;
+    const auto& current = importEntries[static_cast<size_t>(importEntryIndex)];
+    if (current.directory) return;
+    if (importPlan.empty())
+    {
+        const int slot = nextImportFreeSlot();
+        if (slot < 0) { lsampler::announceToActiveScreenReader(importBrowserCell, "Slots occupied"); return; }
+        importPlan.push_back({ current.file, slot, false, 0.0, 0.0 });
+    }
+
+    int highest = -1;
+    for (const auto& item : importPlan)
+    {
+        juce::String error;
+        if (!processor.importSampleToSlot(item.file, item.slot, item.slice ? item.start : 0.0, item.slice ? item.end : 0.0, error))
+        {
+            lsampler::announceToActiveScreenReader(importBrowserCell, error.isNotEmpty() ? error : "Load failed");
+            return;
+        }
+        highest = juce::jmax(highest, item.slot);
+    }
+    importPlan.clear(); importSlicePending = false;
+    if (highest >= 0) processor.setCurrentSlot(highest);
+    leaveImportBrowser(false);
+    refreshSlotCells();
+    returnToCurrentSlotAndAnnounce();
 }
 
 void LSampler24AudioProcessorEditor::chooseSample()

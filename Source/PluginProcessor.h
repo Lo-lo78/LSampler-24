@@ -38,6 +38,15 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     bool loadSample(const juce::File& file, juce::String& error);
+    bool importSampleToSlot(const juce::File& file, int slotIndex, double startSeconds, double endSeconds, juce::String& error);
+    bool isSlotOccupied(int slotIndex) const;
+    bool prepareImportPreview(const juce::File& file, juce::String& error);
+    void requestImportPreviewToggle() noexcept { importPreviewToggleRequested.store(true); }
+    void requestImportPreviewStop() noexcept { importPreviewStopRequested.store(true); }
+    void requestImportPreviewSeek(double seconds) noexcept { importPreviewSeekSeconds.store(seconds); importPreviewSeekRequested.store(true); }
+    double getImportPreviewPositionSeconds() const noexcept { return importPreviewPositionSeconds.load(std::memory_order_relaxed); }
+    double getImportPreviewLengthSeconds() const noexcept { return importPreviewLengthSeconds.load(std::memory_order_relaxed); }
+    bool isImportPreviewPlaying() const noexcept { return importPreviewPlayingAtomic.load(std::memory_order_relaxed); }
     bool saveSlotPreset(const juce::File& presetFile, juce::String& error);
     bool loadSlotPreset(const juce::File& presetFile, juce::String& error);
     bool saveBankPreset(const juce::File& presetFile, juce::String& error);
@@ -111,6 +120,26 @@ private:
     std::atomic<uint32_t> stopVoicesMask { 0 };
     bool previewPlaying = false;
     int previewPlayingSlot = -1;
+
+    struct ImportPreviewSnapshot {
+        std::shared_ptr<SharedSample> owner;
+        SharedSample* sample = nullptr;
+        uint64_t revision = 0;
+    };
+    std::array<ImportPreviewSnapshot, 3> importPreviewSnapshots;
+    std::atomic<int> importPreviewMiddle { 1 };
+    int importPreviewWriter = 2, importPreviewReader = 0;
+    uint64_t importPreviewRevision = 0;
+    std::atomic<bool> importPreviewToggleRequested { false };
+    std::atomic<bool> importPreviewStopRequested { false };
+    std::atomic<bool> importPreviewSeekRequested { false };
+    std::atomic<double> importPreviewSeekSeconds { 0.0 };
+    std::atomic<double> importPreviewPositionSeconds { 0.0 };
+    std::atomic<double> importPreviewLengthSeconds { 0.0 };
+    std::atomic<bool> importPreviewPlayingAtomic { false };
+    bool importPreviewPlaying = false;
+    double importPreviewPosition = 0.0;
+    uint64_t importPreviewSeenRevision = 0;
 
     struct AudioSnapshot {
         std::array<lsampler::SlotAudioState, slotCount> states;
