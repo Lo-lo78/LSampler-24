@@ -752,7 +752,7 @@ void LSampler24AudioProcessorEditor::chooseSaveSlot()
         logicalName = LibraryManager::defaultName("Slot");
 
     auto initial = processor.getLibrary().slots().getChildFile(logicalName);
-    chooser = std::make_unique<juce::FileChooser>("Save Slot", initial, "*.lsampler-24-s");
+    chooser = std::make_unique<juce::FileChooser>("Save Slot", initial, "*");
     chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const juce::FileChooser& fc)
         {
