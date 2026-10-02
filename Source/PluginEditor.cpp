@@ -532,6 +532,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         if (ch == 'o' && !mods.isShiftDown()) { chooseSample(); return true; }
         if (ch == 's' && !mods.isShiftDown()) { chooseLoadSlot(); return true; }
         if (ch == 'b' && !mods.isShiftDown()) { chooseLoadBank(); return true; }
+        if (ch == 's' && mods.isShiftDown()) { chooseSaveSlot(); return true; }
+        if (ch == 'b' && mods.isShiftDown()) { chooseSaveBank(); return true; }
         if (ch == 'v' && parameterPage && !sourceIsValueEditor) { focusValue(); return true; }
 
         if (parameterPage && source != &parameterValue)
@@ -689,7 +691,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         lsampler::announceToActiveScreenReader(cell, processor.getSlotLabel(currentSlot));
     };
 
-    if (mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown())
+    if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
     {
         if (ch == 'c')
         {
