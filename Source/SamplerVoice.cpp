@@ -82,11 +82,16 @@ void VoiceBank::noteOff(int note)
             voice.active = false;
 }
 
+void VoiceBank::allNotesOffUnlocked()
+{
+    for (auto& voice : voices)
+        voice = {};
+}
+
 void VoiceBank::allNotesOff()
 {
     const juce::SpinLock::ScopedLockType lock(stateLock);
-    for (auto& voice : voices)
-        voice = {};
+    allNotesOffUnlocked();
 }
 
 void VoiceBank::render(juce::AudioBuffer<float>& output, juce::MidiBuffer& midi)
@@ -100,7 +105,7 @@ void VoiceBank::render(juce::AudioBuffer<float>& output, juce::MidiBuffer& midi)
         else if (message.isNoteOff())
             noteOff(message.getNoteNumber());
         else if (message.isAllNotesOff() || message.isAllSoundOff())
-            allNotesOff();
+            allNotesOffUnlocked();
     }
 
     for (auto& voice : voices)

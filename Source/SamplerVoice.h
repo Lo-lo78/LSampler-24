@@ -43,6 +43,7 @@ private:
     Voice* findMonoVoice(int slotIndex);
     void noteOn(int note, float velocity);
     void noteOff(int note);
+    void allNotesOffUnlocked();
 
     std::array<Voice, voiceCount> voices {};
     std::array<SlotPlaybackState, slotCount> slots {};
