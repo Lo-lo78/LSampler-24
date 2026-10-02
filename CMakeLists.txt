@@ -38,6 +38,8 @@ target_sources(LSampler24 PRIVATE
     Source/PluginProcessor.h
     Source/PluginEditor.cpp
     Source/PluginEditor.h
+    Source/ScreenReaderAnnouncer.cpp
+    Source/ScreenReaderAnnouncer.h
     Source/SamplePool.cpp
     Source/SamplePool.h
     Source/SamplerVoice.cpp
@@ -59,3 +61,7 @@ target_link_libraries(LSampler24 PRIVATE
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
 )
+if(WIN32)
+    target_link_libraries(LSampler24 PRIVATE Uiautomationcore OleAut32)
+endif()
+

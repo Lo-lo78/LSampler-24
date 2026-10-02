@@ -1,10 +1,11 @@
 #include "PluginEditor.h"
+#include "ScreenReaderAnnouncer.h"
 #include <cmath>
 
 namespace
 {
-constexpr std::array<int, 4> noteSteps { 1, 2, 5, 12 };
-constexpr std::array<double, 4> volumeSteps { 0.01, 0.05, 0.10, 0.25 };
+constexpr std::array<int, 5> stepWidths { 1, 5, 10, 15, 20 };
+constexpr int valuePageStep = 40;
 }
 
 LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioProcessor& p)
@@ -59,6 +60,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
         if (!parameterPage) return;
         setSelectedParameterValue(parameterValue.getValue());
         refreshParameterGrid();
+        announceSelectedValue();
     };
     addAndMakeVisible(parameterValue);
 
@@ -291,32 +293,41 @@ void LSampler24AudioProcessorEditor::focusParameterGrid()
     parameterButtons[static_cast<size_t>(selectedParameter)].grabKeyboardFocus();
 }
 
+void LSampler24AudioProcessorEditor::announceSelectedValue()
+{
+    auto* source = juce::Component::getCurrentlyFocusedComponent();
+    if (source == nullptr)
+        source = &status;
+    lsampler::announceToActiveScreenReader(*source, selectedParameterValueText());
+}
+
 void LSampler24AudioProcessorEditor::changeStepWidth(int direction)
 {
-    if (selectedParameter == static_cast<int>(SlotParameter::volume))
-        volumeStepIndex = juce::jlimit(0, static_cast<int>(volumeSteps.size()) - 1, volumeStepIndex + direction);
-    else
-        noteStepIndex = juce::jlimit(0, static_cast<int>(noteSteps.size()) - 1, noteStepIndex + direction);
+    const auto next = juce::jlimit(0, static_cast<int>(stepWidths.size()) - 1, stepWidthIndex + direction);
+    if (next == stepWidthIndex)
+        return;
+    stepWidthIndex = next;
 
-    const auto step = selectedParameter == static_cast<int>(SlotParameter::volume)
-        ? juce::String(volumeSteps[static_cast<size_t>(volumeStepIndex)], 2)
-        : juce::String(noteSteps[static_cast<size_t>(noteStepIndex)]);
-    status.setText("Step " + step, juce::sendNotificationAsync);
+    auto* source = juce::Component::getCurrentlyFocusedComponent();
+    if (source == nullptr)
+        source = &status;
+    lsampler::announceToActiveScreenReader(*source, "Step " + juce::String(stepWidths[static_cast<size_t>(stepWidthIndex)]));
 }
 
 void LSampler24AudioProcessorEditor::changeSelectedParameterValue(int direction, bool coarse)
 {
-    double step = 1.0;
-    if (selectedParameter == static_cast<int>(SlotParameter::volume))
-        step = volumeSteps[static_cast<size_t>(volumeStepIndex)];
-    else
-        step = static_cast<double>(noteSteps[static_cast<size_t>(noteStepIndex)]);
-    if (coarse) step *= 5.0;
-
+    const double baseStep = selectedParameter == static_cast<int>(SlotParameter::volume) ? 0.01 : 1.0;
+    const double multiplier = static_cast<double>(stepWidths[static_cast<size_t>(stepWidthIndex)])
+                            * (coarse ? static_cast<double>(valuePageStep) : 1.0);
+    const double step = baseStep * multiplier;
     const double maximum = selectedParameter == static_cast<int>(SlotParameter::volume) ? 1.0 : 127.0;
-    const auto next = juce::jlimit(0.0, maximum, getSelectedParameterValue() + direction * step);
+    const auto current = getSelectedParameterValue();
+    const auto next = juce::jlimit(0.0, maximum, current + direction * step);
+    if (std::abs(next - current) < 1.0e-9)
+        return;
     setSelectedParameterValue(next);
     refreshParameterGrid();
+    announceSelectedValue();
 }
 
 void LSampler24AudioProcessorEditor::setSelectedParameterBoundary(bool maximum)
@@ -324,8 +335,11 @@ void LSampler24AudioProcessorEditor::setSelectedParameterBoundary(bool maximum)
     const double value = maximum
         ? (selectedParameter == static_cast<int>(SlotParameter::volume) ? 1.0 : 127.0)
         : 0.0;
+    if (std::abs(value - getSelectedParameterValue()) < 1.0e-9)
+        return;
     setSelectedParameterValue(value);
     refreshParameterGrid();
+    announceSelectedValue();
 }
 
 bool LSampler24AudioProcessorEditor::isActionButton(const juce::Component* component) const
@@ -357,9 +371,13 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     const auto code = key.getKeyCode();
     const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
 
-    if (parameterPage && code == juce::KeyPress::spaceKey)
+    bool sourceIsSlot = false;
+    for (const auto& button : slotButtons)
+        if (source == &button) { sourceIsSlot = true; break; }
+
+    if (code == juce::KeyPress::spaceKey && (parameterPage || sourceIsSlot))
     {
-        processor.requestPreview();
+        processor.requestPreviewToggle();
         return true;
     }
 
@@ -385,8 +403,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             if (code == juce::KeyPress::rightKey)    { changeStepWidth(1); return true; }
             if (code == juce::KeyPress::pageUpKey)   { changeSelectedParameterValue(1, true); return true; }
             if (code == juce::KeyPress::pageDownKey) { changeSelectedParameterValue(-1, true); return true; }
-            if (code == juce::KeyPress::homeKey)     { setSelectedParameterBoundary(false); return true; }
-            if (code == juce::KeyPress::endKey)      { setSelectedParameterBoundary(true); return true; }
+            if (code == juce::KeyPress::homeKey)     { setSelectedParameterBoundary(true); return true; }
+            if (code == juce::KeyPress::endKey)      { setSelectedParameterBoundary(false); return true; }
         }
     }
 
@@ -408,8 +426,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             if (code == juce::KeyPress::downKey)   { changeSelectedParameterValue(-1, false); return true; }
             if (code == juce::KeyPress::pageUpKey) { changeSelectedParameterValue(1, true); return true; }
             if (code == juce::KeyPress::pageDownKey) { changeSelectedParameterValue(-1, true); return true; }
-            if (code == juce::KeyPress::homeKey)   { setSelectedParameterBoundary(false); return true; }
-            if (code == juce::KeyPress::endKey)    { setSelectedParameterBoundary(true); return true; }
+            if (code == juce::KeyPress::homeKey)   { setSelectedParameterBoundary(true); return true; }
+            if (code == juce::KeyPress::endKey)    { setSelectedParameterBoundary(false); return true; }
             return false;
         }
 

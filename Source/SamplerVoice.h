@@ -14,6 +14,7 @@ public:
     void setGain(float linearGain);
     void render(juce::AudioBuffer<float>& output, juce::MidiBuffer& midi);
     void allNotesOff();
+    bool hasActiveVoices() const noexcept;
 
 private:
     struct Voice

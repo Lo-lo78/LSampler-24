@@ -56,7 +56,7 @@ public:
     void setRootNote(int note);
     float getVolume() const noexcept;
     void setVolume(float newVolume);
-    void requestPreview() noexcept { previewRequested.store(true); }
+    void requestPreviewToggle() noexcept { previewToggleRequested.store(true); }
 
     LibraryManager& getLibrary() noexcept { return library; }
 
@@ -84,7 +84,8 @@ private:
     int currentSlot = 0;
     std::atomic<int> activeLowKey { 0 };
     std::atomic<int> activeHighKey { 127 };
-    std::atomic<bool> previewRequested { false };
+    std::atomic<bool> previewToggleRequested { false };
+    bool previewPlaying = false;
 
     // Intentionally unchanged TEST2 audio engine for this diagnostic stage.
     VoiceBank voiceBank;

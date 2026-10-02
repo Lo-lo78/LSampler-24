@@ -65,6 +65,15 @@ void VoiceBank::allNotesOff()
         voice = {};
 }
 
+
+bool VoiceBank::hasActiveVoices() const noexcept
+{
+    for (const auto& voice : voices)
+        if (voice.active)
+            return true;
+    return false;
+}
+
 void VoiceBank::render(juce::AudioBuffer<float>& output, juce::MidiBuffer& midi)
 {
     for (const auto metadata : midi)

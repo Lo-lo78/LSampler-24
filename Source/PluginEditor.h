@@ -39,6 +39,7 @@ private:
     void changeSelectedParameterValue(int direction, bool coarse);
     void setSelectedParameterBoundary(bool maximum);
     void changeStepWidth(int direction);
+    void announceSelectedValue();
     double getSelectedParameterValue() const;
     void setSelectedParameterValue(double value);
     juce::String selectedParameterName() const;
@@ -65,8 +66,7 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
     bool parameterPage = false;
     int selectedParameter = 0;
-    int noteStepIndex = 0;
-    int volumeStepIndex = 0;
+    int stepWidthIndex = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LSampler24AudioProcessorEditor)
 };

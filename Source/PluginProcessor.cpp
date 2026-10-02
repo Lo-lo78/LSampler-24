@@ -48,13 +48,27 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         }
     }
 
-    if (previewRequested.exchange(false))
+    if (previewToggleRequested.exchange(false))
     {
-        const int previewNote = getRootNote();
-        filtered.addEvent(juce::MidiMessage::noteOn(1, previewNote, (juce::uint8) 100), 0);
+        if (previewPlaying)
+        {
+            voiceBank.allNotesOff();
+            previewPlaying = false;
+        }
+        else
+        {
+            // Preview is exclusive: every new preview starts from the beginning
+            // and can never layer another preview over the same sample.
+            voiceBank.allNotesOff();
+            const int previewNote = getRootNote();
+            filtered.addEvent(juce::MidiMessage::noteOn(1, previewNote, (juce::uint8) 100), 0);
+            previewPlaying = true;
+        }
     }
 
     voiceBank.render(buffer, filtered);
+    if (previewPlaying && !voiceBank.hasActiveVoices())
+        previewPlaying = false;
 }
 
 juce::AudioProcessorEditor* LSampler24AudioProcessor::createEditor()
@@ -66,6 +80,7 @@ void LSampler24AudioProcessor::applyCurrentSlotToVoiceBank()
 {
     const auto& s = slots[static_cast<size_t>(currentSlot)];
     voiceBank.allNotesOff();
+    previewPlaying = false;
     voiceBank.setSample(s.sample);
     voiceBank.setRootNote(s.rootNote);
     voiceBank.setGain(s.volume);
