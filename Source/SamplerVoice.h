@@ -15,6 +15,7 @@ public:
                 float gain, bool preview = false);
     void noteOff(int note);
     void allNotesOff();
+    void stopSlotVoices(int slotIndex);
     void stopPreviewVoices(int slotIndex = -1);
     bool hasPreviewVoices(int slotIndex = -1) const noexcept;
     void render(juce::AudioBuffer<float>& output);

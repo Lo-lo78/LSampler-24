@@ -55,6 +55,13 @@ void GlobalVoicePool::allNotesOff()
         voice = {};
 }
 
+void GlobalVoicePool::stopSlotVoices(int slotIndex)
+{
+    for (auto& voice : voices)
+        if (voice.active && voice.slotIndex == slotIndex)
+            voice = {};
+}
+
 void GlobalVoicePool::stopPreviewVoices(int slotIndex)
 {
     for (auto& voice : voices)

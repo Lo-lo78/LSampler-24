@@ -512,6 +512,15 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     const bool sourceIsValueEditor = dynamic_cast<juce::TextEditor*>(source) != nullptr
                                   && parameterValue.isParentOf(source);
 
+    if (mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown() && ch == 's')
+    {
+        if (mods.isShiftDown())
+            chooseSaveBank();
+        else
+            chooseSaveSlot();
+        return true;
+    }
+
     if (code == juce::KeyPress::spaceKey && parameterPage)
     {
         processor.requestPreviewToggle();
@@ -521,8 +530,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
     {
         if (ch == 'o' && !mods.isShiftDown()) { chooseSample(); return true; }
-        if (ch == 's') { mods.isShiftDown() ? chooseSaveSlot() : chooseLoadSlot(); return true; }
-        if (ch == 'b') { mods.isShiftDown() ? chooseSaveBank() : chooseLoadBank(); return true; }
+        if (ch == 's' && !mods.isShiftDown()) { chooseLoadSlot(); return true; }
+        if (ch == 'b' && !mods.isShiftDown()) { chooseLoadBank(); return true; }
         if (ch == 'v' && parameterPage && !sourceIsValueEditor) { focusValue(); return true; }
 
         if (parameterPage && source != &parameterValue)
@@ -671,6 +680,47 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     }
 
     if (!sourceIsSlot) return false;
+
+    const int currentSlot = processor.getCurrentSlot();
+    auto announceCurrentSlot = [this, currentSlot]()
+    {
+        refreshSlotCells();
+        auto& cell = slotCells[static_cast<size_t>(currentSlot)];
+        lsampler::announceToActiveScreenReader(cell, processor.getSlotLabel(currentSlot));
+    };
+
+    if (mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown())
+    {
+        if (ch == 'c')
+        {
+            processor.copyCurrentSlot();
+            lsampler::announceToActiveScreenReader(slotCells[static_cast<size_t>(currentSlot)],
+                                                  "Copied " + processor.getSlotLabel(currentSlot));
+            return true;
+        }
+        if (ch == 'x')
+        {
+            processor.cutCurrentSlot();
+            announceCurrentSlot();
+            return true;
+        }
+        if (ch == 'v')
+        {
+            if (processor.pasteCurrentSlot())
+                announceCurrentSlot();
+            return true;
+        }
+    }
+
+    if (code == juce::KeyPress::deleteKey)
+    {
+        if (mods.isAltDown())
+            processor.clearBank();
+        else
+            processor.clearCurrentSlot();
+        announceCurrentSlot();
+        return true;
+    }
 
     if (code == juce::KeyPress::returnKey) { enterSlotParameters(); return true; }
     if (mods.isCtrlDown() && code == juce::KeyPress::homeKey) { selectSlot(0, true); return true; }

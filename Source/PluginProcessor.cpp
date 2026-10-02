@@ -58,6 +58,23 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     buffer.clear();
     syncAudioStateFromSlots();
 
+    const int stopRequest = stopVoicesRequest.exchange(-2);
+    if (stopRequest == -1)
+    {
+        voicePool.allNotesOff();
+        previewPlaying = false;
+        previewPlayingSlot = -1;
+    }
+    else if (stopRequest >= 0 && stopRequest < slotCount)
+    {
+        voicePool.stopSlotVoices(stopRequest);
+        if (previewPlayingSlot == stopRequest)
+        {
+            previewPlaying = false;
+            previewPlayingSlot = -1;
+        }
+    }
+
     const bool previewRequest = previewToggleRequested.exchange(false);
     const int requestedPreviewSlot = juce::jlimit(0, slotCount - 1, previewTargetSlot.load());
 
@@ -209,6 +226,54 @@ void LSampler24AudioProcessor::setVolume(float newVolume)
     auto& s = slots[static_cast<size_t>(currentSlot)];
     s.volume = juce::jlimit(0.0f, 1.0f, newVolume);
     markAudioStateDirty();
+}
+
+
+bool LSampler24AudioProcessor::copyCurrentSlot()
+{
+    const juce::ScopedLock lock(stateLock);
+    slotClipboard = slots[static_cast<size_t>(currentSlot)];
+    slotClipboardHasData = true;
+    return true;
+}
+
+bool LSampler24AudioProcessor::cutCurrentSlot()
+{
+    const juce::ScopedLock lock(stateLock);
+    slotClipboard = slots[static_cast<size_t>(currentSlot)];
+    slotClipboardHasData = true;
+    slots[static_cast<size_t>(currentSlot)] = SlotState{};
+    markAudioStateDirty();
+    stopVoicesRequest.store(currentSlot, std::memory_order_release);
+    return true;
+}
+
+bool LSampler24AudioProcessor::pasteCurrentSlot()
+{
+    const juce::ScopedLock lock(stateLock);
+    if (!slotClipboardHasData)
+        return false;
+    slots[static_cast<size_t>(currentSlot)] = slotClipboard;
+    markAudioStateDirty();
+    stopVoicesRequest.store(currentSlot, std::memory_order_release);
+    return true;
+}
+
+void LSampler24AudioProcessor::clearCurrentSlot()
+{
+    const juce::ScopedLock lock(stateLock);
+    slots[static_cast<size_t>(currentSlot)] = SlotState{};
+    markAudioStateDirty();
+    stopVoicesRequest.store(currentSlot, std::memory_order_release);
+}
+
+void LSampler24AudioProcessor::clearBank()
+{
+    const juce::ScopedLock lock(stateLock);
+    for (auto& slot : slots)
+        slot = SlotState{};
+    markAudioStateDirty();
+    stopVoicesRequest.store(-1, std::memory_order_release);
 }
 
 juce::File LSampler24AudioProcessor::getCurrentSampleFile() const

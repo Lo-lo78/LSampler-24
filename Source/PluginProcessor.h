@@ -42,6 +42,12 @@ public:
     bool saveBankPreset(const juce::File& presetFile, juce::String& error);
     bool loadBankPreset(const juce::File& presetFile, juce::String& error);
 
+    bool copyCurrentSlot();
+    bool cutCurrentSlot();
+    bool pasteCurrentSlot();
+    void clearCurrentSlot();
+    void clearBank();
+
     int getCurrentSlot() const noexcept { return currentSlot; }
     void setCurrentSlot(int slotIndex);
     juce::String getSlotLabel(int slotIndex) const;
@@ -90,6 +96,7 @@ private:
     std::atomic<bool> previewToggleRequested { false };
     std::atomic<int> previewTargetSlot { 0 };
     std::atomic<uint64_t> audioStateRevision { 1 };
+    std::atomic<int> stopVoicesRequest { -2 }; // -2 none, -1 all, 0..23 one slot
     uint64_t appliedAudioStateRevision = 0;
     bool previewPlaying = false;
     int previewPlayingSlot = -1;
@@ -101,6 +108,8 @@ private:
     std::array<int, slotCount> audioLowKeys {};
     std::array<int, slotCount> audioHighKeys {};
     LibraryManager library;
+    SlotState slotClipboard;
+    bool slotClipboardHasData = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LSampler24AudioProcessor)
 };
