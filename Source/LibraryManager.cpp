@@ -1,4 +1,5 @@
 #include "LibraryManager.h"
+#include <juce_cryptography/juce_cryptography.h>
 
 LibraryManager::LibraryManager()
 {

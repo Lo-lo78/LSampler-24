@@ -59,3 +59,8 @@ Not implemented yet:
 ## Build
 
 Push to `main` on GitHub. The included workflow builds the VST3 and uploads `LSampler-24-Windows-VST3.zip` as an Actions artifact.
+
+## Build fix 1
+
+- Replaced the unavailable generated `JuceHeader.h` include with JUCE module headers, matching the LR-608 CMake style.
+- Linked `juce_cryptography` explicitly because TEST2 uses `juce::SHA256` to deduplicate Library samples.

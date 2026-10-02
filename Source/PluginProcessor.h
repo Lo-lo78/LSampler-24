@@ -1,5 +1,5 @@
 #pragma once
-#include <JuceHeader.h>
+#include <juce_audio_utils/juce_audio_utils.h>
 #include "SamplePool.h"
 #include "SamplerVoice.h"
 #include "LibraryManager.h"

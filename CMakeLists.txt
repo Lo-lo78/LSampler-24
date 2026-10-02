@@ -54,6 +54,7 @@ target_compile_definitions(LSampler24 PUBLIC
 )
 target_link_libraries(LSampler24 PRIVATE
     juce::juce_audio_utils
+    juce::juce_cryptography
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
