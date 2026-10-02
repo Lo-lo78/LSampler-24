@@ -140,6 +140,37 @@ void LSampler24AudioProcessorEditor::refreshSlotButtons()
 
 bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key)
 {
+    const auto mods = key.getModifiers();
+    const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
+
+    // Global accessible shortcuts.  Load uses the plain Alt letter; Save uses
+    // the same letter with Shift so Slot and Bank are symmetrical.
+    if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
+    {
+        if (ch == 'l' && !mods.isShiftDown())
+        {
+            selectSlot(processor.getCurrentSlot(), true);
+            return true;
+        }
+        if (ch == 'o' && !mods.isShiftDown())
+        {
+            chooseSample();
+            return true;
+        }
+        if (ch == 's')
+        {
+            if (mods.isShiftDown()) chooseSaveSlot();
+            else                    chooseLoadSlot();
+            return true;
+        }
+        if (ch == 'b')
+        {
+            if (mods.isShiftDown()) chooseSaveBank();
+            else                    chooseLoadBank();
+            return true;
+        }
+    }
+
     const auto* focused = juce::Component::getCurrentlyFocusedComponent();
     bool onSlot = false;
     for (auto& b : slotButtons)
@@ -148,16 +179,44 @@ bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key)
     if (!onSlot)
         return AudioProcessorEditor::keyPressed(key);
 
-    int slot = processor.getCurrentSlot();
+    const int slot = processor.getCurrentSlot();
     const int row = slot % 8;
     const int col = slot / 8;
 
-    if (key == juce::KeyPress::upKey && row > 0)       { selectSlot(slot - 1, true); return true; }
-    if (key == juce::KeyPress::downKey && row < 7)     { selectSlot(slot + 1, true); return true; }
-    if (key == juce::KeyPress::leftKey && col > 0)     { selectSlot(slot - 8, true); return true; }
-    if (key == juce::KeyPress::rightKey && col < 2)    { selectSlot(slot + 8, true); return true; }
-    if (key == juce::KeyPress::homeKey)                { selectSlot(col * 8, true); return true; }
-    if (key == juce::KeyPress::endKey)                 { selectSlot(col * 8 + 7, true); return true; }
+    // The slot grid owns all four arrow keys, including at its borders.
+    // Consuming an edge key without moving keeps keyboard focus inside the
+    // 3 x 8 grid instead of letting JUCE move it to another component/host.
+    if (key.getKeyCode() == juce::KeyPress::upKey.getKeyCode())
+    {
+        if (row > 0) selectSlot(slot - 1, true);
+        return true;
+    }
+    if (key.getKeyCode() == juce::KeyPress::downKey.getKeyCode())
+    {
+        if (row < 7) selectSlot(slot + 1, true);
+        return true;
+    }
+    if (key.getKeyCode() == juce::KeyPress::leftKey.getKeyCode())
+    {
+        if (col > 0) selectSlot(slot - 8, true);
+        return true;
+    }
+    if (key.getKeyCode() == juce::KeyPress::rightKey.getKeyCode())
+    {
+        if (col < 2) selectSlot(slot + 8, true);
+        return true;
+    }
+    if (key.getKeyCode() == juce::KeyPress::homeKey.getKeyCode())
+    {
+        selectSlot(col * 8, true);
+        return true;
+    }
+    if (key.getKeyCode() == juce::KeyPress::endKey.getKeyCode())
+    {
+        selectSlot(col * 8 + 7, true);
+        return true;
+    }
+
     return AudioProcessorEditor::keyPressed(key);
 }
 
