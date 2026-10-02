@@ -36,6 +36,11 @@ No file access, ValueTree parsing, screen-reader calls, locks or heap ownership 
 Accessibility
 -------------
 The current accessible slot workflow remains. The parameter surface is data-driven and follows the LJuno reference: Grid, Value, numeric edit, Tab/Shift+Tab, Alt+V, Enter/Esc, Home/End, Ctrl+Home/Ctrl+End, Page navigation, initial-letter cycling, loop selection with Shift+Up/Down, and Space preview only inside parameters. The modal keyboard hook is reserved for the future Slice Editor.
+Leaving the parameter grid requests an immediate preview stop. Ctrl+Left/Right
+scrubs Sample Play Start using its native range and step. Alt+L sets Global One
+Shot to On for the current slot, disabling looping.
+Page/category navigation is preserved on Alt+Shift+Left/Right; Ctrl+Left/Right
+is reserved for sample-window scrubbing.
 
 Deferred by specification
 -------------------------

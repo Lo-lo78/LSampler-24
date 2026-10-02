@@ -405,6 +405,7 @@ void LSampler24AudioProcessorEditor::enterSlotParameters()
 
 void LSampler24AudioProcessorEditor::leaveSlotParameters()
 {
+    processor.requestPreviewStop();
     parameterPage = false;
     parameterSelector.setVisible(false);
     parameterValue.setVisible(false);
@@ -524,6 +525,23 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     const bool sourceIsValueEditor = dynamic_cast<juce::TextEditor*>(source) != nullptr
                                   && parameterValue.isParentOf(source);
 
+    const auto moveParameterPage = [this](int direction)
+    {
+        const int begin = categoryBegin(selectedParameter);
+        const int end = categoryEnd(selectedParameter);
+        const int row = selectedParameter - begin;
+        if (direction < 0 && begin > 0)
+        {
+            const int previous = categoryBegin(begin - 1);
+            selectParameter(juce::jmin(previous + row, begin - 1), true);
+        }
+        else if (direction > 0 && end + 1 < static_cast<int>(lsampler::grid.size()))
+        {
+            const int next = end + 1;
+            selectParameter(juce::jmin(next + row, categoryEnd(next)), true);
+        }
+    };
+
     if (mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown() && ch == 's')
     {
         if (mods.isShiftDown())
@@ -539,6 +557,37 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         return true;
     }
 
+    // Page/category navigation remains available, now on Alt+Shift+Left/Right.
+    // Ctrl+Left/Right is reserved for Sample Play Start scrubbing.
+    if (parameterPage && !sourceIsValueEditor && mods.isAltDown() && mods.isShiftDown()
+        && !mods.isCtrlDown() && !mods.isCommandDown()
+        && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
+    {
+        moveParameterPage(code == juce::KeyPress::leftKey ? -1 : 1);
+        return true;
+    }
+
+    // Ctrl+Left/Right is a dedicated sample-window scrub command.  Keep the
+    // focus in the normal Grid/Value surface while editing Sample Play Start.
+    if (parameterPage && !sourceIsValueEditor && mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown()
+        && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
+    {
+        int sampleStartIndex = -1;
+        for (int i = 0; i < static_cast<int>(lsampler::grid.size()); ++i)
+            if (lsampler::grid[static_cast<size_t>(i)].parameter == int(lsampler::P::sample_play_start))
+            {
+                sampleStartIndex = i;
+                break;
+            }
+        if (sampleStartIndex >= 0)
+        {
+            if (selectedParameter != sampleStartIndex)
+                selectParameter(sampleStartIndex, false);
+            changeSelectedParameterValue(code == juce::KeyPress::rightKey ? 1 : -1, false);
+            return true;
+        }
+    }
+
     if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
     {
         if (ch == 'o' && !mods.isShiftDown()) { chooseSample(); return true; }
@@ -547,6 +596,19 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         if (ch == 's' && mods.isShiftDown()) { chooseSaveSlot(); return true; }
         if (ch == 'b' && mods.isShiftDown()) { chooseSaveBank(); return true; }
         if (ch == 'v' && parameterPage && !sourceIsValueEditor) { focusValue(); return true; }
+        if (ch == 'l' && parameterPage && !sourceIsValueEditor)
+        {
+            for (int i = 0; i < static_cast<int>(lsampler::grid.size()); ++i)
+                if (lsampler::grid[static_cast<size_t>(i)].parameter == int(lsampler::P::global_one_shot)
+                    && std::strcmp(lsampler::grid[static_cast<size_t>(i)].category, "Sample Window") == 0)
+                {
+                    selectParameter(i, false);
+                    processor.setSlotParameter(i, 1.0, selectedLoop);
+                    refreshParameterGrid();
+                    announceSelectedValue();
+                    return true;
+                }
+        }
 
         if (parameterPage && source != &parameterValue)
         {
@@ -686,11 +748,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 return true;
             }
             if (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey) {
-                const int begin=categoryBegin(selectedParameter),end=categoryEnd(selectedParameter),row=selectedParameter-begin;
-                if(code==juce::KeyPress::leftKey&&begin>0) {
-                    const int previous=categoryBegin(begin-1);selectParameter(juce::jmin(previous+row,begin-1),true);
-                } else if(code==juce::KeyPress::rightKey&&end+1<int(lsampler::grid.size()))
-                    selectParameter(juce::jmin(end+1+row,categoryEnd(end+1)),true);
+                moveParameterPage(code == juce::KeyPress::leftKey ? -1 : 1);
                 return true;
             }
             if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isCommandDown()&&juce::CharacterFunctions::isLetterOrDigit(ch)) {

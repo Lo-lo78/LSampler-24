@@ -84,6 +84,12 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     previewPlaying = voicePool.hasPreviewVoices();
     if (!previewPlaying) previewPlayingSlot = -1;
 
+    if (previewStopRequested.exchange(false, std::memory_order_acq_rel)) {
+        voicePool.stopPreviewVoices();
+        previewPlaying = false;
+        previewPlayingSlot = -1;
+    }
+
     double bpm = 120;
     if (auto* playHead = getPlayHead()) if (auto position = playHead->getPosition())
         if (auto tempo = position->getBpm()) if (std::isfinite(*tempo) && *tempo > 0) bpm = *tempo;
