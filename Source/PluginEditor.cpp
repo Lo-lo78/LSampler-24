@@ -186,32 +186,32 @@ bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key)
     // The slot grid owns all four arrow keys, including at its borders.
     // Consuming an edge key without moving keeps keyboard focus inside the
     // 3 x 8 grid instead of letting JUCE move it to another component/host.
-    if (key.getKeyCode() == juce::KeyPress::upKey.getKeyCode())
+    if (key.getKeyCode() == juce::KeyPress::upKey)
     {
         if (row > 0) selectSlot(slot - 1, true);
         return true;
     }
-    if (key.getKeyCode() == juce::KeyPress::downKey.getKeyCode())
+    if (key.getKeyCode() == juce::KeyPress::downKey)
     {
         if (row < 7) selectSlot(slot + 1, true);
         return true;
     }
-    if (key.getKeyCode() == juce::KeyPress::leftKey.getKeyCode())
+    if (key.getKeyCode() == juce::KeyPress::leftKey)
     {
         if (col > 0) selectSlot(slot - 8, true);
         return true;
     }
-    if (key.getKeyCode() == juce::KeyPress::rightKey.getKeyCode())
+    if (key.getKeyCode() == juce::KeyPress::rightKey)
     {
         if (col < 2) selectSlot(slot + 8, true);
         return true;
     }
-    if (key.getKeyCode() == juce::KeyPress::homeKey.getKeyCode())
+    if (key.getKeyCode() == juce::KeyPress::homeKey)
     {
         selectSlot(col * 8, true);
         return true;
     }
-    if (key.getKeyCode() == juce::KeyPress::endKey.getKeyCode())
+    if (key.getKeyCode() == juce::KeyPress::endKey)
     {
         selectSlot(col * 8 + 7, true);
         return true;
