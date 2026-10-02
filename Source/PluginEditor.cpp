@@ -1,4 +1,21 @@
 #include "PluginEditor.h"
+#include <cmath>
+
+static void configureNoteSlider(juce::Slider& slider, const juce::String& title)
+{
+    slider.setRange(0, 127, 1);
+    slider.setSliderStyle(juce::Slider::LinearHorizontal);
+    slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 130, 24);
+    slider.setTitle(title);
+    slider.setWantsKeyboardFocus(true);
+    slider.textFromValueFunction = [](double v)
+    {
+        const int n = juce::jlimit(0, 127, static_cast<int>(std::lround(v)));
+        static const char* names[] = { "C", "C sharp", "D", "D sharp", "E", "F", "F sharp", "G", "G sharp", "A", "A sharp", "B" };
+        const int octave = (n / 12) - 1;
+        return juce::String(n) + " " + names[n % 12] + " " + juce::String(octave);
+    };
+}
 
 LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioProcessor& p)
     : AudioProcessorEditor(&p), processor(p)
@@ -31,14 +48,22 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     status.setTitle("Sample status");
     addAndMakeVisible(status);
 
-    rootLabel.setText("Root Note", juce::dontSendNotification);
+    lowKeyLabel.setText("Low Key", juce::dontSendNotification);
+    addAndMakeVisible(lowKeyLabel);
+    configureNoteSlider(lowKey, "Low Key");
+    lowKey.setValue(processor.getLowKey(), juce::dontSendNotification);
+    addAndMakeVisible(lowKey);
+
+    highKeyLabel.setText("High Key", juce::dontSendNotification);
+    addAndMakeVisible(highKeyLabel);
+    configureNoteSlider(highKey, "High Key");
+    highKey.setValue(processor.getHighKey(), juce::dontSendNotification);
+    addAndMakeVisible(highKey);
+
+    rootLabel.setText("Original Pitch", juce::dontSendNotification);
     addAndMakeVisible(rootLabel);
-    rootNote.setRange(0, 127, 1);
+    configureNoteSlider(rootNote, "Original Pitch");
     rootNote.setValue(processor.getRootNote(), juce::dontSendNotification);
-    rootNote.setSliderStyle(juce::Slider::LinearHorizontal);
-    rootNote.setTextBoxStyle(juce::Slider::TextBoxRight, false, 70, 24);
-    rootNote.setTitle("Root Note");
-    rootNote.setWantsKeyboardFocus(true);
     addAndMakeVisible(rootNote);
 
     volumeLabel.setText("Volume", juce::dontSendNotification);
@@ -56,10 +81,13 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     saveSlot.onClick   = [this] { chooseSaveSlot(); };
     loadBank.onClick   = [this] { chooseLoadBank(); };
     saveBank.onClick   = [this] { chooseSaveBank(); };
+    lowKey.onValueChange = [this] { processor.setLowKey(static_cast<int>(lowKey.getValue())); };
+    highKey.onValueChange = [this] { processor.setHighKey(static_cast<int>(highKey.getValue())); };
     rootNote.onValueChange = [this] { processor.setRootNote(static_cast<int>(rootNote.getValue())); };
     volume.onValueChange = [this] { processor.setVolume(static_cast<float>(volume.getValue())); };
 
     refreshSlotButtons();
+    leaveSlotParameters();
     startTimerHz(5);
 }
 
@@ -104,13 +132,17 @@ void LSampler24AudioProcessorEditor::resized()
     status.setBounds(area.removeFromTop(28));
     area.removeFromTop(6);
 
-    auto row = area.removeFromTop(36);
-    rootLabel.setBounds(row.removeFromLeft(110));
-    rootNote.setBounds(row);
-    area.removeFromTop(4);
-    row = area.removeFromTop(36);
-    volumeLabel.setBounds(row.removeFromLeft(110));
-    volume.setBounds(row);
+    auto row = area.removeFromTop(32);
+    lowKeyLabel.setBounds(row.removeFromLeft(110)); lowKey.setBounds(row);
+    area.removeFromTop(2);
+    row = area.removeFromTop(32);
+    highKeyLabel.setBounds(row.removeFromLeft(110)); highKey.setBounds(row);
+    area.removeFromTop(2);
+    row = area.removeFromTop(32);
+    rootLabel.setBounds(row.removeFromLeft(110)); rootNote.setBounds(row);
+    area.removeFromTop(2);
+    row = area.removeFromTop(32);
+    volumeLabel.setBounds(row.removeFromLeft(110)); volume.setBounds(row);
 }
 
 void LSampler24AudioProcessorEditor::selectSlot(int slotIndex, bool moveKeyboardFocus)
@@ -119,8 +151,7 @@ void LSampler24AudioProcessorEditor::selectSlot(int slotIndex, bool moveKeyboard
     processor.setCurrentSlot(slotIndex);
     refreshSlotButtons();
     status.setText(processor.getSampleStatus(), juce::dontSendNotification);
-    rootNote.setValue(processor.getRootNote(), juce::dontSendNotification);
-    volume.setValue(processor.getVolume(), juce::dontSendNotification);
+    refreshParameterValues();
     if (moveKeyboardFocus)
         slotButtons[static_cast<size_t>(slotIndex)].grabKeyboardFocus();
 }
@@ -138,6 +169,53 @@ void LSampler24AudioProcessorEditor::refreshSlotButtons()
     }
 }
 
+juce::String LSampler24AudioProcessorEditor::midiNoteText(int note)
+{
+    note = juce::jlimit(0, 127, note);
+    static const char* names[] = { "C", "C sharp", "D", "D sharp", "E", "F", "F sharp", "G", "G sharp", "A", "A sharp", "B" };
+    return juce::String(note) + " " + names[note % 12] + " " + juce::String((note / 12) - 1);
+}
+
+void LSampler24AudioProcessorEditor::refreshParameterValues()
+{
+    lowKey.setValue(processor.getLowKey(), juce::dontSendNotification);
+    highKey.setValue(processor.getHighKey(), juce::dontSendNotification);
+    rootNote.setValue(processor.getRootNote(), juce::dontSendNotification);
+    volume.setValue(processor.getVolume(), juce::dontSendNotification);
+}
+
+void LSampler24AudioProcessorEditor::enterSlotParameters()
+{
+    parameterPage = true;
+    for (auto& b : slotButtons) b.setWantsKeyboardFocus(false);
+    loadSample.setWantsKeyboardFocus(false);
+    loadSlot.setWantsKeyboardFocus(false);
+    saveSlot.setWantsKeyboardFocus(false);
+    loadBank.setWantsKeyboardFocus(false);
+    saveBank.setWantsKeyboardFocus(false);
+    refreshParameterValues();
+    lowKeyLabel.setVisible(true); lowKey.setVisible(true);
+    highKeyLabel.setVisible(true); highKey.setVisible(true);
+    rootLabel.setVisible(true); rootNote.setVisible(true);
+    volumeLabel.setVisible(true); volume.setVisible(true);
+    lowKey.grabKeyboardFocus();
+}
+
+void LSampler24AudioProcessorEditor::leaveSlotParameters()
+{
+    parameterPage = false;
+    loadSample.setWantsKeyboardFocus(true);
+    loadSlot.setWantsKeyboardFocus(true);
+    saveSlot.setWantsKeyboardFocus(true);
+    loadBank.setWantsKeyboardFocus(true);
+    saveBank.setWantsKeyboardFocus(true);
+    refreshSlotButtons();
+    lowKeyLabel.setVisible(false); lowKey.setVisible(false);
+    highKeyLabel.setVisible(false); highKey.setVisible(false);
+    rootLabel.setVisible(false); rootNote.setVisible(false);
+    volumeLabel.setVisible(false); volume.setVisible(false);
+}
+
 bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key)
 {
     const auto mods = key.getModifiers();
@@ -149,6 +227,7 @@ bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key)
     {
         if (ch == 'l' && !mods.isShiftDown())
         {
+            if (parameterPage) leaveSlotParameters();
             selectSlot(processor.getCurrentSlot(), true);
             return true;
         }
@@ -172,12 +251,30 @@ bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key)
     }
 
     const auto* focused = juce::Component::getCurrentlyFocusedComponent();
+
+    if (parameterPage)
+    {
+        if (key.getKeyCode() == juce::KeyPress::escapeKey)
+        {
+            leaveSlotParameters();
+            selectSlot(processor.getCurrentSlot(), true);
+            return true;
+        }
+        return AudioProcessorEditor::keyPressed(key);
+    }
+
     bool onSlot = false;
     for (auto& b : slotButtons)
         if (focused == &b) { onSlot = true; break; }
 
     if (!onSlot)
         return AudioProcessorEditor::keyPressed(key);
+
+    if (key.getKeyCode() == juce::KeyPress::returnKey)
+    {
+        enterSlotParameters();
+        return true;
+    }
 
     const int slot = processor.getCurrentSlot();
     const int row = slot % 8;
@@ -224,10 +321,13 @@ void LSampler24AudioProcessorEditor::timerCallback()
 {
     status.setText(processor.getSampleStatus(), juce::dontSendNotification);
     refreshSlotButtons();
-    if (!rootNote.isMouseButtonDown())
-        rootNote.setValue(processor.getRootNote(), juce::dontSendNotification);
-    if (!volume.isMouseButtonDown())
-        volume.setValue(processor.getVolume(), juce::dontSendNotification);
+    if (parameterPage)
+    {
+        if (!lowKey.isMouseButtonDown()) lowKey.setValue(processor.getLowKey(), juce::dontSendNotification);
+        if (!highKey.isMouseButtonDown()) highKey.setValue(processor.getHighKey(), juce::dontSendNotification);
+        if (!rootNote.isMouseButtonDown()) rootNote.setValue(processor.getRootNote(), juce::dontSendNotification);
+        if (!volume.isMouseButtonDown()) volume.setValue(processor.getVolume(), juce::dontSendNotification);
+    }
 }
 
 void LSampler24AudioProcessorEditor::showResult(bool ok, const juce::String& error, const juce::String& okMessage)

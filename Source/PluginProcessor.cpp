@@ -83,6 +83,28 @@ bool LSampler24AudioProcessor::loadSample(const juce::File& file, juce::String& 
     return true;
 }
 
+int LSampler24AudioProcessor::getLowKey() const noexcept
+{
+    return slots[static_cast<size_t>(currentSlot)].lowKey;
+}
+
+void LSampler24AudioProcessor::setLowKey(int note)
+{
+    auto& s = slots[static_cast<size_t>(currentSlot)];
+    s.lowKey = juce::jlimit(0, 127, note);
+}
+
+int LSampler24AudioProcessor::getHighKey() const noexcept
+{
+    return slots[static_cast<size_t>(currentSlot)].highKey;
+}
+
+void LSampler24AudioProcessor::setHighKey(int note)
+{
+    auto& s = slots[static_cast<size_t>(currentSlot)];
+    s.highKey = juce::jlimit(0, 127, note);
+}
+
 int LSampler24AudioProcessor::getRootNote() const noexcept
 {
     return slots[static_cast<size_t>(currentSlot)].rootNote;
@@ -128,6 +150,8 @@ juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slotIndex, const juc
     tree.setProperty("formatVersion", 2, nullptr);
     tree.setProperty("index", slotIndex, nullptr);
     tree.setProperty("sampleReference", library.makeSampleReference(s.sampleFile), nullptr);
+    tree.setProperty("lowKey", s.lowKey, nullptr);
+    tree.setProperty("highKey", s.highKey, nullptr);
     tree.setProperty("rootNote", s.rootNote, nullptr);
     tree.setProperty("volume", s.volume, nullptr);
     return tree;
@@ -143,6 +167,8 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
 
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
     auto& s = slots[static_cast<size_t>(slotIndex)];
+    s.lowKey = juce::jlimit(0, 127, static_cast<int>(tree.getProperty("lowKey", 0)));
+    s.highKey = juce::jlimit(0, 127, static_cast<int>(tree.getProperty("highKey", 127)));
     s.rootNote = juce::jlimit(0, 127, static_cast<int>(tree.getProperty("rootNote", 60)));
     s.volume = juce::jlimit(0.0f, 1.0f, static_cast<float>(tree.getProperty("volume", 1.0)));
 

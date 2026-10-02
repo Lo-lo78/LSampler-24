@@ -24,6 +24,10 @@ private:
     void showResult(bool ok, const juce::String& error, const juce::String& okMessage);
     void selectSlot(int slotIndex, bool moveKeyboardFocus);
     void refreshSlotButtons();
+    void enterSlotParameters();
+    void leaveSlotParameters();
+    void refreshParameterValues();
+    static juce::String midiNoteText(int note);
 
     LSampler24AudioProcessor& processor;
     std::array<juce::TextButton, LSampler24AudioProcessor::slotCount> slotButtons;
@@ -33,11 +37,16 @@ private:
     juce::TextButton loadBank { "Load Bank" };
     juce::TextButton saveBank { "Save Bank" };
     juce::Label status;
+    juce::Label lowKeyLabel;
+    juce::Slider lowKey;
+    juce::Label highKeyLabel;
+    juce::Slider highKey;
     juce::Label rootLabel;
     juce::Slider rootNote;
     juce::Label volumeLabel;
     juce::Slider volume;
     std::unique_ptr<juce::FileChooser> chooser;
+    bool parameterPage = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LSampler24AudioProcessorEditor)
 };

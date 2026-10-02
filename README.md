@@ -1,18 +1,16 @@
-# LSampler-24 — TEST2 24 Slots Only
+# LSampler-24 — TEST2 24 Slots + Slot Parameters
 
-Diagnostic build rebuilt directly from the stable TEST2 BUILD_FIX1.
+Diagnostic build based on the stable TEST2 audio engine.
 
-This stage adds only the 24-slot data/UI layer:
-- 24 real slot states
-- 3 columns x 8 rows slot grid
-- current-slot selection
-- each slot keeps its own sample, Root Note and Volume
-- slot/bank/project persistence covers all 24 slots
+Added in this step only:
+- 24-slot 3 x 8 slot grid.
+- Silent/contained arrow-key borders.
+- Agreed keyboard shortcuts.
+- Enter on a slot opens that slot's parameter controls.
+- Esc returns to the same slot.
+- Slot parameters currently stored/saved: Low Key, High Key, Original Pitch, Volume.
+- New-slot defaults: Low Key 0, High Key 127, Original Pitch 60.
+- MIDI note display follows the Lua convention: MIDI number + note name + octave.
 
-Audio engine is intentionally unchanged from TEST2:
-- one original TEST2 VoiceBank
-- 16 voices
-- only the currently selected slot is connected to that VoiceBank
-
-No 96-voice pool, no Mono/Poly, no Low/High Key and no parameter sub-grid yet.
-This build exists only to verify that expanding TEST2 from one stored slot to 24 slots is stable in REAPER.
+Important diagnostic limitation:
+The audio engine is still the original single VoiceBank from TEST2. Only the currently selected slot is connected to playback. Low/High Key are persisted but are not yet used for multi-slot MIDI routing. Overlapping regions will be enabled in the next isolated step after this build proves stable.

@@ -48,6 +48,10 @@ public:
 
     juce::File getCurrentSampleFile() const;
     juce::String getSampleStatus() const;
+    int getLowKey() const noexcept;
+    void setLowKey(int note);
+    int getHighKey() const noexcept;
+    void setHighKey(int note);
     int getRootNote() const noexcept;
     void setRootNote(int note);
     float getVolume() const noexcept;
@@ -60,6 +64,8 @@ private:
     {
         std::shared_ptr<SharedSample> sample;
         juce::File sampleFile;
+        int lowKey = 0;
+        int highKey = 127;
         int rootNote = 60;
         float volume = 1.0f;
         juce::String status = "No sample loaded";
