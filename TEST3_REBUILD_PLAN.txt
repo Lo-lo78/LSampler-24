@@ -1,0 +1,22 @@
+LSampler-24 TEST3 - rebuilt from the known-good TEST2 BUILD_FIX1 base
+
+Safety rule:
+- No TEST3/TEST4 crash-version source was reused.
+- The 96 voices live only on the audio thread.
+- UI/state changes publish an immutable 24-slot runtime snapshot using atomic shared_ptr load/store.
+- No audio-thread mutex or SpinLock was introduced.
+
+Current feature set:
+- 24 real slots.
+- Main grid exactly 3 columns x 8 rows: 1..8, 9..16, 17..24.
+- Only selected slot is a Tab stop; arrows move inside grid.
+- Enter on slot opens parameters; Esc returns to same slot.
+- Alt+L Slots; Alt+O Load Sample; Alt+S Load Slot; Alt+Shift+S Save Slot;
+  Alt+B Load Bank; Alt+Shift+B Save Bank.
+- Per slot: Low Key, High Key, Original Pitch, Voice Mode, Mono Mode, Volume.
+- Default Low Key 0 C -1, High Key 127 G 9, Original Pitch 60 C 4.
+- Voice Mode: Poly / Mono. Mono Mode: Trigger / Legato.
+- 96 globally shared voices, dynamically allocated.
+- Slot and bank files save all new fields. Bank has 24 real slots.
+- Project state saves all 24 slots.
+- TEST1/TEST2 one-slot project states remain readable.

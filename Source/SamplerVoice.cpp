@@ -7,13 +7,6 @@ void VoiceBank::prepare(double sampleRate)
     allNotesOff();
 }
 
-void VoiceBank::setSlots(const std::array<SlotPlaybackState, slotCount>& newSlots)
-{
-    const juce::SpinLock::ScopedLockType lock(stateLock);
-    slots = newSlots;
-    for (auto& voice : voices) voice = {};
-}
-
 VoiceBank::Voice& VoiceBank::chooseVoice()
 {
     for (auto& voice : voices)
@@ -27,85 +20,136 @@ VoiceBank::Voice& VoiceBank::chooseVoice()
     return *oldest;
 }
 
-VoiceBank::Voice* VoiceBank::findMonoVoice(int slotIndex)
+VoiceBank::Voice* VoiceBank::findMonoVoice(int slot)
 {
     for (auto& voice : voices)
-        if (voice.active && voice.slot == slotIndex)
+        if (voice.active && voice.slot == slot)
             return &voice;
     return nullptr;
 }
 
-void VoiceBank::noteOn(int note, float velocity)
+void VoiceBank::startVoice(Voice& voice, int slot, int note, float velocity,
+                           const SlotRuntimeState& state, bool restart)
 {
-    for (int slotIndex = 0; slotIndex < slotCount; ++slotIndex)
+    if (!state.sample || state.sample->audio.getNumSamples() < 2)
+        return;
+
+    voice.active = true;
+    voice.note = note;
+    voice.slot = slot;
+    voice.sample = state.sample;
+    if (restart)
+        voice.position = 0.0;
+    voice.age = ++ageCounter;
+    voice.increment = std::pow(2.0, (note - state.originalPitch) / 12.0)
+                    * (state.sample->sourceSampleRate / hostSampleRate);
+    voice.gain = juce::jlimit(0.0f, 2.0f, state.volume)
+               * juce::jlimit(0.0f, 1.0f, velocity);
+}
+
+void VoiceBank::noteOn(int note, float velocity, const SamplerRuntimeState& runtime)
+{
+    note = juce::jlimit(0, 127, note);
+
+    for (int slot = 0; slot < SamplerRuntimeState::slotCount; ++slot)
     {
-        const auto& slot = slots[(size_t) slotIndex];
-        const int low = juce::jmin(slot.lowKey, slot.highKey);
-        const int high = juce::jmax(slot.lowKey, slot.highKey);
-        if (!slot.sample || slot.sample->audio.getNumSamples() == 0 || note < low || note > high)
+        const auto& state = runtime.slots[static_cast<size_t>(slot)];
+        if (!state.sample || note < state.lowKey || note > state.highKey)
             continue;
 
-        Voice* voice = nullptr;
-        if (slot.mono)
+        heldNoteOrder[static_cast<size_t>(slot)][static_cast<size_t>(note)] = ++noteOrderCounter;
+
+        if (state.mono)
         {
-            voice = findMonoVoice(slotIndex);
-            if (voice != nullptr && slot.monoLegato)
+            if (auto* existing = findMonoVoice(slot))
             {
-                voice->note = note;
-                voice->velocity = juce::jlimit(0.0f, 1.0f, velocity);
-                const double pitchRatio = std::pow(2.0, (note - slot.originalNote) / 12.0);
-                voice->increment = (slot.sample->sourceSampleRate / hostSampleRate) * pitchRatio;
-                voice->age = ++ageCounter;
+                startVoice(*existing, slot, note, velocity, state, !state.legato);
                 continue;
             }
         }
 
-        if (voice == nullptr)
-            voice = &chooseVoice();
-
-        voice->active = true;
-        voice->slot = slotIndex;
-        voice->note = note;
-        voice->position = 0.0;
-        voice->age = ++ageCounter;
-        voice->sample = slot.sample;
-        voice->velocity = juce::jlimit(0.0f, 1.0f, velocity);
-        const double pitchRatio = std::pow(2.0, (note - slot.originalNote) / 12.0);
-        voice->increment = (slot.sample->sourceSampleRate / hostSampleRate) * pitchRatio;
+        auto& voice = chooseVoice();
+        startVoice(voice, slot, note, velocity, state, true);
     }
 }
 
-void VoiceBank::noteOff(int note)
+int VoiceBank::newestHeldNoteForSlot(int slot, const SlotRuntimeState& state) const
 {
-    for (auto& voice : voices)
-        if (voice.active && voice.note == note)
-            voice.active = false;
+    uint64_t newest = 0;
+    int result = -1;
+    const auto& orders = heldNoteOrder[static_cast<size_t>(slot)];
+    for (int note = juce::jlimit(0, 127, state.lowKey);
+         note <= juce::jlimit(0, 127, state.highKey); ++note)
+    {
+        const auto order = orders[static_cast<size_t>(note)];
+        if (order > newest)
+        {
+            newest = order;
+            result = note;
+        }
+    }
+    return result;
 }
 
-void VoiceBank::allNotesOffUnlocked()
+void VoiceBank::noteOff(int note, const SamplerRuntimeState& runtime)
 {
-    for (auto& voice : voices)
-        voice = {};
+    note = juce::jlimit(0, 127, note);
+
+    for (int slot = 0; slot < SamplerRuntimeState::slotCount; ++slot)
+    {
+        const auto& state = runtime.slots[static_cast<size_t>(slot)];
+        heldNoteOrder[static_cast<size_t>(slot)][static_cast<size_t>(note)] = 0;
+
+        if (state.mono)
+        {
+            auto* monoVoice = findMonoVoice(slot);
+            if (monoVoice == nullptr || monoVoice->note != note)
+                continue;
+
+            const int fallback = newestHeldNoteForSlot(slot, state);
+            if (fallback >= 0 && state.sample)
+            {
+                startVoice(*monoVoice, slot, fallback, 1.0f, state, !state.legato);
+            }
+            else
+            {
+                monoVoice->active = false;
+                monoVoice->sample.reset();
+            }
+            continue;
+        }
+
+        for (auto& voice : voices)
+        {
+            if (voice.active && voice.slot == slot && voice.note == note)
+            {
+                voice.active = false;
+                voice.sample.reset();
+            }
+        }
+    }
 }
 
 void VoiceBank::allNotesOff()
 {
-    const juce::SpinLock::ScopedLockType lock(stateLock);
-    allNotesOffUnlocked();
+    for (auto& voice : voices)
+        voice = {};
+    for (auto& slot : heldNoteOrder)
+        slot.fill(0);
 }
 
-void VoiceBank::render(juce::AudioBuffer<float>& output, juce::MidiBuffer& midi)
+void VoiceBank::render(juce::AudioBuffer<float>& output, juce::MidiBuffer& midi,
+                       const SamplerRuntimeState& runtime)
 {
-    const juce::SpinLock::ScopedLockType lock(stateLock);
     for (const auto metadata : midi)
     {
         const auto message = metadata.getMessage();
         if (message.isNoteOn())
-            noteOn(message.getNoteNumber(), message.getFloatVelocity());
+            noteOn(message.getNoteNumber(), message.getFloatVelocity(), runtime);
         else if (message.isNoteOff())
-            noteOff(message.getNoteNumber());
+            noteOff(message.getNoteNumber(), runtime);
         else if (message.isAllNotesOff() || message.isAllSoundOff())
-            allNotesOffUnlocked();
+            allNotesOff();
     }
 
     for (auto& voice : voices)
@@ -113,34 +157,34 @@ void VoiceBank::render(juce::AudioBuffer<float>& output, juce::MidiBuffer& midi)
         if (!voice.active || !voice.sample)
             continue;
 
-        const auto& slot = slots[(size_t) juce::jlimit(0, slotCount - 1, voice.slot)];
-        const int sourceSamples = voice.sample->audio.getNumSamples();
-        const int sourceChannels = voice.sample->audio.getNumChannels();
+        const auto& audio = voice.sample->audio;
+        const int sourceSamples = audio.getNumSamples();
+        const int sourceChannels = audio.getNumChannels();
         if (sourceSamples < 2 || sourceChannels == 0)
         {
             voice.active = false;
+            voice.sample.reset();
             continue;
         }
 
         for (int outSample = 0; outSample < output.getNumSamples(); ++outSample)
         {
             const int i0 = static_cast<int>(voice.position);
-            if (i0 >= sourceSamples - 1)
+            if (i0 < 0 || i0 >= sourceSamples - 1)
             {
                 voice.active = false;
+                voice.sample.reset();
                 break;
             }
 
             const int i1 = i0 + 1;
-            const float frac = static_cast<float>(voice.position - i0);
-            const float voiceGain = slot.gain * voice.velocity;
-
+            const float frac = static_cast<float>(voice.position - static_cast<double>(i0));
             for (int ch = 0; ch < output.getNumChannels(); ++ch)
             {
                 const int srcCh = sourceChannels == 1 ? 0 : juce::jmin(ch, sourceChannels - 1);
-                const float a = voice.sample->audio.getSample(srcCh, i0);
-                const float b = voice.sample->audio.getSample(srcCh, i1);
-                output.addSample(ch, outSample, (a + (b - a) * frac) * voiceGain);
+                const float a = audio.getSample(srcCh, i0);
+                const float b = audio.getSample(srcCh, i1);
+                output.addSample(ch, outSample, (a + (b - a) * frac) * voice.gain);
             }
             voice.position += voice.increment;
         }

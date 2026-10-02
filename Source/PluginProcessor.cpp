@@ -1,27 +1,26 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+namespace
+{
+constexpr int presetFormatVersion = 3;
+}
+
 LSampler24AudioProcessor::LSampler24AudioProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
-    // TEST4: new slots start open across the full MIDI keyboard.
-    // MIDI has 128 notes numbered 0..127. Original Pitch is neutral at 60 (C4).
-    for (int i = 0; i < slotCount; ++i)
-    {
-        auto& slot = slots[(size_t) i];
-        slot.lowKey = 0;
-        slot.highKey = 127;
-        slot.originalNote = 60;
-    }
+    publishRuntimeSnapshot();
 }
 
 void LSampler24AudioProcessor::prepareToPlay(double sampleRate, int)
 {
     voiceBank.prepare(sampleRate);
-    syncVoiceBank();
 }
 
-void LSampler24AudioProcessor::releaseResources() { voiceBank.allNotesOff(); }
+void LSampler24AudioProcessor::releaseResources()
+{
+    voiceBank.allNotesOff();
+}
 
 bool LSampler24AudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
@@ -32,7 +31,9 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 {
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
-    voiceBank.render(buffer, midi);
+    auto snapshot = std::atomic_load(&runtimeSnapshot);
+    if (snapshot)
+        voiceBank.render(buffer, midi, *snapshot);
 }
 
 juce::AudioProcessorEditor* LSampler24AudioProcessor::createEditor()
@@ -40,41 +41,55 @@ juce::AudioProcessorEditor* LSampler24AudioProcessor::createEditor()
     return new LSampler24AudioProcessorEditor(*this);
 }
 
-void LSampler24AudioProcessor::syncVoiceBank()
+void LSampler24AudioProcessor::setCurrentSlot(int slot)
 {
-    std::array<SlotPlaybackState, VoiceBank::slotCount> playback {};
+    currentSlot.store(juce::jlimit(0, slotCount - 1, slot));
+}
+
+LSampler24AudioProcessor::SlotState LSampler24AudioProcessor::getSlotState(int slot) const
+{
+    const juce::ScopedLock lock(stateLock);
+    return slots[static_cast<size_t>(juce::jlimit(0, slotCount - 1, slot))];
+}
+
+juce::String LSampler24AudioProcessor::getSlotLabel(int slot) const
+{
+    const auto state = getSlotState(slot);
+    const auto name = state.sampleFile.getFullPathName().isEmpty() ? juce::String("empty")
+                                                                   : state.sampleFile.getFileName();
+    return "Slot " + juce::String(slot + 1) + ", " + name;
+}
+
+juce::String LSampler24AudioProcessor::noteName(int midiNote)
+{
+    static const char* names[] = { "C", "C sharp", "D", "D sharp", "E", "F",
+                                   "F sharp", "G", "G sharp", "A", "A sharp", "B" };
+    const int n = juce::jlimit(0, 127, midiNote);
+    return juce::String(n) + " " + names[n % 12] + " " + juce::String(n / 12 - 1);
+}
+
+std::shared_ptr<const SamplerRuntimeState> LSampler24AudioProcessor::buildRuntimeSnapshot() const
+{
+    auto snapshot = std::make_shared<SamplerRuntimeState>();
     const juce::ScopedLock lock(stateLock);
     for (int i = 0; i < slotCount; ++i)
     {
-        const auto& s = slots[(size_t) i];
-        auto& p = playback[(size_t) i];
-        p.sample = s.sample;
-        p.lowKey = s.lowKey;
-        p.highKey = s.highKey;
-        p.originalNote = s.originalNote;
-        p.gain = s.volume;
-        p.mono = s.voiceMode == VoiceMode::Mono;
-        p.monoLegato = s.monoMode == MonoMode::Legato;
+        const auto& src = slots[static_cast<size_t>(i)];
+        auto& dst = snapshot->slots[static_cast<size_t>(i)];
+        dst.sample = src.sample;
+        dst.lowKey = src.lowKey;
+        dst.highKey = src.highKey;
+        dst.originalPitch = src.originalPitch;
+        dst.volume = src.volume;
+        dst.mono = src.voiceMode == 1;
+        dst.legato = src.monoMode == 1;
     }
-    voiceBank.setSlots(playback);
+    return snapshot;
 }
 
-void LSampler24AudioProcessor::setCurrentSlot(int oneBasedSlot)
+void LSampler24AudioProcessor::publishRuntimeSnapshot()
 {
-    currentSlot = juce::jlimit(1, slotCount, oneBasedSlot);
-}
-
-LSampler24AudioProcessor::SlotState LSampler24AudioProcessor::getSlotState(int oneBasedSlot) const
-{
-    const juce::ScopedLock lock(stateLock);
-    return slots[(size_t) (juce::jlimit(1, slotCount, oneBasedSlot) - 1)];
-}
-
-juce::String LSampler24AudioProcessor::getSlotLabel(int oneBasedSlot) const
-{
-    const auto slot = getSlotState(oneBasedSlot);
-    return "Slot " + juce::String(oneBasedSlot) + ", "
-         + (slot.sampleFile.getFullPathName().isEmpty() ? juce::String("empty") : slot.sampleFile.getFileName());
+    std::atomic_store(&runtimeSnapshot, buildRuntimeSnapshot());
 }
 
 bool LSampler24AudioProcessor::loadSample(const juce::File& file, juce::String& error)
@@ -83,245 +98,304 @@ bool LSampler24AudioProcessor::loadSample(const juce::File& file, juce::String& 
     if (!loaded)
         return false;
 
+    const int slot = getCurrentSlot();
     {
         const juce::ScopedLock lock(stateLock);
-        auto& slot = slots[(size_t) (currentSlot - 1)];
-        slot.sample = std::move(loaded);
-        slot.sampleFile = file;
-        slot.status = "Loaded: " + file.getFileName();
+        auto& state = slots[static_cast<size_t>(slot)];
+        state.sample = std::move(loaded);
+        state.sampleFile = file;
+        state.status = "Loaded: " + file.getFileName();
     }
-    syncVoiceBank();
+    publishRuntimeSnapshot();
     return true;
 }
 
-int LSampler24AudioProcessor::getLowKey() const { return getSlotState(currentSlot).lowKey; }
-int LSampler24AudioProcessor::getHighKey() const { return getSlotState(currentSlot).highKey; }
-int LSampler24AudioProcessor::getOriginalNote() const { return getSlotState(currentSlot).originalNote; }
-float LSampler24AudioProcessor::getVolume() const { return getSlotState(currentSlot).volume; }
-LSampler24AudioProcessor::VoiceMode LSampler24AudioProcessor::getVoiceMode() const { return getSlotState(currentSlot).voiceMode; }
-LSampler24AudioProcessor::MonoMode LSampler24AudioProcessor::getMonoMode() const { return getSlotState(currentSlot).monoMode; }
-juce::String LSampler24AudioProcessor::getSampleStatus() const { return getSlotState(currentSlot).status; }
+void LSampler24AudioProcessor::setLowKey(int value)
+{
+    {
+        const juce::ScopedLock lock(stateLock);
+        auto& s = slots[static_cast<size_t>(getCurrentSlot())];
+        s.lowKey = juce::jlimit(0, s.highKey, value);
+    }
+    publishRuntimeSnapshot();
+}
 
-void LSampler24AudioProcessor::setLowKey(int note)
+void LSampler24AudioProcessor::setHighKey(int value)
 {
-    { const juce::ScopedLock lock(stateLock); slots[(size_t)(currentSlot - 1)].lowKey = juce::jlimit(0, 127, note); }
-    syncVoiceBank();
+    {
+        const juce::ScopedLock lock(stateLock);
+        auto& s = slots[static_cast<size_t>(getCurrentSlot())];
+        s.highKey = juce::jlimit(s.lowKey, 127, value);
+    }
+    publishRuntimeSnapshot();
 }
-void LSampler24AudioProcessor::setHighKey(int note)
+
+void LSampler24AudioProcessor::setOriginalPitch(int value)
 {
-    { const juce::ScopedLock lock(stateLock); slots[(size_t)(currentSlot - 1)].highKey = juce::jlimit(0, 127, note); }
-    syncVoiceBank();
+    {
+        const juce::ScopedLock lock(stateLock);
+        slots[static_cast<size_t>(getCurrentSlot())].originalPitch = juce::jlimit(0, 127, value);
+    }
+    publishRuntimeSnapshot();
 }
-void LSampler24AudioProcessor::setOriginalNote(int note)
+
+void LSampler24AudioProcessor::setVoiceMode(int value)
 {
-    { const juce::ScopedLock lock(stateLock); slots[(size_t)(currentSlot - 1)].originalNote = juce::jlimit(0, 127, note); }
-    syncVoiceBank();
+    {
+        const juce::ScopedLock lock(stateLock);
+        slots[static_cast<size_t>(getCurrentSlot())].voiceMode = juce::jlimit(0, 1, value);
+    }
+    publishRuntimeSnapshot();
 }
+
+void LSampler24AudioProcessor::setMonoMode(int value)
+{
+    {
+        const juce::ScopedLock lock(stateLock);
+        slots[static_cast<size_t>(getCurrentSlot())].monoMode = juce::jlimit(0, 1, value);
+    }
+    publishRuntimeSnapshot();
+}
+
 void LSampler24AudioProcessor::setVolume(float value)
 {
-    { const juce::ScopedLock lock(stateLock); slots[(size_t)(currentSlot - 1)].volume = juce::jlimit(0.0f, 1.0f, value); }
-    syncVoiceBank();
-}
-void LSampler24AudioProcessor::setVoiceMode(VoiceMode mode)
-{
-    { const juce::ScopedLock lock(stateLock); slots[(size_t)(currentSlot - 1)].voiceMode = mode; }
-    syncVoiceBank();
-}
-void LSampler24AudioProcessor::setMonoMode(MonoMode mode)
-{
-    { const juce::ScopedLock lock(stateLock); slots[(size_t)(currentSlot - 1)].monoMode = mode; }
-    syncVoiceBank();
+    {
+        const juce::ScopedLock lock(stateLock);
+        slots[static_cast<size_t>(getCurrentSlot())].volume = juce::jlimit(0.0f, 1.0f, value);
+    }
+    publishRuntimeSnapshot();
 }
 
-juce::ValueTree LSampler24AudioProcessor::makeSlotStateTree(int slotIndex, const juce::String& type) const
+juce::String LSampler24AudioProcessor::getSampleStatus() const
 {
-    const juce::ScopedLock lock(stateLock);
-    const auto& s = slots[(size_t) slotIndex];
+    const auto s = getSlotState(getCurrentSlot());
+    return "Slot " + juce::String(getCurrentSlot() + 1) + ". " + s.status;
+}
+
+juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slot, const juce::String& type) const
+{
+    const auto s = getSlotState(slot);
     juce::ValueTree tree(type);
-    tree.setProperty("format", "LSampler-24 Slot", nullptr);
-    tree.setProperty("formatVersion", 4, nullptr);
-    tree.setProperty("slot", slotIndex + 1, nullptr);
+    tree.setProperty("index", slot, nullptr);
+    tree.setProperty("formatVersion", presetFormatVersion, nullptr);
     tree.setProperty("sampleReference", library.makeSampleReference(s.sampleFile), nullptr);
     tree.setProperty("lowKey", s.lowKey, nullptr);
     tree.setProperty("highKey", s.highKey, nullptr);
-    tree.setProperty("originalNote", s.originalNote, nullptr);
+    tree.setProperty("originalPitch", s.originalPitch, nullptr);
+    tree.setProperty("rootNote", s.originalPitch, nullptr); // compatibility alias
+    tree.setProperty("voiceMode", s.voiceMode, nullptr);
+    tree.setProperty("monoMode", s.monoMode, nullptr);
     tree.setProperty("volume", s.volume, nullptr);
-    tree.setProperty("voiceMode", static_cast<int>(s.voiceMode), nullptr);
-    tree.setProperty("monoMode", static_cast<int>(s.monoMode), nullptr);
     return tree;
 }
 
-bool LSampler24AudioProcessor::restoreSlotStateTree(int slotIndex, const juce::ValueTree& tree, juce::String& error)
+bool LSampler24AudioProcessor::restoreSlotState(int slot, const juce::ValueTree& tree, juce::String& error)
 {
-    if (!tree.isValid() || slotIndex < 0 || slotIndex >= slotCount)
+    if (!tree.isValid())
     {
-        error = "Invalid slot preset";
+        error = "Invalid preset";
         return false;
     }
 
-    SlotState restored;
-    const int defaultLow = 0;
-    const int defaultHigh = 127;
-    const int defaultRoot = 60;
-    const bool hasSavedRoot = tree.hasProperty("originalNote") || tree.hasProperty("rootNote");
-    const int savedRoot = juce::jlimit(0, 127, static_cast<int>(tree.getProperty("originalNote", tree.getProperty("rootNote", defaultRoot))));
-    // TEST1/TEST2 compatibility: an old state with a saved root but no range remains single-note.
-    // TEST1/TEST2 states with a saved root but no range stay single-note for compatibility.
-    // A genuinely new TEST4 slot defaults to the full 0..127 range.
-    const int missingLowDefault = hasSavedRoot ? savedRoot : defaultLow;
-    const int missingHighDefault = hasSavedRoot ? savedRoot : defaultHigh;
-    restored.lowKey = juce::jlimit(0, 127, static_cast<int>(tree.getProperty("lowKey", missingLowDefault)));
-    restored.highKey = juce::jlimit(0, 127, static_cast<int>(tree.getProperty("highKey", missingHighDefault)));
-    restored.originalNote = savedRoot;
-    restored.volume = juce::jlimit(0.0f, 1.0f, static_cast<float>(tree.getProperty("volume", 1.0)));
-    restored.voiceMode = static_cast<int>(tree.getProperty("voiceMode", 1)) == 0 ? VoiceMode::Mono : VoiceMode::Poly;
-    restored.monoMode = static_cast<int>(tree.getProperty("monoMode", 0)) == 1 ? MonoMode::Legato : MonoMode::Trigger;
+    SlotState next;
+    next.lowKey = juce::jlimit(0, 127, static_cast<int>(tree.getProperty("lowKey", 0)));
+    next.highKey = juce::jlimit(next.lowKey, 127, static_cast<int>(tree.getProperty("highKey", 127)));
+    next.originalPitch = juce::jlimit(0, 127, static_cast<int>(tree.getProperty(
+        "originalPitch", tree.getProperty("rootNote", 60))));
+    next.voiceMode = juce::jlimit(0, 1, static_cast<int>(tree.getProperty("voiceMode", 0)));
+    next.monoMode = juce::jlimit(0, 1, static_cast<int>(tree.getProperty("monoMode", 0)));
+    next.volume = juce::jlimit(0.0f, 1.0f, static_cast<float>(tree.getProperty("volume", 1.0f)));
 
     auto reference = tree.getProperty("sampleReference").toString();
-    if (reference.isEmpty()) reference = tree.getProperty("samplePath").toString();
-    auto file = library.resolveSampleReference(reference);
-    if (!file.getFullPathName().isEmpty())
+    if (reference.isEmpty())
+        reference = tree.getProperty("samplePath").toString();
+
+    const juce::File file = library.resolveSampleReference(reference);
+    if (reference.isNotEmpty())
     {
-        restored.sampleFile = file;
-        if (file.existsAsFile())
+        if (!file.existsAsFile())
         {
-            juce::String loadError;
-            restored.sample = SamplePool::instance().load(file, loadError);
-            if (!restored.sample)
+            next.sampleFile = file;
+            next.status = "Sample missing: " + file.getFileName();
             {
-                restored.status = loadError;
-                error = loadError;
+                const juce::ScopedLock lock(stateLock);
+                slots[static_cast<size_t>(slot)] = std::move(next);
             }
-            else restored.status = "Loaded: " + file.getFileName();
+            publishRuntimeSnapshot();
+            error = "Sample missing: " + file.getFileName();
+            return false;
         }
-        else
-        {
-            restored.status = "Sample missing: " + file.getFileName();
-            error = restored.status;
-        }
+
+        auto loaded = SamplePool::instance().load(file, error);
+        if (!loaded)
+            return false;
+        next.sample = std::move(loaded);
+        next.sampleFile = file;
+        next.status = "Loaded: " + file.getFileName();
     }
-
-    { const juce::ScopedLock lock(stateLock); slots[(size_t) slotIndex] = std::move(restored); }
-    return error.isEmpty();
-}
-
-bool LSampler24AudioProcessor::materialiseSlotSample(int slotIndex, juce::String& error)
-{
-    juce::File source;
-    { const juce::ScopedLock lock(stateLock); source = slots[(size_t)slotIndex].sampleFile; }
-    if (source.getFullPathName().isEmpty()) return true;
-    auto local = library.materialiseSample(source, error);
-    if (local.getFullPathName().isEmpty()) return false;
-    if (local != source)
+    else
     {
-        auto loaded = SamplePool::instance().load(local, error);
-        if (!loaded) return false;
-        const juce::ScopedLock lock(stateLock);
-        auto& s = slots[(size_t)slotIndex];
-        s.sampleFile = local;
-        s.sample = std::move(loaded);
-        s.status = "Loaded: " + local.getFileName();
+        next.status = "empty";
     }
+
+    {
+        const juce::ScopedLock lock(stateLock);
+        slots[static_cast<size_t>(slot)] = std::move(next);
+    }
+    publishRuntimeSnapshot();
     return true;
 }
 
-juce::ValueTree LSampler24AudioProcessor::makeBankState(const juce::String& type) const
+bool LSampler24AudioProcessor::materialiseSlotSample(int slot, juce::String& error)
 {
-    juce::ValueTree bank(type);
-    bank.setProperty("format", "LSampler-24 Bank", nullptr);
-    bank.setProperty("formatVersion", 4, nullptr);
-    bank.setProperty("slotCount", slotCount, nullptr);
-    bank.setProperty("currentSlot", currentSlot, nullptr);
-    for (int i = 0; i < slotCount; ++i)
-        bank.addChild(makeSlotStateTree(i), -1, nullptr);
-    return bank;
-}
+    const auto state = getSlotState(slot);
+    if (state.sampleFile.getFullPathName().isEmpty())
+        return true;
 
-bool LSampler24AudioProcessor::restoreBankState(const juce::ValueTree& bank, juce::String& error)
-{
-    if (!bank.isValid()) { error = "Invalid bank"; return false; }
-    juce::String firstError;
-    for (int i = 0; i < slotCount; ++i)
+    auto local = library.materialiseSample(state.sampleFile, error);
+    if (local.getFullPathName().isEmpty())
+        return false;
+    if (local == state.sampleFile)
+        return true;
+
+    auto loaded = SamplePool::instance().load(local, error);
+    if (!loaded)
+        return false;
+
     {
-        auto child = bank.getChild(i);
-        if (!child.isValid()) child = juce::ValueTree("Slot");
-        juce::String slotError;
-        restoreSlotStateTree(i, child, slotError);
-        if (firstError.isEmpty() && slotError.isNotEmpty()) firstError = slotError;
+        const juce::ScopedLock lock(stateLock);
+        auto& dst = slots[static_cast<size_t>(slot)];
+        dst.sample = std::move(loaded);
+        dst.sampleFile = local;
+        dst.status = "Loaded: " + local.getFileName();
     }
-    currentSlot = juce::jlimit(1, slotCount, static_cast<int>(bank.getProperty("currentSlot", 1)));
-    syncVoiceBank();
-    error = firstError;
-    return firstError.isEmpty();
+    publishRuntimeSnapshot();
+    return true;
 }
 
-bool LSampler24AudioProcessor::writePreset(const juce::File& file, const juce::ValueTree& tree, juce::String& error) const
+bool LSampler24AudioProcessor::writePreset(const juce::File& file, const juce::ValueTree& tree,
+                                           juce::String& error) const
 {
     auto xml = tree.createXml();
-    if (!xml || !xml->writeTo(file)) { error = "Could not write preset"; return false; }
+    if (!xml || !xml->writeTo(file))
+    {
+        error = "Could not write preset";
+        return false;
+    }
     return true;
 }
 
 juce::ValueTree LSampler24AudioProcessor::readPreset(const juce::File& file, juce::String& error) const
 {
     auto xml = juce::XmlDocument::parse(file);
-    if (!xml) { error = "Could not read preset"; return {}; }
+    if (!xml)
+    {
+        error = "Could not read preset";
+        return {};
+    }
     return juce::ValueTree::fromXml(*xml);
 }
 
-bool LSampler24AudioProcessor::saveSlotPreset(const juce::File& file, juce::String& error)
+bool LSampler24AudioProcessor::saveSlotPreset(const juce::File& presetFile, juce::String& error)
 {
-    const int index = currentSlot - 1;
-    if (!materialiseSlotSample(index, error)) return false;
-    syncVoiceBank();
-    return writePreset(file, makeSlotStateTree(index, "LSampler24Slot"), error);
+    const int slot = getCurrentSlot();
+    if (!materialiseSlotSample(slot, error))
+        return false;
+    auto tree = makeSlotState(slot, "LSampler24Slot");
+    tree.setProperty("format", "LSampler-24 Slot", nullptr);
+    return writePreset(presetFile, tree, error);
 }
 
-bool LSampler24AudioProcessor::loadSlotPreset(const juce::File& file, juce::String& error)
+bool LSampler24AudioProcessor::loadSlotPreset(const juce::File& presetFile, juce::String& error)
 {
-    auto tree = readPreset(file, error);
-    if (!tree.hasType("LSampler24Slot") && !tree.hasType("Slot")) { error = "Not an LSampler-24 slot preset"; return false; }
-    const bool ok = restoreSlotStateTree(currentSlot - 1, tree, error);
-    syncVoiceBank();
+    auto tree = readPreset(presetFile, error);
+    if (!tree.hasType("LSampler24Slot"))
+    {
+        error = "Not an LSampler-24 slot preset";
+        return false;
+    }
+    return restoreSlotState(getCurrentSlot(), tree, error);
+}
+
+bool LSampler24AudioProcessor::saveBankPreset(const juce::File& presetFile, juce::String& error)
+{
+    for (int slot = 0; slot < slotCount; ++slot)
+        if (!materialiseSlotSample(slot, error))
+            return false;
+
+    juce::ValueTree bank("LSampler24Bank");
+    bank.setProperty("format", "LSampler-24 Bank", nullptr);
+    bank.setProperty("formatVersion", presetFormatVersion, nullptr);
+    bank.setProperty("slotCount", slotCount, nullptr);
+    for (int slot = 0; slot < slotCount; ++slot)
+        bank.addChild(makeSlotState(slot, "Slot"), -1, nullptr);
+    return writePreset(presetFile, bank, error);
+}
+
+bool LSampler24AudioProcessor::loadBankPreset(const juce::File& presetFile, juce::String& error)
+{
+    auto bank = readPreset(presetFile, error);
+    if (!bank.hasType("LSampler24Bank") || bank.getNumChildren() == 0)
+    {
+        error = "Not an LSampler-24 bank preset";
+        return false;
+    }
+
+    bool ok = true;
+    juce::String firstError;
+    const int count = juce::jmin(slotCount, bank.getNumChildren());
+    for (int slot = 0; slot < count; ++slot)
+    {
+        juce::String slotError;
+        if (!restoreSlotState(slot, bank.getChild(slot), slotError))
+        {
+            ok = false;
+            if (firstError.isEmpty()) firstError = slotError;
+        }
+    }
+    for (int slot = count; slot < slotCount; ++slot)
+    {
+        juce::ValueTree empty("Slot");
+        restoreSlotState(slot, empty, firstError);
+    }
+    if (!ok) error = firstError;
     return ok;
-}
-
-bool LSampler24AudioProcessor::saveBankPreset(const juce::File& file, juce::String& error)
-{
-    for (int i = 0; i < slotCount; ++i)
-        if (!materialiseSlotSample(i, error)) return false;
-    syncVoiceBank();
-    return writePreset(file, makeBankState("LSampler24Bank"), error);
-}
-
-bool LSampler24AudioProcessor::loadBankPreset(const juce::File& file, juce::String& error)
-{
-    auto tree = readPreset(file, error);
-    if (!tree.hasType("LSampler24Bank")) { error = "Not an LSampler-24 bank preset"; return false; }
-    return restoreBankState(tree, error);
 }
 
 void LSampler24AudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    auto state = makeBankState("LSampler24State");
-    if (auto xml = state.createXml()) copyXmlToBinary(*xml, destData);
+    juce::ValueTree state("LSampler24State");
+    state.setProperty("formatVersion", presetFormatVersion, nullptr);
+    state.setProperty("currentSlot", getCurrentSlot(), nullptr);
+    for (int slot = 0; slot < slotCount; ++slot)
+        state.addChild(makeSlotState(slot, "Slot"), -1, nullptr);
+    if (auto xml = state.createXml())
+        copyXmlToBinary(*xml, destData);
 }
 
 void LSampler24AudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
-    if (auto xml = getXmlFromBinary(data, sizeInBytes))
+    auto xml = getXmlFromBinary(data, sizeInBytes);
+    if (!xml)
+        return;
+
+    auto state = juce::ValueTree::fromXml(*xml);
+    juce::String error;
+    if (state.hasType("LSampler24State") && state.getNumChildren() > 0)
     {
-        auto state = juce::ValueTree::fromXml(*xml);
-        juce::String error;
-        if (state.hasType("LSampler24State") || state.hasType("LSampler24Bank"))
-            restoreBankState(state, error);
-        else
-        {
-            // TEST1/TEST2 one-slot project-state compatibility.
-            restoreSlotStateTree(0, state, error);
-            syncVoiceBank();
-        }
+        const int count = juce::jmin(slotCount, state.getNumChildren());
+        for (int slot = 0; slot < count; ++slot)
+            restoreSlotState(slot, state.getChild(slot), error);
+        setCurrentSlot(static_cast<int>(state.getProperty("currentSlot", 0)));
+        return;
     }
+
+    // TEST1/TEST2 compatibility: their project state described only slot 1.
+    if (state.hasType("LSampler24State"))
+        restoreSlotState(0, state, error);
 }
 
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new LSampler24AudioProcessor(); }
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new LSampler24AudioProcessor();
+}

@@ -2,117 +2,83 @@
 
 namespace
 {
-constexpr int rowsPerColumn = 8;
-constexpr int columns = 3;
-
-juce::String luaNoteName(double value)
-{
-    const int note = juce::jlimit(0, 127, juce::roundToInt(value));
-    static constexpr const char* names[] =
-        { "C", "C sharp", "D", "D sharp", "E", "F", "F sharp", "G", "G sharp", "A", "A sharp", "B" };
-    const int octave = (note / 12) - 1;
-    return juce::String(note) + " " + names[note % 12] + " " + juce::String(octave);
-}
-
-void setupNoteSlider(juce::Slider& slider, const juce::String& title)
-{
-    slider.setRange(0, 127, 1);
-    slider.setSliderStyle(juce::Slider::LinearHorizontal);
-    slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 150, 24);
-    slider.setTitle(title);
-    slider.setAccessible(true);
-    slider.setWantsKeyboardFocus(true);
-    slider.textFromValueFunction = [](double v) { return luaNoteName(v); };
-    slider.valueFromTextFunction = [](const juce::String& text)
-    {
-        return (double) juce::jlimit(0, 127, text.getIntValue());
-    };
-}
+bool hasAlt(const juce::KeyPress& key) { return key.getModifiers().isAltDown(); }
+bool hasShift(const juce::KeyPress& key) { return key.getModifiers().isShiftDown(); }
 }
 
 LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioProcessor& p)
     : AudioProcessorEditor(&p), processor(p)
 {
-    setSize(760, 520);
+    setSize(760, 470);
     setWantsKeyboardFocus(true);
-    addKeyListener(this);
 
     for (int i = 0; i < LSampler24AudioProcessor::slotCount; ++i)
     {
-        auto button = std::make_unique<juce::TextButton>();
-        button->setAccessible(true);
-        button->setWantsKeyboardFocus(false);
-        addKeyTarget(*button);
-        const int slot = i + 1;
-        button->onClick = [this, slot]
-        {
-            setCurrentSlot(slot, false);
-            showParametersView();
-        };
-        addAndMakeVisible(*button);
-        slotButtons[(size_t)i] = std::move(button);
+        slotButtons[static_cast<size_t>(i)] = std::make_unique<SlotButton>(i);
+        auto& b = *slotButtons[static_cast<size_t>(i)];
+        b.onGridKey = [this](int slot, const juce::KeyPress& key) { return handleGridKey(slot, key); };
+        b.onClick = [this, i] { selectSlot(i, false, true); };
+        addAndMakeVisible(b);
     }
 
-    auto setupButton = [this](juce::TextButton& button)
+    auto addButton = [this](juce::TextButton& b)
     {
-        button.setWantsKeyboardFocus(true);
-        button.setAccessible(true);
-        addKeyTarget(button);
-        addAndMakeVisible(button);
+        b.setWantsKeyboardFocus(true);
+        addAndMakeVisible(b);
     };
-    setupButton(loadSample);
-    setupButton(loadSlot);
-    setupButton(saveSlot);
-    setupButton(loadBank);
-    setupButton(saveBank);
+    addButton(loadSample);
+    addButton(loadSlot);
+    addButton(saveSlot);
+    addButton(loadBank);
+    addButton(saveBank);
 
     status.setAccessible(true);
     status.setTitle("Sample status");
     addAndMakeVisible(status);
 
-    voiceMode.addItem("Mono", 1);
-    voiceMode.addItem("Poly", 2);
+    auto setupNoteSlider = [this](juce::Label& label, juce::Slider& slider, const juce::String& title)
+    {
+        label.setText(title, juce::dontSendNotification);
+        addAndMakeVisible(label);
+        slider.setRange(0, 127, 1);
+        slider.setSliderStyle(juce::Slider::LinearHorizontal);
+        slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 150, 24);
+        slider.setTitle(title);
+        slider.setWantsKeyboardFocus(true);
+        slider.textFromValueFunction = [](double value)
+        {
+            return LSampler24AudioProcessor::noteName(static_cast<int>(std::round(value)));
+        };
+        addAndMakeVisible(slider);
+    };
+
+    setupNoteSlider(lowKeyLabel, lowKey, "Low Key");
+    setupNoteSlider(highKeyLabel, highKey, "High Key");
+    setupNoteSlider(originalPitchLabel, originalPitch, "Original Pitch");
+
+    voiceModeLabel.setText("Voice Mode", juce::dontSendNotification);
+    addAndMakeVisible(voiceModeLabel);
+    voiceMode.addItem("Poly", 1);
+    voiceMode.addItem("Mono", 2);
     voiceMode.setTitle("Voice Mode");
-    voiceMode.setAccessible(true);
     voiceMode.setWantsKeyboardFocus(true);
-    addKeyTarget(voiceMode);
     addAndMakeVisible(voiceMode);
 
+    monoModeLabel.setText("Mono Mode", juce::dontSendNotification);
+    addAndMakeVisible(monoModeLabel);
     monoMode.addItem("Trigger", 1);
     monoMode.addItem("Legato", 2);
     monoMode.setTitle("Mono Mode");
-    monoMode.setAccessible(true);
     monoMode.setWantsKeyboardFocus(true);
-    addKeyTarget(monoMode);
     addAndMakeVisible(monoMode);
 
-    setupNoteSlider(lowKey, "Low Key");
-    addKeyTarget(lowKey);
-    addAndMakeVisible(lowKey);
-
-    setupNoteSlider(highKey, "High Key");
-    addKeyTarget(highKey);
-    addAndMakeVisible(highKey);
-
-    setupNoteSlider(originalNote, "Original Pitch");
-    addKeyTarget(originalNote);
-    addAndMakeVisible(originalNote);
-
-    // Keep keyboard focus order identical to the slot parameter grid.
-    lowKey.setExplicitFocusOrder(1);
-    highKey.setExplicitFocusOrder(2);
-    originalNote.setExplicitFocusOrder(3);
-    voiceMode.setExplicitFocusOrder(4);
-    monoMode.setExplicitFocusOrder(5);
-
+    volumeLabel.setText("Volume", juce::dontSendNotification);
+    addAndMakeVisible(volumeLabel);
     volume.setRange(0.0, 1.0, 0.01);
     volume.setSliderStyle(juce::Slider::LinearHorizontal);
-    volume.setTextBoxStyle(juce::Slider::TextBoxRight, false, 80, 24);
+    volume.setTextBoxStyle(juce::Slider::TextBoxRight, false, 90, 24);
     volume.setTitle("Volume");
-    volume.setAccessible(true);
     volume.setWantsKeyboardFocus(true);
-    volume.setExplicitFocusOrder(6);
-    addKeyTarget(volume);
     addAndMakeVisible(volume);
 
     loadSample.onClick = [this] { chooseSample(); };
@@ -121,32 +87,34 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     loadBank.onClick   = [this] { chooseLoadBank(); };
     saveBank.onClick   = [this] { chooseSaveBank(); };
 
+    lowKey.onValueChange = [this]
+    {
+        if (!updatingControls) processor.setLowKey(static_cast<int>(lowKey.getValue()));
+    };
+    highKey.onValueChange = [this]
+    {
+        if (!updatingControls) processor.setHighKey(static_cast<int>(highKey.getValue()));
+    };
+    originalPitch.onValueChange = [this]
+    {
+        if (!updatingControls) processor.setOriginalPitch(static_cast<int>(originalPitch.getValue()));
+    };
     voiceMode.onChange = [this]
     {
-        processor.setVoiceMode(voiceMode.getSelectedId() == 1
-            ? LSampler24AudioProcessor::VoiceMode::Mono
-            : LSampler24AudioProcessor::VoiceMode::Poly);
+        if (!updatingControls) processor.setVoiceMode(voiceMode.getSelectedId() - 1);
     };
     monoMode.onChange = [this]
     {
-        processor.setMonoMode(monoMode.getSelectedId() == 2
-            ? LSampler24AudioProcessor::MonoMode::Legato
-            : LSampler24AudioProcessor::MonoMode::Trigger);
+        if (!updatingControls) processor.setMonoMode(monoMode.getSelectedId() - 1);
     };
-    lowKey.onValueChange = [this] { processor.setLowKey((int) lowKey.getValue()); };
-    highKey.onValueChange = [this] { processor.setHighKey((int) highKey.getValue()); };
-    originalNote.onValueChange = [this] { processor.setOriginalNote((int) originalNote.getValue()); };
-    volume.onValueChange = [this] { processor.setVolume((float) volume.getValue()); };
+    volume.onValueChange = [this]
+    {
+        if (!updatingControls) processor.setVolume(static_cast<float>(volume.getValue()));
+    };
 
     refreshSlotButtons();
-    showSlotsView(false);
-    setCurrentSlot(processor.getCurrentSlot(), false);
+    showSlotsPage(false);
     startTimerHz(5);
-}
-
-void LSampler24AudioProcessorEditor::addKeyTarget(juce::Component& component)
-{
-    component.addKeyListener(this);
 }
 
 void LSampler24AudioProcessorEditor::paint(juce::Graphics& g)
@@ -154,191 +122,199 @@ void LSampler24AudioProcessorEditor::paint(juce::Graphics& g)
     g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
     g.setColour(getLookAndFeel().findColour(juce::Label::textColourId));
     g.setFont(20.0f);
-    const auto title = parametersView
-        ? "LSampler-24 TEST4 - Slot " + juce::String(processor.getCurrentSlot()) + " Parameters"
-        : "LSampler-24 TEST4 - Slots";
-    g.drawText(title, 16, 12, getWidth() - 32, 28, juce::Justification::centredLeft);
+    g.drawText(parametersPage ? "LSampler-24 - Slot Parameters" : "LSampler-24 - Slots",
+               16, 12, getWidth() - 32, 28, juce::Justification::centredLeft);
 }
 
 void LSampler24AudioProcessorEditor::resized()
 {
     auto area = getLocalBounds().reduced(16);
-    area.removeFromTop(44);
+    area.removeFromTop(42);
 
-    if (!parametersView)
+    if (!parametersPage)
     {
-        auto grid = area.removeFromTop(8 * 38);
-        const int cellW = (grid.getWidth() - 16) / 3;
-        for (int col = 0; col < columns; ++col)
-            for (int row = 0; row < rowsPerColumn; ++row)
-            {
-                const int index = col * rowsPerColumn + row;
-                slotButtons[(size_t)index]->setBounds(grid.getX() + col * (cellW + 8),
-                                                      grid.getY() + row * 38,
-                                                      cellW, 32);
-            }
-
-        area.removeFromTop(12);
-        auto buttons = area.removeFromTop(36);
+        auto grid = area.removeFromTop(300);
         constexpr int gap = 6;
+        const int colWidth = (grid.getWidth() - gap * 2) / 3;
+        const int rowHeight = (grid.getHeight() - gap * 7) / 8;
+        for (int col = 0; col < 3; ++col)
+        {
+            for (int row = 0; row < 8; ++row)
+            {
+                const int slot = col * 8 + row;
+                slotButtons[static_cast<size_t>(slot)]->setBounds(
+                    grid.getX() + col * (colWidth + gap),
+                    grid.getY() + row * (rowHeight + gap), colWidth, rowHeight);
+            }
+        }
+
+        area.removeFromTop(10);
+        auto buttons = area.removeFromTop(34);
         const int w = (buttons.getWidth() - gap * 4) / 5;
         loadSample.setBounds(buttons.removeFromLeft(w)); buttons.removeFromLeft(gap);
         loadSlot.setBounds(buttons.removeFromLeft(w)); buttons.removeFromLeft(gap);
         saveSlot.setBounds(buttons.removeFromLeft(w)); buttons.removeFromLeft(gap);
         loadBank.setBounds(buttons.removeFromLeft(w)); buttons.removeFromLeft(gap);
         saveBank.setBounds(buttons);
-        area.removeFromTop(10);
-        status.setBounds(area.removeFromTop(34));
+        area.removeFromTop(8);
+        status.setBounds(area.removeFromTop(30));
     }
     else
     {
-        auto row = area.removeFromTop(48); lowKey.setBounds(row.reduced(0, 5));
-        row = area.removeFromTop(48); highKey.setBounds(row.reduced(0, 5));
-        row = area.removeFromTop(48); originalNote.setBounds(row.reduced(0, 5));
-        row = area.removeFromTop(48); voiceMode.setBounds(row.reduced(0, 5));
-        row = area.removeFromTop(48); monoMode.setBounds(row.reduced(0, 5));
-        row = area.removeFromTop(48); volume.setBounds(row.reduced(0, 5));
-        area.removeFromTop(12);
-        status.setBounds(area.removeFromTop(34));
+        auto setRow = [&area](juce::Label& label, juce::Component& control)
+        {
+            auto row = area.removeFromTop(44);
+            label.setBounds(row.removeFromLeft(150));
+            control.setBounds(row);
+            area.removeFromTop(6);
+        };
+        setRow(lowKeyLabel, lowKey);
+        setRow(highKeyLabel, highKey);
+        setRow(originalPitchLabel, originalPitch);
+        setRow(voiceModeLabel, voiceMode);
+        setRow(monoModeLabel, monoMode);
+        setRow(volumeLabel, volume);
+        area.removeFromTop(8);
+        status.setBounds(area.removeFromTop(30));
     }
+}
+
+void LSampler24AudioProcessorEditor::updateParameterVisibility()
+{
+    const bool slotsVisible = !parametersPage;
+    for (auto& button : slotButtons) button->setVisible(slotsVisible);
+    loadSample.setVisible(slotsVisible);
+    loadSlot.setVisible(slotsVisible);
+    saveSlot.setVisible(slotsVisible);
+    loadBank.setVisible(slotsVisible);
+    saveBank.setVisible(slotsVisible);
+
+    lowKeyLabel.setVisible(parametersPage); lowKey.setVisible(parametersPage);
+    highKeyLabel.setVisible(parametersPage); highKey.setVisible(parametersPage);
+    originalPitchLabel.setVisible(parametersPage); originalPitch.setVisible(parametersPage);
+    voiceModeLabel.setVisible(parametersPage); voiceMode.setVisible(parametersPage);
+    monoModeLabel.setVisible(parametersPage); monoMode.setVisible(parametersPage);
+    volumeLabel.setVisible(parametersPage); volume.setVisible(parametersPage);
+    resized();
+    repaint();
 }
 
 void LSampler24AudioProcessorEditor::refreshSlotButtons()
 {
+    const int selected = processor.getCurrentSlot();
     for (int i = 0; i < LSampler24AudioProcessor::slotCount; ++i)
     {
-        auto text = processor.getSlotLabel(i + 1);
-        slotButtons[(size_t)i]->setButtonText(text);
-        slotButtons[(size_t)i]->setTitle(text);
+        auto& button = *slotButtons[static_cast<size_t>(i)];
+        const auto label = processor.getSlotLabel(i);
+        button.setButtonText(label);
+        button.setTitle(label);
+        button.setWantsKeyboardFocus(i == selected);
     }
 }
 
 void LSampler24AudioProcessorEditor::refreshParameterControls()
 {
-    const auto state = processor.getSlotState(processor.getCurrentSlot());
-    lowKey.setValue(state.lowKey, juce::dontSendNotification);
-    highKey.setValue(state.highKey, juce::dontSendNotification);
-    originalNote.setValue(state.originalNote, juce::dontSendNotification);
-    voiceMode.setSelectedId(state.voiceMode == LSampler24AudioProcessor::VoiceMode::Mono ? 1 : 2, juce::dontSendNotification);
-    monoMode.setSelectedId(state.monoMode == LSampler24AudioProcessor::MonoMode::Legato ? 2 : 1, juce::dontSendNotification);
-    volume.setValue(state.volume, juce::dontSendNotification);
-    status.setText(state.status, juce::dontSendNotification);
+    const auto s = processor.getSlotState(processor.getCurrentSlot());
+    updatingControls = true;
+    lowKey.setValue(s.lowKey, juce::dontSendNotification);
+    highKey.setValue(s.highKey, juce::dontSendNotification);
+    originalPitch.setValue(s.originalPitch, juce::dontSendNotification);
+    voiceMode.setSelectedId(s.voiceMode + 1, juce::dontSendNotification);
+    monoMode.setSelectedId(s.monoMode + 1, juce::dontSendNotification);
+    volume.setValue(s.volume, juce::dontSendNotification);
+    updatingControls = false;
 }
 
-void LSampler24AudioProcessorEditor::setCurrentSlot(int slot, bool focusIt)
+void LSampler24AudioProcessorEditor::selectSlot(int index, bool takeFocus, bool enterParameters)
 {
-    slot = juce::jlimit(1, LSampler24AudioProcessor::slotCount, slot);
-    const int old = processor.getCurrentSlot();
-    if (old >= 1 && old <= LSampler24AudioProcessor::slotCount)
-        slotButtons[(size_t)(old - 1)]->setWantsKeyboardFocus(false);
-    processor.setCurrentSlot(slot);
-    auto& target = *slotButtons[(size_t)(slot - 1)];
-    target.setWantsKeyboardFocus(true);
-    refreshParameterControls();
-    if (focusIt)
-        target.grabKeyboardFocus();
-}
-
-void LSampler24AudioProcessorEditor::moveSlot(int rowDelta, int colDelta)
-{
-    const int slot = processor.getCurrentSlot();
-    const int index = slot - 1;
-    const int col = index / rowsPerColumn;
-    const int row = index % rowsPerColumn;
-    const int newCol = juce::jlimit(0, columns - 1, col + colDelta);
-    const int newRow = juce::jlimit(0, rowsPerColumn - 1, row + rowDelta);
-    const int newSlot = newCol * rowsPerColumn + newRow + 1;
-    if (newSlot != slot)
-        setCurrentSlot(newSlot, true); // silent borders: no focus change at an edge.
-}
-
-void LSampler24AudioProcessorEditor::showSlotsView(bool focusGrid)
-{
-    parametersView = false;
-    for (auto& b : slotButtons) b->setVisible(true);
-    loadSample.setVisible(true); loadSlot.setVisible(true); saveSlot.setVisible(true);
-    loadBank.setVisible(true); saveBank.setVisible(true);
-    lowKey.setVisible(false); highKey.setVisible(false); originalNote.setVisible(false);
-    voiceMode.setVisible(false); monoMode.setVisible(false); volume.setVisible(false);
-    status.setVisible(true);
-    resized(); repaint();
-    if (focusGrid) setCurrentSlot(processor.getCurrentSlot(), true);
-}
-
-void LSampler24AudioProcessorEditor::showParametersView()
-{
-    parametersView = true;
-    for (auto& b : slotButtons) b->setVisible(false);
-    loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-    loadBank.setVisible(false); saveBank.setVisible(false);
-    lowKey.setVisible(true); highKey.setVisible(true); originalNote.setVisible(true);
-    voiceMode.setVisible(true); monoMode.setVisible(true); volume.setVisible(true);
-    refreshParameterControls();
-    resized(); repaint();
-    focusParameter(0);
-}
-
-void LSampler24AudioProcessorEditor::focusParameter(int index)
-{
-    parameterFocus = juce::jlimit(0, 5, index);
-    std::array<juce::Component*, 6> items { &lowKey, &highKey, &originalNote, &voiceMode, &monoMode, &volume };
-    items[(size_t)parameterFocus]->grabKeyboardFocus();
-}
-
-bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
-{
-    const auto mods = key.getModifiers();
-    const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
-
-    if (mods.isAltDown() && !mods.isCtrlDown())
+    processor.setCurrentSlot(index);
+    refreshSlotButtons();
+    status.setText(processor.getSampleStatus(), juce::dontSendNotification);
+    if (enterParameters)
     {
-        if (ch == 'l') { showSlotsView(true); return true; }
-        if (ch == 'o' && !mods.isShiftDown()) { chooseSample(); return true; }
-        if (ch == 's') { if (mods.isShiftDown()) chooseSaveSlot(); else chooseLoadSlot(); return true; }
-        if (ch == 'b') { if (mods.isShiftDown()) chooseSaveBank(); else chooseLoadBank(); return true; }
+        showParametersPage();
+        return;
+    }
+    if (takeFocus)
+        slotButtons[static_cast<size_t>(processor.getCurrentSlot())]->grabKeyboardFocus();
+}
+
+bool LSampler24AudioProcessorEditor::handleGridKey(int slot, const juce::KeyPress& key)
+{
+    const int code = key.getKeyCode();
+    const int row = slot % 8;
+    const int col = slot / 8;
+    int target = slot;
+
+    if (code == juce::KeyPress::upKey) target = col * 8 + juce::jmax(0, row - 1);
+    else if (code == juce::KeyPress::downKey) target = col * 8 + juce::jmin(7, row + 1);
+    else if (code == juce::KeyPress::leftKey) target = juce::jmax(0, col - 1) * 8 + row;
+    else if (code == juce::KeyPress::rightKey) target = juce::jmin(2, col + 1) * 8 + row;
+    else if (code == juce::KeyPress::homeKey && key.getModifiers().isCtrlDown()) target = 0;
+    else if (code == juce::KeyPress::endKey && key.getModifiers().isCtrlDown()) target = 23;
+    else if (code == juce::KeyPress::homeKey) target = col * 8;
+    else if (code == juce::KeyPress::endKey) target = col * 8 + 7;
+    else if (code == juce::KeyPress::pageUpKey) target = col * 8 + juce::jmax(0, row - 4);
+    else if (code == juce::KeyPress::pageDownKey) target = col * 8 + juce::jmin(7, row + 4);
+    else return keyPressed(key);
+
+    if (target != slot)
+        selectSlot(target, true, false);
+    return true; // silent border: handled even when target did not change
+}
+
+void LSampler24AudioProcessorEditor::showSlotsPage(bool takeFocus)
+{
+    parametersPage = false;
+    updateParameterVisibility();
+    refreshSlotButtons();
+    if (takeFocus)
+        slotButtons[static_cast<size_t>(processor.getCurrentSlot())]->grabKeyboardFocus();
+}
+
+void LSampler24AudioProcessorEditor::showParametersPage()
+{
+    parametersPage = true;
+    refreshParameterControls();
+    updateParameterVisibility();
+    lowKey.grabKeyboardFocus();
+}
+
+bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key)
+{
+    const int code = key.getKeyCode();
+    const auto ch = key.getTextCharacter();
+
+    if (parametersPage && code == juce::KeyPress::escapeKey)
+    {
+        showSlotsPage(true);
+        return true;
     }
 
-    if (parametersView)
+    if (hasAlt(key))
     {
-        if (key == juce::KeyPress::escapeKey) { showSlotsView(true); return true; }
-        if (key == juce::KeyPress::upKey) { focusParameter(parameterFocus - 1); return true; }
-        if (key == juce::KeyPress::downKey) { focusParameter(parameterFocus + 1); return true; }
-        if (key == juce::KeyPress::homeKey) { focusParameter(0); return true; }
-        if (key == juce::KeyPress::endKey) { focusParameter(5); return true; }
-        return false; // Left/Right remain native value editing.
+        if (!hasShift(key) && (ch == 'l' || ch == 'L')) { showSlotsPage(true); return true; }
+        if (!hasShift(key) && (ch == 'o' || ch == 'O')) { chooseSample(); return true; }
+        if (!hasShift(key) && (ch == 's' || ch == 'S')) { chooseLoadSlot(); return true; }
+        if ( hasShift(key) && (ch == 's' || ch == 'S')) { chooseSaveSlot(); return true; }
+        if (!hasShift(key) && (ch == 'b' || ch == 'B')) { chooseLoadBank(); return true; }
+        if ( hasShift(key) && (ch == 'b' || ch == 'B')) { chooseSaveBank(); return true; }
     }
-
-    if (key == juce::KeyPress::upKey) { moveSlot(-1, 0); return true; }
-    if (key == juce::KeyPress::downKey) { moveSlot(1, 0); return true; }
-    if (key == juce::KeyPress::leftKey) { moveSlot(0, -1); return true; }
-    if (key == juce::KeyPress::rightKey) { moveSlot(0, 1); return true; }
-
-    const int slot = processor.getCurrentSlot();
-    const int index = slot - 1;
-    const int col = index / rowsPerColumn;
-    const int row = index % rowsPerColumn;
-    if (key == juce::KeyPress::homeKey && mods.isCtrlDown()) { setCurrentSlot(1, true); return true; }
-    if (key == juce::KeyPress::endKey && mods.isCtrlDown()) { setCurrentSlot(24, true); return true; }
-    if (key == juce::KeyPress::homeKey) { setCurrentSlot(col * rowsPerColumn + 1, true); return true; }
-    if (key == juce::KeyPress::endKey) { setCurrentSlot(col * rowsPerColumn + 8, true); return true; }
-    if (key == juce::KeyPress::pageUpKey) { setCurrentSlot(col * rowsPerColumn + juce::jlimit(0, 7, row - 4) + 1, true); return true; }
-    if (key == juce::KeyPress::pageDownKey) { setCurrentSlot(col * rowsPerColumn + juce::jlimit(0, 7, row + 4) + 1, true); return true; }
-
-    return false;
+    return AudioProcessorEditor::keyPressed(key);
 }
 
 void LSampler24AudioProcessorEditor::timerCallback()
 {
+    status.setText(processor.getSampleStatus(), juce::dontSendNotification);
     refreshSlotButtons();
-    if (parametersView) refreshParameterControls();
-    else status.setText(processor.getSampleStatus(), juce::dontSendNotification);
+    if (parametersPage)
+        refreshParameterControls();
 }
 
 void LSampler24AudioProcessorEditor::showResult(bool ok, const juce::String& error, const juce::String& okMessage)
 {
     status.setText(ok ? okMessage : error, juce::sendNotificationAsync);
     refreshSlotButtons();
-    refreshParameterControls();
 }
 
 void LSampler24AudioProcessorEditor::chooseSample()
@@ -402,7 +378,6 @@ void LSampler24AudioProcessorEditor::chooseLoadBank()
             {
                 juce::String error;
                 const bool ok = processor.loadBankPreset(file, error);
-                setCurrentSlot(processor.getCurrentSlot(), false);
                 showResult(ok, error, "Bank loaded: " + file.getFileNameWithoutExtension());
             }
         });

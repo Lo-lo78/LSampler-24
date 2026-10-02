@@ -4,50 +4,57 @@
 #include <array>
 #include <memory>
 
-struct SlotPlaybackState
+struct SlotRuntimeState
 {
     std::shared_ptr<SharedSample> sample;
     int lowKey = 0;
     int highKey = 127;
-    int originalNote = 60;
-    float gain = 1.0f;
+    int originalPitch = 60;
+    float volume = 1.0f;
     bool mono = false;
-    bool monoLegato = false;
+    bool legato = false;
+};
+
+struct SamplerRuntimeState
+{
+    static constexpr int slotCount = 24;
+    std::array<SlotRuntimeState, slotCount> slots {};
 };
 
 class VoiceBank
 {
 public:
     static constexpr int voiceCount = 96;
-    static constexpr int slotCount = 24;
 
     void prepare(double sampleRate);
-    void setSlots(const std::array<SlotPlaybackState, slotCount>& newSlots);
-    void render(juce::AudioBuffer<float>& output, juce::MidiBuffer& midi);
+    void render(juce::AudioBuffer<float>& output, juce::MidiBuffer& midi,
+                const SamplerRuntimeState& runtime);
     void allNotesOff();
 
 private:
     struct Voice
     {
         bool active = false;
-        int slot = -1;
         int note = -1;
+        int slot = -1;
         double position = 0.0;
         double increment = 1.0;
-        float velocity = 1.0f;
+        float gain = 1.0f;
         uint64_t age = 0;
         std::shared_ptr<SharedSample> sample;
     };
 
     Voice& chooseVoice();
-    Voice* findMonoVoice(int slotIndex);
-    void noteOn(int note, float velocity);
-    void noteOff(int note);
-    void allNotesOffUnlocked();
+    Voice* findMonoVoice(int slot);
+    void startVoice(Voice& voice, int slot, int note, float velocity,
+                    const SlotRuntimeState& state, bool restart);
+    void noteOn(int note, float velocity, const SamplerRuntimeState& runtime);
+    void noteOff(int note, const SamplerRuntimeState& runtime);
+    int newestHeldNoteForSlot(int slot, const SlotRuntimeState& state) const;
 
     std::array<Voice, voiceCount> voices {};
-    std::array<SlotPlaybackState, slotCount> slots {};
+    std::array<std::array<uint64_t, 128>, SamplerRuntimeState::slotCount> heldNoteOrder {};
     double hostSampleRate = 44100.0;
     uint64_t ageCounter = 0;
-    juce::SpinLock stateLock;
+    uint64_t noteOrderCounter = 0;
 };
