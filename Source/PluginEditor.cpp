@@ -659,12 +659,39 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         {
             shiftSelectSlotLibraryEntry(code == juce::KeyPress::upKey ? -1 : 1); return true;
         }
-        if (code == juce::KeyPress::upKey && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown()) { selectSlotLibraryEntry(slotLibraryEntryIndex - 1, true); return true; }
-        if (code == juce::KeyPress::downKey && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown()) { selectSlotLibraryEntry(slotLibraryEntryIndex + 1, true); return true; }
-        if (code == juce::KeyPress::pageUpKey) { selectSlotLibraryEntry(slotLibraryEntryIndex - 10, true); return true; }
-        if (code == juce::KeyPress::pageDownKey) { selectSlotLibraryEntry(slotLibraryEntryIndex + 10, true); return true; }
-        if (code == juce::KeyPress::homeKey) { selectSlotLibraryEntry(0, true); return true; }
-        if (code == juce::KeyPress::endKey) { selectSlotLibraryEntry(int(slotLibraryEntries.size()) - 1, true); return true; }
+        if (code == juce::KeyPress::upKey && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown())
+        {
+            if (slotLibraryEntryIndex > 0) selectSlotLibraryEntry(slotLibraryEntryIndex - 1, true);
+            return true;
+        }
+        if (code == juce::KeyPress::downKey && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown())
+        {
+            if (slotLibraryEntryIndex + 1 < int(slotLibraryEntries.size())) selectSlotLibraryEntry(slotLibraryEntryIndex + 1, true);
+            return true;
+        }
+        if (code == juce::KeyPress::pageUpKey)
+        {
+            const int next = juce::jmax(0, slotLibraryEntryIndex - 10);
+            if (next != slotLibraryEntryIndex) selectSlotLibraryEntry(next, true);
+            return true;
+        }
+        if (code == juce::KeyPress::pageDownKey)
+        {
+            const int next = juce::jmin(int(slotLibraryEntries.size()) - 1, slotLibraryEntryIndex + 10);
+            if (next != slotLibraryEntryIndex) selectSlotLibraryEntry(next, true);
+            return true;
+        }
+        if (code == juce::KeyPress::homeKey)
+        {
+            if (slotLibraryEntryIndex != 0) selectSlotLibraryEntry(0, true);
+            return true;
+        }
+        if (code == juce::KeyPress::endKey)
+        {
+            const int last = int(slotLibraryEntries.size()) - 1;
+            if (last >= 0 && slotLibraryEntryIndex != last) selectSlotLibraryEntry(last, true);
+            return true;
+        }
         if (code == juce::KeyPress::backspaceKey)
         {
             if (slotLibraryDirectory == slotLibraryRoot) return true;
@@ -763,7 +790,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                     || code == juce::KeyPress::homeKey || code == juce::KeyPress::endKey))
                 return false; // Let the ComboBox perform normal accessible selection.
 
-            if (code == juce::KeyPress::escapeKey) { leaveImportBrowser(true); return true; }
+            if (code == juce::KeyPress::escapeKey) { leaveImportBrowser(true, true); return true; }
             if (code == juce::KeyPress::returnKey || code == juce::KeyPress::spaceKey)
             {
                 if (onImportSource)
@@ -779,7 +806,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         if (code == juce::KeyPress::escapeKey)
         {
             if (importRecentPathsMode) { leaveImportRecentPaths(); return true; }
-            leaveImportBrowser(true); return true;
+            leaveImportBrowser(true, true); return true;
         }
         if (mods.isAltDown() && !mods.isCtrlDown() && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
         {
@@ -793,12 +820,39 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         {
             shiftSelectImportEntry(code == juce::KeyPress::upKey ? -1 : 1); return true;
         }
-        if (code == juce::KeyPress::upKey && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown()) { selectImportEntry(importEntryIndex - 1, true); return true; }
-        if (code == juce::KeyPress::downKey && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown()) { selectImportEntry(importEntryIndex + 1, true); return true; }
-        if (code == juce::KeyPress::pageUpKey) { selectImportEntry(importEntryIndex - 10, true); return true; }
-        if (code == juce::KeyPress::pageDownKey) { selectImportEntry(importEntryIndex + 10, true); return true; }
-        if (code == juce::KeyPress::homeKey && !mods.isCtrlDown()) { selectImportEntry(0, true); return true; }
-        if (code == juce::KeyPress::endKey && !mods.isCtrlDown()) { selectImportEntry(int(importEntries.size()) - 1, true); return true; }
+        if (code == juce::KeyPress::upKey && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown())
+        {
+            if (importEntryIndex > 0) selectImportEntry(importEntryIndex - 1, true);
+            return true;
+        }
+        if (code == juce::KeyPress::downKey && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown())
+        {
+            if (importEntryIndex + 1 < int(importEntries.size())) selectImportEntry(importEntryIndex + 1, true);
+            return true;
+        }
+        if (code == juce::KeyPress::pageUpKey)
+        {
+            const int next = juce::jmax(0, importEntryIndex - 10);
+            if (next != importEntryIndex) selectImportEntry(next, true);
+            return true;
+        }
+        if (code == juce::KeyPress::pageDownKey)
+        {
+            const int next = juce::jmin(int(importEntries.size()) - 1, importEntryIndex + 10);
+            if (next != importEntryIndex) selectImportEntry(next, true);
+            return true;
+        }
+        if (code == juce::KeyPress::homeKey && !mods.isCtrlDown())
+        {
+            if (importEntryIndex != 0) selectImportEntry(0, true);
+            return true;
+        }
+        if (code == juce::KeyPress::endKey && !mods.isCtrlDown())
+        {
+            const int last = int(importEntries.size()) - 1;
+            if (last >= 0 && importEntryIndex != last) selectImportEntry(last, true);
+            return true;
+        }
         if (code == juce::KeyPress::backspaceKey)
         {
             if (importRecentPathsMode) { leaveImportRecentPaths(); return true; }
@@ -1337,12 +1391,39 @@ void LSampler24AudioProcessorEditor::enterImportBrowser()
     });
 }
 
-void LSampler24AudioProcessorEditor::leaveImportBrowser(bool announceSlot)
+void LSampler24AudioProcessorEditor::leaveImportBrowser(bool announceSlot, bool resetPreviewPosition)
 {
-    saveImportSettings();
+    const bool rememberedPreviewEnabled = importPreviewEnabled;
+    if (resetPreviewPosition)
+    {
+        // Escape is a true cancel for the Alt+O browser.  Persist only the
+        // user's Preview On/Off preference; discard cursor, file/selection,
+        // slicing and other temporary browser state so the next visit starts
+        // cleanly from the beginning.
+        saveImportPreviewPreferenceOnly();
+        importEntryIndex = 0;
+        importRememberedEntryPath.clear();
+        importRememberedPosition = 0.0;
+        importPlan.clear();
+        importShiftSelectionActive = false;
+        importSlicePending = false;
+        importSliceFile = {};
+        importSliceStart = 0.0;
+        importLastSlicePlanIndex = -1;
+        importCurrentSlicePlanIndex = -1;
+        importPlayStartFile = {};
+        importPlayStartSeconds = 0.0;
+        importPreviewFile = {};
+        importLastInitial = 0;
+        importDirectorySelectionMemory.clear();
+    }
+    else
+        saveImportSettings(false);
+
     processor.requestImportPreviewStop();
+    processor.requestImportPreviewSeek(0.0);
     processor.requestImportPreviewLoop(0.0, 0.0, false);
-    importPreviewEnabled = false;
+    importPreviewEnabled = rememberedPreviewEnabled;
     importFileLoopEnabled = false;
     importCurrentSlicePlanIndex = -1;
     importBrowserActive = false;
@@ -1567,7 +1648,7 @@ void LSampler24AudioProcessorEditor::loadImportSettings()
     if (xml == nullptr || !xml->hasTagName("LSampler24Settings")) return;
     auto path = xml->getStringAttribute("f3Directory");
     if (path.isNotEmpty()) importDirectory = juce::File(path);
-    importEntryIndex = xml->getIntAttribute("f3Index", importEntryIndex);
+    importEntryIndex = xml->getIntAttribute("f3Index", 0);
     importPreviewEnabled = xml->getBoolAttribute("f3Preview", false);
     importRememberedEntryPath = xml->getStringAttribute("f3EntryPath");
     importRememberedPosition = xml->getDoubleAttribute("f3Position", 0.0);
@@ -1580,7 +1661,15 @@ void LSampler24AudioProcessorEditor::loadImportSettings()
         }
 }
 
-void LSampler24AudioProcessorEditor::saveImportSettings()
+void LSampler24AudioProcessorEditor::saveImportPreviewPreferenceOnly()
+{
+    auto file = importSettingsFile();
+    juce::XmlElement xml("LSampler24Settings");
+    xml.setAttribute("f3Preview", importPreviewEnabled);
+    xml.writeTo(file);
+}
+
+void LSampler24AudioProcessorEditor::saveImportSettings(bool resetPreviewPosition)
 {
     if (!importBrowserActive && !importDirectory.isDirectory()) return;
     auto file = importSettingsFile();
@@ -1592,7 +1681,7 @@ void LSampler24AudioProcessorEditor::saveImportSettings()
     if (!importRecentPathsMode && !importEntries.empty() && importEntryIndex >= 0 && importEntryIndex < static_cast<int>(importEntries.size()))
         selectedPath = importEntries[static_cast<size_t>(importEntryIndex)].file.getFullPathName();
     xml.setAttribute("f3EntryPath", selectedPath);
-    xml.setAttribute("f3Position", processor.getImportPreviewPositionSeconds());
+    xml.setAttribute("f3Position", resetPreviewPosition ? 0.0 : processor.getImportPreviewPositionSeconds());
     xml.setAttribute("f3LastInitial", static_cast<int>(importLastInitial));
     int count = 0;
     for (const auto& p : importRecentPaths)

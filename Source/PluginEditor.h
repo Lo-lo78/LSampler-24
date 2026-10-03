@@ -196,7 +196,7 @@ private:
     void timerCallback() override;
     void chooseSample();
     void enterImportBrowser();
-    void leaveImportBrowser(bool announceSlot);
+    void leaveImportBrowser(bool announceSlot, bool resetPreviewPosition = false);
     void refreshImportEntries();
     void selectImportEntry(int index, bool announce);
     void cycleImportEntryByInitial(juce::juce_wchar initial);
@@ -208,7 +208,8 @@ private:
     void removeCurrentImportRecentPath();
     void addImportRecentPath(const juce::File& directory);
     void loadImportSettings();
-    void saveImportSettings();
+    void saveImportSettings(bool resetPreviewPosition = false);
+    void saveImportPreviewPreferenceOnly();
     juce::File importSettingsFile() const;
     void updateImportPreviewForSelection();
     void announceImportEntry();
