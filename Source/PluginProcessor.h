@@ -110,6 +110,8 @@ public:
     void setSlotParameter(int gridIndex, double value, int loopIndex = 0);
     void resetSlotParameter(int gridIndex, int loopIndex = 0);
     double getSamplePlayStart() const;
+    double getSampleWindowStart() const;
+    double getSampleWindowEnd() const;
     void setSamplePlayStart(double value);
     void applyZeroCrossing(bool loopWindow, int loopIndex = 0);
     // Diagnostics used by offline regression tests, never by the screen reader.

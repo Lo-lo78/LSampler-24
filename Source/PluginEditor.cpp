@@ -1043,7 +1043,9 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                           * static_cast<double>(stepWidths[static_cast<size_t>(stepWidthIndex)])
                           * static_cast<double>(valuePageStep);
         const double current = processor.getSamplePlayStart();
-        const double next = juce::jlimit(d.minimum, d.maximum,
+        const double windowStart = processor.getSampleWindowStart();
+        const double windowEnd = processor.getSampleWindowEnd();
+        const double next = juce::jlimit(windowStart, windowEnd,
                                          current + (code == juce::KeyPress::rightKey ? step : -step));
         if (std::abs(next - current) >= 1.0e-9)
         {

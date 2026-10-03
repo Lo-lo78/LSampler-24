@@ -460,6 +460,8 @@ void LSampler24AudioProcessor::setSlotParameter(int index,double value,int loop)
     const juce::ScopedLock lock(stateLock);
     auto& p=slots[size_t(currentSlot.load())].parameters;
     p.set(e,juce::jlimit(0,9,loop),value);
+    if (e.parameter == int(P::sample_start) || e.parameter == int(P::sample_end))
+        p[P::sample_play_start] = juce::jlimit(p[P::sample_start], p[P::sample_end], p[P::sample_play_start]);
     for (int i=0;i<2;++i) {
         const P sync=i?P::lfo2_bpm_sync:P::lfo1_bpm_sync, rate=i?P::lfo2_rate:P::lfo1_rate;
         if (p[sync]!=0 && (e.parameter==int(sync)||e.parameter==int(rate)))
@@ -475,11 +477,20 @@ double LSampler24AudioProcessor::getSamplePlayStart() const {
     const juce::ScopedLock lock(stateLock);
     return slots[size_t(currentSlot.load())].parameters[P::sample_play_start];
 }
+double LSampler24AudioProcessor::getSampleWindowStart() const {
+    const juce::ScopedLock lock(stateLock);
+    return slots[size_t(currentSlot.load())].parameters[P::sample_start];
+}
+double LSampler24AudioProcessor::getSampleWindowEnd() const {
+    const juce::ScopedLock lock(stateLock);
+    return slots[size_t(currentSlot.load())].parameters[P::sample_end];
+}
 void LSampler24AudioProcessor::setSamplePlayStart(double value) {
     const juce::ScopedLock lock(stateLock);
     auto& p = slots[size_t(currentSlot.load())].parameters;
-    p[P::sample_play_start] = juce::jlimit(parameters[static_cast<size_t>(P::sample_play_start)].minimum,
-                                           parameters[static_cast<size_t>(P::sample_play_start)].maximum, value);
+    // Sample Play Start is an absolute position in the source sample.  The
+    // editable Sample Start/End window is therefore also its legal scrub range.
+    p[P::sample_play_start] = juce::jlimit(p[P::sample_start], p[P::sample_end], value);
     markAudioStateDirty();
 }
 void LSampler24AudioProcessor::requestSampleBoundaryAudition(bool endBoundary)

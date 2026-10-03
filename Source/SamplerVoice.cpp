@@ -109,7 +109,10 @@ void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudio
         // With No Retrigger Smooth, preserve the read head on a retrigger.
         if(s.params[P::retrigger_smooth]==0) {
             const double skip=std::round(std::min(s.length*.20,s.sample->sourceSampleRate*.250)*s.params[P::vel_attack_depth]*.01*std::pow(1-velocity,1.5));
-            v.position=clamp(std::round((s.length-1)*s.params[P::sample_play_start]*.01)+skip,0,double(s.length-1));
+            const double windowStart=s.params[P::sample_start], windowEnd=s.params[P::sample_end];
+            const double width=std::max(1.0e-9,windowEnd-windowStart);
+            const double localStart=clamp((clamp(s.params[P::sample_play_start],windowStart,windowEnd)-windowStart)*100.0/width,0.0,100.0);
+            v.position=clamp(std::round((s.length-1)*localStart*.01)+skip,0,double(s.length-1));
         }
         for(int i=0;i<2;++i)if(s.lfo[size_t(i)].trigger||s.lfo[size_t(i)].oneShot)v.lfo[size_t(i)]={};
     }
@@ -140,10 +143,18 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
         v.drift=((h-std::floor(h))*2-1)*p[P::poly_drift];
     }
     const double skip=std::round(std::min(s.length*.20,s.sample->sourceSampleRate*.250)*p[P::vel_attack_depth]*.01*std::pow(1-velocity,1.5));
-    const double startPercent = (preview && previewStartPercent >= 0.0)
-        ? clamp(previewStartPercent, 0.0, 100.0)
+    // Sample Play Start and preview audition positions are absolute percentages
+    // of the source sample. Convert them to the local 0..100 coordinate of the
+    // active Sample Start/End window before positioning the read head.
+    const double absoluteStart = (preview && previewStartPercent >= 0.0)
+        ? previewStartPercent
         : p[P::sample_play_start];
-    v.position=clamp(std::round((s.length-1)*startPercent*.01)+skip,0,double(s.length-1));
+    const double windowStart = p[P::sample_start];
+    const double windowEnd = p[P::sample_end];
+    const double windowWidth = std::max(1.0e-9, windowEnd - windowStart);
+    const double localStartPercent = clamp((clamp(absoluteStart, windowStart, windowEnd) - windowStart) * 100.0 / windowWidth,
+                                           0.0, 100.0);
+    v.position=clamp(std::round((s.length-1)*localStartPercent*.01)+skip,0,double(s.length-1));
     for(int i=0;i<2;++i) {
         const auto& l=s.lfo[size_t(i)];
         if(!l.trigger&&!l.oneShot)v.lfo[size_t(i)].phase=freePhase[size_t(slot)][size_t(i)];
