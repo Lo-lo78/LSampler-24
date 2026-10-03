@@ -362,13 +362,43 @@ bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int sl
     const double sourceRate = loaded->sourceSampleRate > 0.0 ? loaded->sourceSampleRate : preparedSampleRate;
     const double totalSeconds = loaded->audio.getNumSamples() / juce::jmax(1.0, sourceRate);
     const bool hasSlice = endSeconds > startSeconds + 0.0005 && totalSeconds > 0.0;
-    double startPct = 0.0, endPct = 100.0;
+
     if (hasSlice)
     {
         startSeconds = juce::jlimit(0.0, totalSeconds, startSeconds);
         endSeconds = juce::jlimit(startSeconds + 0.0005, totalSeconds, endSeconds);
-        startPct = 100.0 * startSeconds / totalSeconds;
-        endPct = 100.0 * endSeconds / totalSeconds;
+
+        const int totalSamples = loaded->audio.getNumSamples();
+        const int firstSample = juce::jlimit(0, totalSamples - 2,
+            static_cast<int>(std::floor(startSeconds * sourceRate)));
+        const int lastSample = juce::jlimit(firstSample + 1, totalSamples,
+            static_cast<int>(std::ceil(endSeconds * sourceRate)));
+        const int sliceSamples = lastSample - firstSample;
+
+        auto sliced = std::make_shared<SharedSample>();
+        sliced->audio.setSize(loaded->audio.getNumChannels(), sliceSamples, false, false, true);
+        for (int ch = 0; ch < loaded->audio.getNumChannels(); ++ch)
+            sliced->audio.copyFrom(ch, 0, loaded->audio, ch, firstSample, sliceSamples);
+        sliced->sourceSampleRate = loaded->sourceSampleRate;
+        sliced->sourceFile = loaded->sourceFile;
+
+        double peak = 0.0;
+        std::array<double, 2> dc {};
+        for (int ch = 0; ch < sliced->audio.getNumChannels(); ++ch)
+        {
+            const auto* data = sliced->audio.getReadPointer(ch);
+            double sum = 0.0;
+            for (int i = 0; i < sliceSamples; ++i)
+            {
+                peak = juce::jmax(peak, std::abs(double(data[i])));
+                sum += data[i];
+            }
+            if (ch < 2) dc[size_t(ch)] = sliceSamples > 0 ? sum / sliceSamples : 0.0;
+        }
+        if (sliced->audio.getNumChannels() == 1) dc[1] = dc[0];
+        sliced->peak = peak;
+        sliced->dc = dc;
+        loaded = std::move(sliced);
     }
 
     {
@@ -380,8 +410,10 @@ bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int sl
         slot.parameters[lsampler::P::root] = 60.0;
         slot.parameters[lsampler::P::low] = 0.0;
         slot.parameters[lsampler::P::high] = 127.0;
-        slot.parameters[lsampler::P::sample_start] = startPct;
-        slot.parameters[lsampler::P::sample_end] = endPct;
+        // Alt+O slices are already real trimmed audio when they reach a slot.
+        // Slot editing therefore always begins from a clean full 0..100 % window.
+        slot.parameters[lsampler::P::sample_start] = 0.0;
+        slot.parameters[lsampler::P::sample_end] = 100.0;
         slot.parameters[lsampler::P::sample_play_start] = 0.0;
         slot.status = "Loaded: " + file.getFileName();
         markAudioStateDirty();
@@ -457,23 +489,11 @@ void LSampler24AudioProcessor::requestSampleBoundaryAudition(bool endBoundary)
         if (!slot.sample || slot.sample->audio.getNumSamples() < 2)
             return;
 
-        if (endBoundary)
-        {
-            const auto& p = slot.parameters;
-            const double rate = slot.sample->sourceSampleRate > 0.0 ? slot.sample->sourceSampleRate : preparedSampleRate;
-            const double fullSeconds = slot.sample->audio.getNumSamples() / juce::jmax(1.0, rate);
-            const double windowFraction = juce::jmax(0.0, (p[P::sample_end] - p[P::sample_start]) * 0.01);
-            const double windowSeconds = fullSeconds * windowFraction;
-            if (windowSeconds > 0.0)
-            {
-                // Aim for 1% of the current sample window. For short sounds, keep
-                // enough context to hear the tail; for long recordings, cap the
-                // audition so each edit remains immediate.
-                const double adaptiveFloor = juce::jmin(0.10, windowSeconds * 0.25);
-                const double tailSeconds = juce::jlimit(adaptiveFloor, 2.0, windowSeconds * 0.01);
-                startPercent = juce::jlimit(0.0, 100.0, 100.0 * (1.0 - tailSeconds / windowSeconds));
-            }
-        }
+        const auto& p = slot.parameters;
+        // Sample Start auditions from the new Start itself. Sample End is deliberately
+        // independent: it auditions from the current Sample Play Start, which the
+        // user positions with Ctrl+Left/Right, so tail editing is deterministic.
+        startPercent = endBoundary ? p[P::sample_play_start] : p[P::sample_start];
     }
     requestPreviewAuditionFromPercent(startPercent);
 }
