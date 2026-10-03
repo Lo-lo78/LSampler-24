@@ -153,7 +153,7 @@ private:
 class LSamplerImportBrowserCell final : public juce::Component
 {
 public:
-    void setBrowserText(const juce::String& t) { text = t; setName(text); setTitle({}); setDescription({}); repaint(); }
+    void setBrowserText(const juce::String& t) { text = t; setTitle(text); setName({}); setDescription({}); repaint(); }
     const juce::String& getBrowserText() const noexcept { return text; }
     void paint(juce::Graphics& g) override
     {
