@@ -1667,16 +1667,63 @@ void LSampler24AudioProcessorEditor::loadImportSettings()
 
 void LSampler24AudioProcessorEditor::saveImportPreviewPreferenceOnly()
 {
+    // Escape/cancel keeps only persistent browser navigation plus the shared
+    // Preview On/Off preference.  Playback position, selections, slices, loop
+    // and other temporary editing state are deliberately reset.
     auto file = importSettingsFile();
-    juce::XmlElement xml("LSampler24Settings");
-    xml.setAttribute("f3Preview", importPreviewEnabled);
-    xml.writeTo(file);
+    std::unique_ptr<juce::XmlElement> xml;
+    if (file.existsAsFile())
+    {
+        juce::XmlDocument doc(file);
+        xml = doc.getDocumentElement();
+    }
+    if (xml == nullptr || !xml->hasTagName("LSampler24Settings"))
+        xml = std::make_unique<juce::XmlElement>("LSampler24Settings");
+
+    xml->setAttribute("f3Preview", importPreviewEnabled);
+
+    // When Alt+O itself is being cancelled, remember only its folder/file
+    // navigation and reset the editing/playback state.  Calls from Alt+S only
+    // update the shared Preview preference and must not disturb Alt+O's last file.
+    if (importBrowserActive)
+    {
+        if (importDirectory.isDirectory())
+            xml->setAttribute("f3Directory", importDirectory.getFullPathName());
+        xml->setAttribute("f3Index", importEntryIndex);
+
+        juce::String selectedPath;
+        if (!importRecentPathsMode && !importDriveList && !importEntries.empty()
+            && importEntryIndex >= 0 && importEntryIndex < static_cast<int>(importEntries.size()))
+            selectedPath = importEntries[static_cast<size_t>(importEntryIndex)].file.getFullPathName();
+        if (selectedPath.isNotEmpty())
+            xml->setAttribute("f3EntryPath", selectedPath);
+        else
+            xml->removeAttribute("f3EntryPath");
+
+        xml->setAttribute("f3Position", 0.0);
+        xml->setAttribute("f3LastInitial", 0);
+    }
+    xml->writeTo(file);
 }
 
 void LSampler24AudioProcessorEditor::saveImportSettings(bool resetPreviewPosition)
 {
     if (!importBrowserActive && !importDirectory.isDirectory()) return;
     auto file = importSettingsFile();
+
+    juce::String savedSlotDirectory, savedSlotEntryPath;
+    int savedSlotIndex = 0;
+    if (file.existsAsFile())
+    {
+        juce::XmlDocument doc(file);
+        if (auto oldXml = doc.getDocumentElement(); oldXml != nullptr && oldXml->hasTagName("LSampler24Settings"))
+        {
+            savedSlotDirectory = oldXml->getStringAttribute("f4Directory");
+            savedSlotEntryPath = oldXml->getStringAttribute("f4EntryPath");
+            savedSlotIndex = oldXml->getIntAttribute("f4Index", 0);
+        }
+    }
+
     juce::XmlElement xml("LSampler24Settings");
     xml.setAttribute("f3Directory", importDirectory.getFullPathName());
     xml.setAttribute("f3Index", importEntryIndex);
@@ -1693,6 +1740,9 @@ void LSampler24AudioProcessorEditor::saveImportSettings(bool resetPreviewPositio
         if (!p.isDirectory() || count++ >= 20) continue;
         auto* child = xml.createNewChildElement("Recent"); child->setAttribute("path", p.getFullPathName());
     }
+    if (savedSlotDirectory.isNotEmpty()) xml.setAttribute("f4Directory", savedSlotDirectory);
+    if (savedSlotEntryPath.isNotEmpty()) xml.setAttribute("f4EntryPath", savedSlotEntryPath);
+    xml.setAttribute("f4Index", savedSlotIndex);
     xml.writeTo(file);
 }
 
@@ -1949,7 +1999,12 @@ void LSampler24AudioProcessorEditor::navigateImportSlice(int direction)
     for (int i = 0; i < static_cast<int>(importPlan.size()); ++i)
         if (importPlan[static_cast<size_t>(i)].slice && importPlan[static_cast<size_t>(i)].file == e.file)
             slices.push_back(i);
-    if (slices.empty()) { lsampler::announceToActiveScreenReader(importBrowserCell, "No slice selection"); return; }
+    if (slices.empty())
+    {
+        lsampler::announceToActiveScreenReader(importBrowserCell,
+            direction < 0 ? "No previous slice" : "No next slice");
+        return;
+    }
 
     int pos = -1;
     for (int i = 0; i < static_cast<int>(slices.size()); ++i)
@@ -1965,7 +2020,12 @@ void LSampler24AudioProcessorEditor::navigateImportSlice(int direction)
     }
     if (pos < 0) pos = direction > 0 ? -1 : static_cast<int>(slices.size());
     const int next = pos + direction;
-    if (next < 0 || next >= static_cast<int>(slices.size())) return; // no wrap, like F3
+    if (next < 0 || next >= static_cast<int>(slices.size()))
+    {
+        lsampler::announceToActiveScreenReader(importBrowserCell,
+            direction < 0 ? "No previous slice" : "No next slice");
+        return; // horizontal slice navigation: no wrap
+    }
 
     const int planIndex = slices[static_cast<size_t>(next)];
     importPreviewEnabled = true;
@@ -2277,6 +2337,36 @@ void LSampler24AudioProcessorEditor::chooseImportLibrary()
 }
 
 
+void LSampler24AudioProcessorEditor::saveSlotLibraryNavigationState()
+{
+    auto file = importSettingsFile();
+    std::unique_ptr<juce::XmlElement> xml;
+    if (file.existsAsFile())
+    {
+        juce::XmlDocument doc(file);
+        xml = doc.getDocumentElement();
+    }
+    if (xml == nullptr || !xml->hasTagName("LSampler24Settings"))
+        xml = std::make_unique<juce::XmlElement>("LSampler24Settings");
+
+    xml->setAttribute("f3Preview", slotLibraryPreviewEnabled);
+    if (slotLibraryDirectory.isDirectory())
+        xml->setAttribute("f4Directory", slotLibraryDirectory.getFullPathName());
+    xml->setAttribute("f4Index", slotLibraryEntryIndex);
+
+    juce::String selectedPath;
+    if (!slotLibraryEntries.empty() && slotLibraryEntryIndex >= 0
+        && slotLibraryEntryIndex < static_cast<int>(slotLibraryEntries.size()))
+        selectedPath = slotLibraryEntries[static_cast<size_t>(slotLibraryEntryIndex)].file.getFullPathName();
+    if (selectedPath.isNotEmpty())
+        xml->setAttribute("f4EntryPath", selectedPath);
+    else
+        xml->removeAttribute("f4EntryPath");
+
+    xml->writeTo(file);
+}
+
+
 void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser()
 {
     if (slotLibraryActive) return;
@@ -2303,8 +2393,31 @@ void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser()
     slotLibraryStartSlot = processor.getCurrentSlot();
     slotLibraryRoot = processor.getLibrary().slots();
     slotLibraryRoot.createDirectory();
+
+    juce::String rememberedSlotDirectory, rememberedSlotEntryPath;
+    int rememberedSlotIndex = 0;
+    if (auto settings = importSettingsFile(); settings.existsAsFile())
+    {
+        juce::XmlDocument doc(settings);
+        if (auto xml = doc.getDocumentElement(); xml != nullptr && xml->hasTagName("LSampler24Settings"))
+        {
+            rememberedSlotDirectory = xml->getStringAttribute("f4Directory");
+            rememberedSlotEntryPath = xml->getStringAttribute("f4EntryPath");
+            rememberedSlotIndex = xml->getIntAttribute("f4Index", 0);
+        }
+    }
+
+    if (rememberedSlotDirectory.isNotEmpty())
+    {
+        const juce::File candidate(rememberedSlotDirectory);
+        if (candidate.isDirectory() && (candidate == slotLibraryRoot || candidate.isAChildOf(slotLibraryRoot)))
+            slotLibraryDirectory = candidate;
+    }
     if (!slotLibraryDirectory.isDirectory() || (slotLibraryDirectory != slotLibraryRoot && !slotLibraryDirectory.isAChildOf(slotLibraryRoot)))
         slotLibraryDirectory = slotLibraryRoot;
+    slotLibraryEntryIndex = rememberedSlotIndex;
+    if (rememberedSlotEntryPath.isNotEmpty())
+        slotLibraryDirectorySelectionMemory[slotLibraryDirectory.getFullPathName()] = rememberedSlotEntryPath;
 
     for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
     loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
@@ -2327,6 +2440,7 @@ void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser()
 void LSampler24AudioProcessorEditor::leaveSlotLibraryBrowser(bool announceSlot)
 {
     if (!slotLibraryActive) return;
+    saveSlotLibraryNavigationState();
     processor.requestLibraryPreviewStop();
     slotLibraryPendingPreview = {};
     slotLibraryPreviewDelayTicks = 0;
@@ -2394,6 +2508,7 @@ void LSampler24AudioProcessorEditor::selectSlotLibraryEntry(int index, bool anno
     slotLibraryCell.setBrowserText(text);
     slotLibraryDirectorySelectionMemory[slotLibraryDirectory.getFullPathName()] = e.file.getFullPathName();
     slotLibraryShiftSelectionActive = false;
+    saveSlotLibraryNavigationState();
     if (announce) announceSlotLibraryEntry();
     updateSlotLibraryPreviewForSelection();
 }

@@ -210,6 +210,7 @@ private:
     void loadImportSettings();
     void saveImportSettings(bool resetPreviewPosition = false);
     void saveImportPreviewPreferenceOnly();
+    void saveSlotLibraryNavigationState();
     juce::File importSettingsFile() const;
     void updateImportPreviewForSelection();
     void announceImportEntry();
