@@ -98,10 +98,19 @@ public:
         previewTargetSlot.store(currentSlot.load(std::memory_order_relaxed));
         previewRestartRequested.store(true);
     }
+    void requestPreviewAuditionFromPercent(double startPercent) noexcept
+    {
+        previewTargetSlot.store(currentSlot.load(std::memory_order_relaxed));
+        previewAuditionStartPercent.store(juce::jlimit(0.0, 100.0, startPercent), std::memory_order_relaxed);
+        previewAuditionRequested.store(true, std::memory_order_release);
+    }
+    void requestSampleBoundaryAudition(bool endBoundary);
 
     double getSlotParameter(int gridIndex, int loopIndex = 0) const;
     void setSlotParameter(int gridIndex, double value, int loopIndex = 0);
     void resetSlotParameter(int gridIndex, int loopIndex = 0);
+    double getSamplePlayStart() const;
+    void setSamplePlayStart(double value);
     void applyZeroCrossing(bool loopWindow, int loopIndex = 0);
     // Diagnostics used by offline regression tests, never by the screen reader.
     int getActiveVoiceCount() const noexcept { return voicePool.activeVoiceCount(); }
@@ -131,6 +140,8 @@ private:
     std::atomic<bool> previewToggleRequested { false };
     std::atomic<bool> previewStopRequested { false };
     std::atomic<bool> previewRestartRequested { false };
+    std::atomic<bool> previewAuditionRequested { false };
+    std::atomic<double> previewAuditionStartPercent { 0.0 };
     std::atomic<int> previewTargetSlot { 0 };
     std::atomic<uint32_t> stopVoicesMask { 0 };
     bool previewPlaying = false;

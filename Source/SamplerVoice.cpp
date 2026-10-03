@@ -116,7 +116,7 @@ void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudio
     if(s.params[P::portamento]==0)v.effectiveNote=note;
     updateVoice(v,s);
 }
-void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool preview) {
+void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool preview,double previewStartPercent) {
     if(!states||slot<0||slot>=slotCount||note<0||note>127||channel<0||channel>15)return;
     const auto& s=(*states)[size_t(slot)];const auto& p=s.params;
     if(!s.sample||s.length<1||s.sample->peak<1e-12)return;
@@ -140,7 +140,10 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
         v.drift=((h-std::floor(h))*2-1)*p[P::poly_drift];
     }
     const double skip=std::round(std::min(s.length*.20,s.sample->sourceSampleRate*.250)*p[P::vel_attack_depth]*.01*std::pow(1-velocity,1.5));
-    v.position=clamp(std::round((s.length-1)*p[P::sample_play_start]*.01)+skip,0,double(s.length-1));
+    const double startPercent = (preview && previewStartPercent >= 0.0)
+        ? clamp(previewStartPercent, 0.0, 100.0)
+        : p[P::sample_play_start];
+    v.position=clamp(std::round((s.length-1)*startPercent*.01)+skip,0,double(s.length-1));
     for(int i=0;i<2;++i) {
         const auto& l=s.lfo[size_t(i)];
         if(!l.trigger&&!l.oneShot)v.lfo[size_t(i)].phase=freePhase[size_t(slot)][size_t(i)];

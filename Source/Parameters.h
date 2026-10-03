@@ -307,7 +307,7 @@ inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 }};
 enum class Action { none, sampleZero, loopZero };
 struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; };
-inline constexpr std::array<GridEntry, 153> grid {{
+inline constexpr std::array<GridEntry, 152> grid {{
 {int(P::input_gain), -1, Action::none, "Slot"},
 {int(P::polyphony), -1, Action::none, "Slot"},
 {int(P::slot_polyphony), -1, Action::none, "Slot"},
@@ -335,7 +335,6 @@ inline constexpr std::array<GridEntry, 153> grid {{
 {int(P::choke_mode), -1, Action::none, "Mapping"},
 {int(P::sample_start), -1, Action::none, "Sample Window"},
 {int(P::sample_end), -1, Action::none, "Sample Window"},
-{int(P::sample_play_start), -1, Action::none, "Sample Window"},
 {-1, -1, Action::sampleZero, "Sample Window"},
 {int(P::global_one_shot), -1, Action::none, "Sample Window"},
 {int(P::start_end_fade), -1, Action::none, "Sample Window"},

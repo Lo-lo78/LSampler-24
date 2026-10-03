@@ -158,6 +158,23 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         }
     }
 
+    if (previewAuditionRequested.exchange(false, std::memory_order_acq_rel)) {
+        const int slot = juce::jlimit(0, slotCount - 1, previewTargetSlot.load());
+        const bool shouldRestart = previewPlaying && previewPlayingSlot == slot;
+        if (shouldRestart) {
+            voicePool.stopPreviewVoices(slot);
+            if (audio[size_t(slot)].sample) {
+                const double startPercent = previewAuditionStartPercent.load(std::memory_order_relaxed);
+                voicePool.noteOn(slot, int(audio[size_t(slot)].params[P::root]), 1.0f, 0, true, startPercent);
+                previewPlaying = true;
+                previewPlayingSlot = slot;
+            } else {
+                previewPlaying = false;
+                previewPlayingSlot = -1;
+            }
+        }
+    }
+
     if (libraryPreviewStopRequested.exchange(false, std::memory_order_acq_rel))
     {
         libraryPreviewVoicePool.stopPreviewVoices();
@@ -420,6 +437,46 @@ void LSampler24AudioProcessor::resetSlotParameter(int index,int loop) {
     if (index<0 || index>=int(grid.size())) return;
     setSlotParameter(index,descriptor(grid[size_t(index)]).initial,loop);
 }
+double LSampler24AudioProcessor::getSamplePlayStart() const {
+    const juce::ScopedLock lock(stateLock);
+    return slots[size_t(currentSlot.load())].parameters[P::sample_play_start];
+}
+void LSampler24AudioProcessor::setSamplePlayStart(double value) {
+    const juce::ScopedLock lock(stateLock);
+    auto& p = slots[size_t(currentSlot.load())].parameters;
+    p[P::sample_play_start] = juce::jlimit(parameters[static_cast<size_t>(P::sample_play_start)].minimum,
+                                           parameters[static_cast<size_t>(P::sample_play_start)].maximum, value);
+    markAudioStateDirty();
+}
+void LSampler24AudioProcessor::requestSampleBoundaryAudition(bool endBoundary)
+{
+    double startPercent = 0.0;
+    {
+        const juce::ScopedLock lock(stateLock);
+        const auto& slot = slots[size_t(currentSlot.load())];
+        if (!slot.sample || slot.sample->audio.getNumSamples() < 2)
+            return;
+
+        if (endBoundary)
+        {
+            const auto& p = slot.parameters;
+            const double rate = slot.sample->sourceSampleRate > 0.0 ? slot.sample->sourceSampleRate : preparedSampleRate;
+            const double fullSeconds = slot.sample->audio.getNumSamples() / juce::jmax(1.0, rate);
+            const double windowFraction = juce::jmax(0.0, (p[P::sample_end] - p[P::sample_start]) * 0.01);
+            const double windowSeconds = fullSeconds * windowFraction;
+            if (windowSeconds > 0.0)
+            {
+                // Aim for 1% of the current sample window. For short sounds, keep
+                // enough context to hear the tail; for long recordings, cap the
+                // audition so each edit remains immediate.
+                const double adaptiveFloor = juce::jmin(0.10, windowSeconds * 0.25);
+                const double tailSeconds = juce::jlimit(adaptiveFloor, 2.0, windowSeconds * 0.01);
+                startPercent = juce::jlimit(0.0, 100.0, 100.0 * (1.0 - tailSeconds / windowSeconds));
+            }
+        }
+    }
+    requestPreviewAuditionFromPercent(startPercent);
+}
 void LSampler24AudioProcessor::applyZeroCrossing(bool loopWindow,int loopIndex) {
     // A native UI command: no audio-thread scan, bridge, pulse or request/result state.
     const juce::ScopedLock lock(stateLock);
@@ -448,7 +505,41 @@ void LSampler24AudioProcessor::applyZeroCrossing(bool loopWindow,int loopIndex) 
     if(loopWindow) {
         auto& l=p.loops[size_t(juce::jlimit(0,9,loopIndex))];
         l[size_t(L::start)]=snap(l[size_t(L::start)]);l[size_t(L::end)]=snap(l[size_t(L::end)]);
-    } else { p[P::sample_start]=snap(p[P::sample_start]);p[P::sample_end]=snap(p[P::sample_end]); }
+    } else {
+        // Sample-window Zero Crossing is a destructive trim command. Snap the
+        // selected window to zero crossings, keep only that audio, then make
+        // the resulting sample the new full 0..100 % window.
+        const double snappedStart = snap(p[P::sample_start]);
+        const double snappedEnd = snap(p[P::sample_end]);
+        const int startSample = std::clamp(int(std::floor(count * snappedStart * .01)), 0, count - 2);
+        const int endSample = std::clamp(int(std::ceil(count * snappedEnd * .01)), startSample + 1, count);
+        const int newCount = endSample - startSample;
+
+        auto trimmed = std::make_shared<SharedSample>();
+        trimmed->audio.setSize(a.getNumChannels(), newCount, false, false, true);
+        for (int ch = 0; ch < a.getNumChannels(); ++ch)
+            trimmed->audio.copyFrom(ch, 0, a, ch, startSample, newCount);
+        trimmed->sourceSampleRate = slot.sample->sourceSampleRate;
+        trimmed->sourceFile = slot.sample->sourceFile;
+
+        double peak = 0.0;
+        std::array<double, 2> dc {};
+        for (int ch = 0; ch < trimmed->audio.getNumChannels(); ++ch) {
+            const auto* data = trimmed->audio.getReadPointer(ch);
+            double sum = 0.0;
+            for (int i = 0; i < newCount; ++i) {
+                peak = juce::jmax(peak, std::abs(double(data[i])));
+                sum += data[i];
+            }
+            if (ch < 2) dc[size_t(ch)] = newCount > 0 ? sum / newCount : 0.0;
+        }
+        trimmed->peak = peak;
+        trimmed->dc = dc;
+        slot.sample = std::move(trimmed);
+        p[P::sample_start] = 0.0;
+        p[P::sample_end] = 100.0;
+        p[P::sample_play_start] = 0.0;
+    }
     markAudioStateDirty();
 }
 

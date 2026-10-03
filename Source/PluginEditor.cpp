@@ -402,7 +402,15 @@ juce::String LSampler24AudioProcessorEditor::selectedParameterName() const {
     return (std::strcmp(e.category,"Loops")==0?"Loop "+juce::String(selectedLoop+1)+" ":juce::String())+descriptor(e).name;
 }
 double LSampler24AudioProcessorEditor::getSelectedParameterValue() const {return processor.getSlotParameter(selectedParameter,selectedLoop);}
-void LSampler24AudioProcessorEditor::setSelectedParameterValue(double value) {processor.setSlotParameter(selectedParameter,value,selectedLoop);}
+void LSampler24AudioProcessorEditor::setSelectedParameterValue(double value)
+{
+    const auto parameter = selectedEntry().parameter;
+    processor.setSlotParameter(selectedParameter, value, selectedLoop);
+    if (parameter == int(P::sample_start))
+        processor.requestSampleBoundaryAudition(false);
+    else if (parameter == int(P::sample_end))
+        processor.requestSampleBoundaryAudition(true);
+}
 juce::String LSampler24AudioProcessorEditor::formatParameter(int index,double value) const {
     const auto& e=lsampler::grid[size_t(index)];const auto& d=descriptor(e);
     if(d.kind==Kind::note)return value<0?juce::String("Off"):midiNoteText(juce::roundToInt(value));
@@ -1019,36 +1027,26 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         return true;
     }
 
-    // Ctrl+Left/Right scrubs Sample Play Start without moving Grid/Value focus.
-    // If Space preview is already playing, restart it from the new start position.
+    // Ctrl+Left/Right scrubs Sample Play Start without exposing it in the Grid.
+    // Use the same coarse multiplier as Page Up/Down so sample navigation is fast,
+    // while Alt+Left/Right still selects the step-width multiplier.
     if (parameterPage && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
         && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
     {
-        int sampleStartIndex = -1;
-        for (int i = 0; i < static_cast<int>(lsampler::grid.size()); ++i)
-            if (lsampler::grid[static_cast<size_t>(i)].parameter == int(lsampler::P::sample_play_start))
-            {
-                sampleStartIndex = i;
-                break;
-            }
-
-        if (sampleStartIndex >= 0)
+        const auto& d = lsampler::parameters[static_cast<size_t>(lsampler::P::sample_play_start)];
+        const double step = d.step
+                          * static_cast<double>(stepWidths[static_cast<size_t>(stepWidthIndex)])
+                          * static_cast<double>(valuePageStep);
+        const double current = processor.getSamplePlayStart();
+        const double next = juce::jlimit(d.minimum, d.maximum,
+                                         current + (code == juce::KeyPress::rightKey ? step : -step));
+        if (std::abs(next - current) >= 1.0e-9)
         {
-            const auto& d = descriptor(lsampler::grid[static_cast<size_t>(sampleStartIndex)]);
-            const double step = d.step * static_cast<double>(stepWidths[static_cast<size_t>(stepWidthIndex)]);
-            const double current = processor.getSlotParameter(sampleStartIndex);
-            const double next = juce::jlimit(d.minimum, d.maximum,
-                                             current + (code == juce::KeyPress::rightKey ? step : -step));
-            if (std::abs(next - current) >= 1.0e-9)
-            {
-                processor.setSlotParameter(sampleStartIndex, next);
-                refreshParameterGrid();
-                processor.requestPreviewRestartIfPlaying();
-                // Deliberately silent for screen readers: Ctrl+Left/Right is an auditory scrub.
-                // Normal editing of Sample Play Start still announces values through the regular parameter path.
-            }
-            return true;
+            processor.setSamplePlayStart(next);
+            processor.requestPreviewRestartIfPlaying();
+            // Deliberately silent: Ctrl+Left/Right is an auditory scrub.
         }
+        return true;
     }
 
     if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
