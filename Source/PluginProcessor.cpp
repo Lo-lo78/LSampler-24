@@ -148,7 +148,7 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         if (shouldRestart) {
             voicePool.stopPreviewVoices(slot);
             if (audio[size_t(slot)].sample) {
-                voicePool.noteOn(slot, int(audio[size_t(slot)].params[P::root]), 1.0f, 0, true);
+                voicePool.noteOn(slot, 60, 1.0f, 0, true);
                 previewPlaying = true;
                 previewPlayingSlot = slot;
             } else {
@@ -165,7 +165,7 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             voicePool.stopPreviewVoices(slot);
             if (audio[size_t(slot)].sample) {
                 const double startPercent = previewAuditionStartPercent.load(std::memory_order_relaxed);
-                voicePool.noteOn(slot, int(audio[size_t(slot)].params[P::root]), 1.0f, 0, true, startPercent);
+                voicePool.noteOn(slot, 60, 1.0f, 0, true, startPercent);
                 previewPlaying = true;
                 previewPlayingSlot = slot;
             } else {
@@ -216,7 +216,7 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             voicePool.stopPreviewVoices();
             const int slot = juce::jlimit(0, slotCount-1, previewTargetSlot.load());
             if (audio[size_t(slot)].sample) {
-                voicePool.noteOn(slot, int(audio[size_t(slot)].params[P::root]), 1.0f, 0, true);
+                voicePool.noteOn(slot, 60, 1.0f, 0, true);
                 previewPlaying = true; previewPlayingSlot = slot;
             }
         }
@@ -339,6 +339,7 @@ bool LSampler24AudioProcessor::loadSample(const juce::File& file, juce::String& 
         auto& s = slots[static_cast<size_t>(currentSlot.load())];
         s.sample = std::move(loaded);
         s.sampleFile = file;
+        s.sampleAudioModified = false;
         s.status = "Loaded: " + file.getFileName();
         markAudioStateDirty();
     }
@@ -406,6 +407,7 @@ bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int sl
         auto& slot = slots[static_cast<size_t>(slotIndex)];
         slot.sample = std::move(loaded);
         slot.sampleFile = file;
+        slot.sampleAudioModified = hasSlice;
         slot.parameters = lsampler::SlotParameters{};
         slot.parameters[lsampler::P::root] = 60.0;
         slot.parameters[lsampler::P::low] = 0.0;
@@ -556,6 +558,7 @@ void LSampler24AudioProcessor::applyZeroCrossing(bool loopWindow,int loopIndex) 
         trimmed->peak = peak;
         trimmed->dc = dc;
         slot.sample = std::move(trimmed);
+        slot.sampleAudioModified = true;
         p[P::sample_start] = 0.0;
         p[P::sample_end] = 100.0;
         p[P::sample_play_start] = 0.0;
@@ -722,6 +725,7 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
         }
         slot.sample = std::move(loaded);
         slot.sampleFile = file;
+        slot.sampleAudioModified = false;
         slot.status = statusText;
         markAudioStateDirty();
     }
@@ -733,9 +737,47 @@ bool LSampler24AudioProcessor::materialiseSlotSample(int slotIndex, juce::String
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
     juce::File source;
+    std::shared_ptr<SharedSample> currentSample;
+    bool audioModified = false;
     {
         const juce::ScopedLock lock(stateLock);
-        source = slots[static_cast<size_t>(slotIndex)].sampleFile;
+        const auto& slot = slots[static_cast<size_t>(slotIndex)];
+        source = slot.sampleFile;
+        currentSample = slot.sample;
+        audioModified = slot.sampleAudioModified;
+    }
+
+    if (!currentSample && source.getFullPathName().isEmpty())
+        return true;
+
+    // Destructive edits (Zero Crossing trim and Alt+O slices) live in the
+    // in-memory buffer. Before a Slot preset is written, persist that exact
+    // buffer as its own Library WAV so reloading cannot fall back to the
+    // original untrimmed source file.
+    if (audioModified && currentSample)
+    {
+        const auto baseName = source.getFileNameWithoutExtension();
+        auto local = library.materialiseEditedSample(currentSample->audio,
+                                                     currentSample->sourceSampleRate,
+                                                     baseName, error);
+        if (local.getFullPathName().isEmpty())
+            return false;
+
+        auto aliased = SamplePool::instance().aliasFile(local, currentSample);
+        if (!aliased)
+        {
+            error = "Could not register edited sample in the sample pool";
+            return false;
+        }
+
+        const juce::ScopedLock lock(stateLock);
+        auto& slot = slots[static_cast<size_t>(slotIndex)];
+        slot.sample = std::move(aliased);
+        slot.sampleFile = local;
+        slot.sampleAudioModified = false;
+        slot.status = "Loaded: " + local.getFileName();
+        markAudioStateDirty();
+        return true;
     }
 
     if (source.getFullPathName().isEmpty())
@@ -747,15 +789,15 @@ bool LSampler24AudioProcessor::materialiseSlotSample(int slotIndex, juce::String
 
     if (local != source)
     {
-        std::shared_ptr<SharedSample> original;
-        { const juce::ScopedLock lock(stateLock); original = slots[size_t(slotIndex)].sample; }
-        auto loaded = original ? SamplePool::instance().aliasFile(local, original) : SamplePool::instance().load(local, error);
+        auto loaded = currentSample ? SamplePool::instance().aliasFile(local, currentSample)
+                                    : SamplePool::instance().load(local, error);
         if (!loaded) return false;
 
         const juce::ScopedLock lock(stateLock);
         auto& slot = slots[static_cast<size_t>(slotIndex)];
         slot.sample = std::move(loaded);
         slot.sampleFile = local;
+        slot.sampleAudioModified = false;
         slot.status = "Loaded: " + local.getFileName();
         markAudioStateDirty();
     }
@@ -897,8 +939,9 @@ bool LSampler24AudioProcessor::prepareLibrarySlotPreview(const juce::File& prese
     libraryPreviewOwners[0] = loaded;
     libraryPreviewStates[0] = lsampler::prepareSlotAudioState(params, loaded.get(), preparedSampleRate, ++nextRevision);
     libraryPreviewVoicePool.setStates(&libraryPreviewStates);
-    const int low = int(params[P::low]), high = int(params[P::high]), root = int(params[P::root]);
-    libraryPreviewNote = (high - low > 36) ? root : juce::jlimit(low, high, (low + high) / 2);
+    // Browser/grid preview always auditions MIDI C4. Original Pitch therefore changes
+    // the heard tuning deterministically instead of moving the preview note with the root.
+    libraryPreviewNote = 60;
     libraryPreviewPlaying = false;
     libraryPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
     return true;

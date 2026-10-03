@@ -480,13 +480,18 @@ void LSampler24AudioProcessorEditor::enterSlotParameters()
     parameterSelector.setVisible(true);
     parameterValue.setVisible(true);
     selectedParameter = juce::jlimit(0, int(lsampler::grid.size())-1, selectedParameter);
+    parameterSelector.setSelectedItemIndex(selectedParameter, juce::dontSendNotification);
     refreshParameterGrid();
     resized();
+    parameterSelector.setEntryAccessibility();
     parameterSelector.grabKeyboardFocus();
 }
 
 void LSampler24AudioProcessorEditor::leaveSlotParameters()
 {
+    const int currentGridIndex = parameterSelector.getSelectedItemIndex();
+    if (currentGridIndex >= 0)
+        selectedParameter = currentGridIndex;
     processor.requestPreviewStop();
     parameterPage = false;
     parameterSelector.setVisible(false);

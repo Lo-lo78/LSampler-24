@@ -101,6 +101,52 @@ juce::File LibraryManager::materialiseSampleAtRelativePath(const juce::File& sou
     return desired;
 }
 
+juce::File LibraryManager::materialiseEditedSample(const juce::AudioBuffer<float>& audio,
+                                                        double sampleRate,
+                                                        const juce::String& suggestedBaseName,
+                                                        juce::String& error) const
+{
+    error.clear();
+    if (audio.getNumChannels() <= 0 || audio.getNumSamples() <= 0)
+    {
+        error = "Edited sample is empty";
+        return {};
+    }
+
+    auto base = suggestedBaseName.trim();
+    if (base.isEmpty()) base = "Edited_Sample";
+    base = juce::File::createLegalFileName(base);
+    auto dest = uniqueDestination(samplesDir, base + "_trim.wav");
+
+    juce::WavAudioFormat format;
+    auto stream = dest.createOutputStream();
+    if (!stream)
+    {
+        error = "Could not create edited sample in the LSampler-24 Library";
+        return {};
+    }
+
+    std::unique_ptr<juce::AudioFormatWriter> writer(
+        format.createWriterFor(stream.get(), juce::jmax(1.0, sampleRate),
+                               static_cast<unsigned int>(audio.getNumChannels()), 24, {}, 0));
+    if (!writer)
+    {
+        error = "Could not create WAV writer for edited sample";
+        return {};
+    }
+
+    stream.release(); // ownership transferred to AudioFormatWriter
+    if (!writer->writeFromAudioSampleBuffer(audio, 0, audio.getNumSamples()))
+    {
+        writer.reset();
+        dest.deleteFile();
+        error = "Could not write edited sample audio";
+        return {};
+    }
+    writer.reset();
+    return dest;
+}
+
 juce::String LibraryManager::makeSampleReference(const juce::File& sampleFile) const
 {
     if (sampleFile.getFullPathName().isEmpty())

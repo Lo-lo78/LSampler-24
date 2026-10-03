@@ -76,7 +76,14 @@ public:
     {
         setEntryAccessibility();
         juce::ComboBox::focusGained(cause);
-        juce::Timer::callAfterDelay(150,
+        juce::Timer::callAfterDelay(1,
+            [safeThis = juce::Component::SafePointer<LSamplerParameterComboBox>(this)]
+            {
+                if (safeThis != nullptr && safeThis->hasKeyboardFocus(true))
+                    if (auto* handler = safeThis->getAccessibilityHandler())
+                        handler->grabFocus();
+            });
+        juce::Timer::callAfterDelay(220,
             [safeThis = juce::Component::SafePointer<LSamplerParameterComboBox>(this)]
             {
                 if (safeThis != nullptr)
@@ -136,7 +143,14 @@ public:
     {
         setEntryAccessibility();
         juce::Slider::focusGained(cause);
-        juce::Timer::callAfterDelay(150,
+        juce::Timer::callAfterDelay(1,
+            [safeThis = juce::Component::SafePointer<LSamplerValueSlider>(this)]
+            {
+                if (safeThis != nullptr && safeThis->hasKeyboardFocus(true))
+                    if (auto* handler = safeThis->getAccessibilityHandler())
+                        handler->grabFocus();
+            });
+        juce::Timer::callAfterDelay(220,
             [safeThis = juce::Component::SafePointer<LSamplerValueSlider>(this)]
             {
                 if (safeThis != nullptr)

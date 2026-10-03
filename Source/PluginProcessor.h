@@ -122,6 +122,7 @@ private:
     {
         std::shared_ptr<SharedSample> sample;
         juce::File sampleFile;
+        bool sampleAudioModified = false;
         lsampler::SlotParameters parameters;
         juce::String status = "No sample loaded";
     };
