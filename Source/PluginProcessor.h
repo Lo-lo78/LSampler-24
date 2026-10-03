@@ -111,6 +111,8 @@ public:
     double getSlotParameter(int gridIndex, int loopIndex = 0) const;
     void setSlotParameter(int gridIndex, double value, int loopIndex = 0);
     void resetSlotParameter(int gridIndex, int loopIndex = 0);
+    double getGlobalOutputParameter(lsampler::GlobalP parameter) const noexcept;
+    void setGlobalOutputParameter(lsampler::GlobalP parameter, double value) noexcept;
     double getSamplePlayStart() const;
     double getSampleWindowStart() const;
     double getSampleWindowEnd() const;
@@ -189,6 +191,16 @@ private:
     double preparedSampleRate = 44100;
     std::vector<std::shared_ptr<SharedSample>> retiredSamples;
     GlobalVoicePool voicePool;
+
+    std::array<std::atomic<double>, lsampler::globalParameterCount> globalOutputParameters {
+        std::atomic<double>{ 0.0 },     // Master Output Gain dB
+        std::atomic<double>{ 1.0 },     // Output Stage: LR-608
+        std::atomic<double>{ 35.0 },    // Bus Glue, human percent; JSFX equivalent 3500
+        std::atomic<double>{ 0.0 },     // Bus Soft Drive, human percent; JSFX equivalent 0
+        std::atomic<double>{ 0.98 }     // Output Ceiling
+    };
+    double outputGlueEnvelope = 0.0; // audio-thread state, JSFX lbpm_output_glue_env
+    void applyOutputStage(juce::AudioBuffer<float>& buffer, const std::array<int, 25>& routes) noexcept;
     GlobalVoicePool libraryPreviewVoicePool;
     std::array<lsampler::SlotAudioState, GlobalVoicePool::slotCount> libraryPreviewStates {};
     std::array<std::shared_ptr<SharedSample>, GlobalVoicePool::slotCount> libraryPreviewOwners {};

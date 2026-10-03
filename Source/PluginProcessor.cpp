@@ -26,6 +26,7 @@ void LSampler24AudioProcessor::prepareToPlay(double sampleRate, int)
     voicePool.prepare(sampleRate);
     libraryPreviewVoicePool.prepare(sampleRate);
     libraryPreviewVoicePool.setStates(&libraryPreviewStates);
+    outputGlueEnvelope = 0.0;
     {
         const juce::ScopedLock lock(stateLock);
         preparedSampleRate = sampleRate > 0 ? sampleRate : 44100;
@@ -80,6 +81,139 @@ void LSampler24AudioProcessor::syncAudioStateFromSlots()
     if ((middleSnapshot.load(std::memory_order_acquire) & 4) != 0)
         readerSnapshot = middleSnapshot.exchange(readerSnapshot, std::memory_order_acq_rel) & 3;
     voicePool.setStates(&snapshots[size_t(readerSnapshot)].states);
+}
+
+void LSampler24AudioProcessor::applyOutputStage(juce::AudioBuffer<float>& buffer, const std::array<int, 25>& routes) noexcept
+{
+    const int numSamples = buffer.getNumSamples();
+    if (numSamples <= 0 || buffer.getNumChannels() <= 0) return;
+
+    std::array<int, 25> leftChannels {};
+    std::array<int, 25> rightChannels {};
+    int busCount = 0;
+    for (int bus = 0; bus < static_cast<int>(routes.size()); ++bus)
+    {
+        const int left = routes[size_t(bus)];
+        if (left < 0 || left + 1 >= buffer.getNumChannels()) continue;
+        leftChannels[size_t(busCount)] = left;
+        rightChannels[size_t(busCount)] = left + 1;
+        ++busCount;
+    }
+    if (busCount == 0) return;
+
+    const bool stageOn = getGlobalOutputParameter(GlobalP::output_stage) >= 0.5;
+    const double masterDb = getGlobalOutputParameter(GlobalP::master_output_gain);
+    const float masterGain = masterDb <= -119.9 ? 0.0f : float(std::pow(10.0, masterDb / 20.0));
+    const float glueAmount = float(juce::jlimit(0.0, 1.0, getGlobalOutputParameter(GlobalP::bus_glue) * 0.01));
+    const float driveAmount = float(juce::jlimit(0.0, 1.0, getGlobalOutputParameter(GlobalP::bus_soft_drive) * 0.01));
+    const float ceiling = float(juce::jlimit(0.1, 1.0, getGlobalOutputParameter(GlobalP::output_ceiling)));
+    const double attackSamples = juce::jmax(1.0, 0.003 * preparedSampleRate);
+    const double releaseSamples = juce::jmax(1.0, 0.020 * preparedSampleRate);
+
+    std::array<float*, 50> channels {};
+    for (int bus = 0; bus < busCount; ++bus)
+    {
+        channels[size_t(bus * 2)] = buffer.getWritePointer(leftChannels[size_t(bus)]);
+        channels[size_t(bus * 2 + 1)] = buffer.getWritePointer(rightChannels[size_t(bus)]);
+    }
+
+    // JSFX legacy fallback when Output Stage is Off: Main 1/2 only.
+    if (!stageOn)
+    {
+        auto* mainL = channels[0];
+        auto* mainR = channels[1];
+        for (int i = 0; i < numSamples; ++i)
+        {
+            float l = !std::isnan(mainL[i]) ? mainL[i] : 0.0f;
+            float r = !std::isnan(mainR[i]) ? mainR[i] : 0.0f;
+            l *= masterGain; r *= masterGain;
+            const float peak = juce::jmax(std::abs(l), std::abs(r));
+            if (peak > 0.98f)
+            {
+                const float g = 0.98f / peak;
+                l *= g; r *= g;
+            }
+            mainL[i] = juce::jlimit(-64.0f, 64.0f, l);
+            mainR[i] = juce::jlimit(-64.0f, 64.0f, r);
+        }
+        // The JSFX only guards active multichannel pins when present. Keep their
+        // audio untouched in fallback mode, apart from non-finite/safety cleanup.
+        for (int bus = 1; bus < busCount; ++bus)
+            for (int c = 0; c < 2; ++c)
+            {
+                auto* d = channels[size_t(bus * 2 + c)];
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    float v = !std::isnan(d[i]) ? d[i] : 0.0f;
+                    d[i] = juce::jlimit(-64.0f, 64.0f, v);
+                }
+            }
+        return;
+    }
+
+    const int channelCount = busCount * 2;
+    const float softDriveG = 1.0f + driveAmount * 2.75f;
+    const float softDriveC = 1.0f / (1.0f + driveAmount * 1.15f);
+    const float allOutputGain = masterGain * 1.2f;
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        // NaN/non-finite guard before the shared detector, matching the JSFX intent.
+        float busL = 0.0f, busR = 0.0f;
+        for (int bus = 0; bus < busCount; ++bus)
+        {
+            auto* l = channels[size_t(bus * 2)];
+            auto* r = channels[size_t(bus * 2 + 1)];
+            if (std::isnan(l[i])) l[i] = 0.0f;
+            if (std::isnan(r[i])) r[i] = 0.0f;
+            busL += l[i];
+            busR += r[i];
+        }
+
+        const double glueIn = juce::jmax(std::abs(double(busL)), std::abs(double(busR)));
+        outputGlueEnvelope += (glueIn - outputGlueEnvelope)
+                            / (outputGlueEnvelope < glueIn ? attackSamples : releaseSamples);
+
+        double glueGain = 1.0;
+        constexpr double glueThreshold = 0.6;
+        constexpr double glueRatio = 2.0;
+        if (outputGlueEnvelope > glueThreshold)
+        {
+            const double over = outputGlueEnvelope - glueThreshold;
+            glueGain = (glueThreshold + over / glueRatio) / outputGlueEnvelope;
+        }
+        float stageGain = float(1.0 + (glueGain - 1.0) * glueAmount);
+        stageGain *= 1.0f + glueAmount * 0.06f;
+
+        for (int c = 0; c < channelCount; ++c)
+            channels[size_t(c)][i] *= stageGain;
+
+        if (driveAmount > 0.000001f)
+            for (int c = 0; c < channelCount; ++c)
+            {
+                float& v = channels[size_t(c)][i];
+                v = (v * softDriveG) / (1.0f + std::abs(v) * driveAmount * 2.75f) * softDriveC;
+            }
+
+        float limiterPeak = 0.0f;
+        for (int c = 0; c < channelCount; ++c)
+        {
+            float& v = channels[size_t(c)][i];
+            v *= allOutputGain;
+            limiterPeak = juce::jmax(limiterPeak, std::abs(v));
+        }
+
+        if (limiterPeak > ceiling)
+        {
+            const float limiterTarget = ceiling + (limiterPeak - ceiling) * 0.15f;
+            const float limiterGain = limiterTarget / limiterPeak;
+            for (int c = 0; c < channelCount; ++c)
+                channels[size_t(c)][i] *= limiterGain;
+        }
+
+        for (int c = 0; c < channelCount; ++c)
+            channels[size_t(c)][i] = juce::jlimit(-64.0f, 64.0f, channels[size_t(c)][i]);
+    }
 }
 
 void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -301,6 +435,8 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         }
         importPreviewPositionSeconds.store(importPreviewPosition / juce::jmax(1.0, sourceRate), std::memory_order_relaxed);
     }
+
+    applyOutputStage(buffer, routes);
     midi.clear();
     if (previewPlaying && !voicePool.hasPreviewVoices(previewPlayingSlot)) { previewPlaying = false; previewPlayingSlot = -1; }
 }
@@ -468,13 +604,31 @@ void LSampler24AudioProcessor::setHighKey(int n) { const juce::ScopedLock lock(s
 void LSampler24AudioProcessor::setRootNote(int n) { const juce::ScopedLock lock(stateLock); slots[size_t(currentSlot.load())].parameters[P::root]=juce::jlimit(0,127,n); markAudioStateDirty(); }
 void LSampler24AudioProcessor::setVolume(float v) { const juce::ScopedLock lock(stateLock); slots[size_t(currentSlot.load())].parameters[P::input_gain]=v>0?20*std::log10(juce::jlimit(.000001f,1.0f,v)):-120; markAudioStateDirty(); }
 
+double LSampler24AudioProcessor::getGlobalOutputParameter(lsampler::GlobalP parameter) const noexcept
+{
+    return globalOutputParameters[size_t(parameter)].load(std::memory_order_relaxed);
+}
+
+void LSampler24AudioProcessor::setGlobalOutputParameter(lsampler::GlobalP parameter, double value) noexcept
+{
+    const auto& d = lsampler::globalParameters[size_t(parameter)];
+    globalOutputParameters[size_t(parameter)].store(lsampler::sanitise(d, value), std::memory_order_relaxed);
+}
+
 double LSampler24AudioProcessor::getSlotParameter(int index, int loop) const {
+    const auto& e = grid[size_t(juce::jlimit(0,int(grid.size())-1,index))];
+    if (e.global >= 0)
+        return getGlobalOutputParameter(static_cast<GlobalP>(e.global));
     const juce::ScopedLock lock(stateLock);
-    return slots[size_t(currentSlot.load())].parameters.get(grid[size_t(juce::jlimit(0,int(grid.size())-1,index))],juce::jlimit(0,9,loop));
+    return slots[size_t(currentSlot.load())].parameters.get(e,juce::jlimit(0,9,loop));
 }
 void LSampler24AudioProcessor::setSlotParameter(int index,double value,int loop) {
     const auto& e=grid[size_t(juce::jlimit(0,int(grid.size())-1,index))];
     if (e.action!=Action::none) { if(value>=.5)applyZeroCrossing(e.action==Action::loopZero,loop);return; }
+    if (e.global >= 0) {
+        setGlobalOutputParameter(static_cast<GlobalP>(e.global), value);
+        return;
+    }
     const juce::ScopedLock lock(stateLock);
     auto& p=slots[size_t(currentSlot.load())].parameters;
     p.set(e,juce::jlimit(0,9,loop),value);
@@ -1001,6 +1155,9 @@ bool LSampler24AudioProcessor::saveBankPreset(const juce::File& presetFile, juce
     bank.setProperty("formatVersion", 3, nullptr);
     bank.setProperty("slotCount", slotCount, nullptr);
     bank.setProperty("currentSlot", currentSlot.load(), nullptr);
+    for (int i = 0; i < globalParameterCount; ++i)
+        bank.setProperty(globalParameters[size_t(i)].key,
+                         globalOutputParameters[size_t(i)].load(std::memory_order_relaxed), nullptr);
 
     for (int i = 0; i < slotCount; ++i)
         bank.addChild(makeSlotState(i, "Slot"), -1, nullptr);
@@ -1036,6 +1193,10 @@ bool LSampler24AudioProcessor::loadBankPreset(const juce::File& presetFile, juce
     }
 
     currentSlot = juce::jlimit(0, slotCount - 1, static_cast<int>(bank.getProperty("currentSlot", 0)));
+    for (int i = 0; i < globalParameterCount; ++i)
+        if (bank.hasProperty(globalParameters[size_t(i)].key))
+            setGlobalOutputParameter(static_cast<GlobalP>(i), double(bank.getProperty(globalParameters[size_t(i)].key)));
+    outputGlueEnvelope = 0.0;
     markAudioStateDirty();
     error = firstError;
     return ok;
@@ -1464,6 +1625,9 @@ void LSampler24AudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     state.setProperty("formatVersion", 3, nullptr);
     state.setProperty("slotCount", slotCount, nullptr);
     state.setProperty("currentSlot", currentSlot.load(), nullptr);
+    for (int i = 0; i < globalParameterCount; ++i)
+        state.setProperty(globalParameters[size_t(i)].key,
+                          globalOutputParameters[size_t(i)].load(std::memory_order_relaxed), nullptr);
     for (int i = 0; i < slotCount; ++i)
         state.addChild(makeSlotState(i, "Slot"), -1, nullptr);
 
@@ -1487,6 +1651,10 @@ void LSampler24AudioProcessor::setStateInformation(const void* data, int sizeInB
                 restoreSlotState(i, state.getChild(i), ignored);
             }
             currentSlot = juce::jlimit(0, slotCount - 1, static_cast<int>(state.getProperty("currentSlot", 0)));
+            for (int i = 0; i < globalParameterCount; ++i)
+                if (state.hasProperty(globalParameters[size_t(i)].key))
+                    setGlobalOutputParameter(static_cast<GlobalP>(i), double(state.getProperty(globalParameters[size_t(i)].key)));
+            outputGlueEnvelope = 0.0;
             markAudioStateDirty();
         }
         else

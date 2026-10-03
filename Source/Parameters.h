@@ -294,6 +294,15 @@ inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"fm_wave", "FM Wave", "Ring and degrade", Kind::enumeration, 0.0, 0.0, 5.0, 1.0, 1.0, "", 0, "Sine|Triangle|Saw Up|Saw Down|Square|Noise"},
 {"fm_feedback", "FM Feedback", "Ring and degrade", Kind::continuous, 0.0, 0.0, 100.0, 0.1, 1.0, "%", 1, ""}
 }};
+enum class GlobalP { master_output_gain, output_stage, bus_glue, bus_soft_drive, output_ceiling, count };
+inline constexpr int globalParameterCount = 5;
+inline constexpr std::array<Descriptor, globalParameterCount> globalParameters {{
+{"master_output_gain", "Master Output Gain", "Output", Kind::continuous, 0.0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""},
+{"output_stage", "Output Stage", "Output", Kind::enumeration, 1.0, 0.0, 1.0, 1.0, 1.0, "", 0, "Off|LR-608"},
+{"bus_glue", "Bus Glue", "Output", Kind::continuous, 35.0, 0.0, 100.0, 0.01, 1.0, "%", 2, ""},
+{"bus_soft_drive", "Bus Soft Drive", "Output", Kind::continuous, 0.0, 0.0, 100.0, 0.01, 1.0, "%", 2, ""},
+{"output_ceiling", "Output Ceiling", "Output", Kind::continuous, 0.98, 0.1, 1.0, 0.001, 0.01, "", 3, ""}
+}};
 inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 {"loop_start", "Start", "Loops", Kind::continuous, 0, 0.0, 100.0, 0.0001, 0.01, "%", 6, ""},
 {"loop_end", "End", "Loops", Kind::continuous, 100, 0.0, 100.0, 0.0001, 0.01, "%", 6, ""},
@@ -306,8 +315,8 @@ inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 {"loop_one_shot", "One Shot", "Loops", Kind::enumeration, 0, 0.0, 1.0, 1.0, 1.0, "", 0, "Off|On"}
 }};
 enum class Action { none, sampleZero, loopZero };
-struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; };
-inline constexpr std::array<GridEntry, 152> grid {{
+struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; int global = -1; };
+inline constexpr std::array<GridEntry, 157> grid {{
 {int(P::input_gain), -1, Action::none, "Slot"},
 {int(P::polyphony), -1, Action::none, "Slot"},
 {int(P::slot_polyphony), -1, Action::none, "Slot"},
@@ -460,10 +469,18 @@ inline constexpr std::array<GridEntry, 152> grid {{
 {int(P::fm_ratio), -1, Action::none, "Ring and degrade"},
 {int(P::fm_wave), -1, Action::none, "Ring and degrade"},
 {int(P::fm_feedback), -1, Action::none, "Ring and degrade"},
+{-1, -1, Action::none, "Output", int(GlobalP::master_output_gain)},
+{-1, -1, Action::none, "Output", int(GlobalP::output_stage)},
+{-1, -1, Action::none, "Output", int(GlobalP::bus_glue)},
+{-1, -1, Action::none, "Output", int(GlobalP::bus_soft_drive)},
+{-1, -1, Action::none, "Output", int(GlobalP::output_ceiling)},
 }};
 inline constexpr Descriptor zeroAction {"zero_crossing", "Zero Crossing", "", Kind::action, 0,0,1,1,1,"",0,"Off|Apply"};
 inline const Descriptor& descriptor(const GridEntry& e) noexcept {
-    return e.action != Action::none ? zeroAction : e.loop >= 0 ? loopParameters[size_t(e.loop)] : parameters[size_t(e.parameter)];
+    return e.action != Action::none ? zeroAction
+         : e.global >= 0 ? globalParameters[size_t(e.global)]
+         : e.loop >= 0 ? loopParameters[size_t(e.loop)]
+         : parameters[size_t(e.parameter)];
 }
 inline double sanitise(const Descriptor& d, double v) noexcept {
     if (!std::isfinite(v)) return d.initial;
