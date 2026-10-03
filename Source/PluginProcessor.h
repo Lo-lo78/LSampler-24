@@ -76,6 +76,8 @@ public:
     int getCurrentSlot() const noexcept { return currentSlot.load(std::memory_order_relaxed); }
     void setCurrentSlot(int slotIndex);
     juce::String getSlotLabel(int slotIndex) const;
+    juce::String getSlotName(int slotIndex) const;
+    void setSlotName(int slotIndex, const juce::String& name);
 
     juce::File getCurrentSampleFile() const;
     juce::String getSampleStatus() const;
@@ -124,6 +126,7 @@ private:
     {
         std::shared_ptr<SharedSample> sample;
         juce::File sampleFile;
+        juce::String slotName;
         bool sampleAudioModified = false;
         lsampler::SlotParameters parameters;
         juce::String status = "No sample loaded";

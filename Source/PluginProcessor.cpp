@@ -320,8 +320,24 @@ juce::String LSampler24AudioProcessor::getSlotLabel(int slotIndex) const
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
     const juce::ScopedLock lock(stateLock);
     const auto& s = slots[static_cast<size_t>(slotIndex)];
-    const auto name = s.sampleFile.getFileNameWithoutExtension();
+    const auto name = s.slotName.isNotEmpty() ? s.slotName : s.sampleFile.getFileNameWithoutExtension();
     return "Slot " + juce::String(slotIndex + 1) + ", " + (name.isNotEmpty() ? name : "empty");
+}
+
+juce::String LSampler24AudioProcessor::getSlotName(int slotIndex) const
+{
+    slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
+    const juce::ScopedLock lock(stateLock);
+    const auto& s = slots[static_cast<size_t>(slotIndex)];
+    return s.slotName.isNotEmpty() ? s.slotName : s.sampleFile.getFileNameWithoutExtension();
+}
+
+void LSampler24AudioProcessor::setSlotName(int slotIndex, const juce::String& name)
+{
+    slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
+    const auto clean = name.trim();
+    const juce::ScopedLock lock(stateLock);
+    slots[static_cast<size_t>(slotIndex)].slotName = clean;
 }
 
 bool LSampler24AudioProcessor::loadSample(const juce::File& file, juce::String& error)
@@ -339,6 +355,7 @@ bool LSampler24AudioProcessor::loadSample(const juce::File& file, juce::String& 
         auto& s = slots[static_cast<size_t>(currentSlot.load())];
         s.sample = std::move(loaded);
         s.sampleFile = file;
+        s.slotName = file.getFileNameWithoutExtension();
         s.sampleAudioModified = false;
         s.status = "Loaded: " + file.getFileName();
         markAudioStateDirty();
@@ -407,6 +424,7 @@ bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int sl
         auto& slot = slots[static_cast<size_t>(slotIndex)];
         slot.sample = std::move(loaded);
         slot.sampleFile = file;
+        slot.slotName = file.getFileNameWithoutExtension();
         slot.sampleAudioModified = hasSlice;
         slot.parameters = lsampler::SlotParameters{};
         slot.parameters[lsampler::P::root] = 60.0;
@@ -645,6 +663,7 @@ juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slotIndex, const juc
     tree.setProperty("format", "LSampler-24 Slot", nullptr);
     tree.setProperty("formatVersion", 3, nullptr);
     tree.setProperty("index", slotIndex, nullptr);
+    tree.setProperty("slotName", s.slotName.isNotEmpty() ? s.slotName : s.sampleFile.getFileNameWithoutExtension(), nullptr);
     tree.setProperty("sampleReference", library.makeSampleReference(s.sampleFile), nullptr);
     tree.setProperty("sampleHash", library.makeSampleHash(s.sampleFile), nullptr);
     // Keep version-2 aliases for the existing state contract. Canonical values live in Parameters.
@@ -736,6 +755,7 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
         }
         slot.sample = std::move(loaded);
         slot.sampleFile = file;
+        slot.slotName = tree.getProperty("slotName").toString().trim();
         slot.sampleAudioModified = false;
         slot.status = statusText;
         markAudioStateDirty();
@@ -853,6 +873,12 @@ bool LSampler24AudioProcessor::loadSlotPreset(const juce::File& presetFile, juce
         return false;
     }
     const int slotIndex = currentSlot.load(std::memory_order_relaxed);
+    if (!tree.hasProperty("slotName") || tree.getProperty("slotName").toString().trim().isEmpty())
+    {
+        auto legacyName = presetFile.getFileNameWithoutExtension();
+        if (legacyName.startsWithIgnoreCase("Slot_")) legacyName = legacyName.substring(5);
+        tree.setProperty("slotName", legacyName, nullptr);
+    }
     const bool ok = restoreSlotState(slotIndex, tree, error);
     if (ok)
     {
@@ -877,6 +903,12 @@ bool LSampler24AudioProcessor::loadSlotPresetToSlot(const juce::File& presetFile
         return false;
     }
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
+    if (!tree.hasProperty("slotName") || tree.getProperty("slotName").toString().trim().isEmpty())
+    {
+        auto legacyName = presetFile.getFileNameWithoutExtension();
+        if (legacyName.startsWithIgnoreCase("Slot_")) legacyName = legacyName.substring(5);
+        tree.setProperty("slotName", legacyName, nullptr);
+    }
     const bool ok = restoreSlotState(slotIndex, tree, error);
     if (ok)
     {

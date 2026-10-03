@@ -1257,6 +1257,11 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
     {
+        if (ch == 'r')
+        {
+            renameCurrentSlot();
+            return true;
+        }
         if (ch == 'c')
         {
             processor.copyCurrentSlot();
@@ -2749,6 +2754,39 @@ void LSampler24AudioProcessorEditor::commitSlotLibrarySelection()
     leaveSlotLibraryBrowser(true);
 }
 
+void LSampler24AudioProcessorEditor::renameCurrentSlot()
+{
+    const int slot = processor.getCurrentSlot();
+    auto currentName = processor.getSlotName(slot);
+    if (currentName.isEmpty()) currentName = "Slot " + juce::String(slot + 1);
+
+    auto* window = new juce::AlertWindow("Rename Slot", "Slot name", juce::MessageBoxIconType::NoIcon);
+    window->addTextEditor("slotName", currentName, "Name");
+    window->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    if (auto* editor = window->getTextEditor("slotName"))
+    {
+        editor->selectAll();
+        editor->grabKeyboardFocus();
+    }
+
+    window->enterModalState(true, juce::ModalCallbackFunction::create(
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), slot, window](int result)
+        {
+            if (safeThis != nullptr && result == 1)
+            {
+                auto name = window->getTextEditorContents("slotName").trim();
+                if (name.isNotEmpty())
+                {
+                    safeThis->processor.setSlotName(slot, name);
+                    safeThis->refreshSlotCells();
+                }
+            }
+            if (safeThis != nullptr) safeThis->returnToCurrentSlotAndAnnounce();
+            delete window;
+        }), false);
+}
+
 void LSampler24AudioProcessorEditor::chooseLoadSlot()
 {
     chooser = std::make_unique<juce::FileChooser>("Load Slot", processor.getLibrary().slots(), "*.lsampler-24-s");
@@ -2771,7 +2809,7 @@ void LSampler24AudioProcessorEditor::chooseSaveSlot()
 {
     // The native Save dialog shows only the editable logical slot name.
     // Prefix and LSampler extension are added after the user confirms.
-    auto logicalName = processor.getCurrentSampleFile().getFileNameWithoutExtension();
+    auto logicalName = processor.getSlotName(processor.getCurrentSlot());
     if (logicalName.isEmpty())
         logicalName = LibraryManager::defaultName("Slot");
 
@@ -2795,6 +2833,7 @@ void LSampler24AudioProcessorEditor::chooseSaveSlot()
                     enteredName = "Slot";
 
                 auto file = chosen.getParentDirectory().getChildFile("Slot_" + enteredName + LibraryManager::slotExtension);
+                safeThis->processor.setSlotName(safeThis->processor.getCurrentSlot(), enteredName);
                 juce::String error;
                 const bool ok = safeThis->processor.saveSlotPreset(file, error);
                 safeThis->showResult(ok, error, "Slot saved: " + file.getFileNameWithoutExtension());

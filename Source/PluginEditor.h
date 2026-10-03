@@ -265,6 +265,7 @@ private:
     bool slotLibraryDestinationReserved(int slot) const;
     void chooseLoadSlot();
     void chooseSaveSlot();
+    void renameCurrentSlot();
     void chooseLoadBank();
     void chooseSaveBank();
     void showResult(bool ok, const juce::String& error, const juce::String& okMessage);
