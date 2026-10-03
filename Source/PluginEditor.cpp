@@ -157,7 +157,8 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
         return handleKeyPress(key, source);
     });
     parameterSelector.addKeyListener(this);
-    for (int i = 0; i < static_cast<int>(lsampler::grid.size()); ++i)
+    const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
+    for (int i = 0; i < normalGridSize; ++i)
         parameterSelector.addItem(parameterCellText(i), i + 1);
     parameterSelector.setSelectedItemIndex(selectedParameter, juce::dontSendNotification);
     parameterSelector.onChange = [this]
@@ -165,7 +166,8 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
         const int index = parameterSelector.getSelectedItemIndex();
         if (index >= 0)
         {
-            selectedParameter = index;
+            const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
+            selectedParameter = globalOpen ? normalGridSize + index : index;
             configureValueForSelectedParameter();
         }
     };
@@ -253,7 +255,7 @@ void LSampler24AudioProcessorEditor::paint(juce::Graphics& g)
     g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
     g.setColour(getLookAndFeel().findColour(juce::Label::textColourId));
     g.setFont(20.0f);
-    g.drawText("LSampler-24 - 24 Slots", 16, 12, getWidth() - 32, 28, juce::Justification::centredLeft);
+    g.drawText(globalOpen ? "LSampler-24 - Global" : "LSampler-24 - 24 Slots", 16, 12, getWidth() - 32, 28, juce::Justification::centredLeft);
 }
 
 void LSampler24AudioProcessorEditor::resized()
@@ -442,8 +444,22 @@ juce::String LSampler24AudioProcessorEditor::parameterCellText(int index) const 
     return prefix+descriptor(e).name+", "+formatParameter(index,processor.getSlotParameter(index,selectedLoop));
 }
 void LSampler24AudioProcessorEditor::refreshParameterGrid() {
-    for(int i=0;i<int(lsampler::grid.size());++i)parameterSelector.changeItemText(i+1,parameterCellText(i));
-    parameterSelector.setSelectedItemIndex(selectedParameter,juce::dontSendNotification);
+    const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
+    parameterSelector.clear(juce::dontSendNotification);
+    if (globalOpen)
+    {
+        for (int i = 0; i < lsampler::globalParameterCount; ++i)
+            parameterSelector.addItem(parameterCellText(normalGridSize + i), i + 1);
+        const int localIndex = juce::jlimit(0, lsampler::globalParameterCount - 1, selectedParameter - normalGridSize);
+        parameterSelector.setSelectedItemIndex(localIndex, juce::dontSendNotification);
+    }
+    else
+    {
+        for (int i = 0; i < normalGridSize; ++i)
+            parameterSelector.addItem(parameterCellText(i), i + 1);
+        selectedParameter = juce::jlimit(0, normalGridSize - 1, selectedParameter);
+        parameterSelector.setSelectedItemIndex(selectedParameter,juce::dontSendNotification);
+    }
     configureValueForSelectedParameter();
 }
 void LSampler24AudioProcessorEditor::configureValueForSelectedParameter() {
@@ -479,7 +495,8 @@ void LSampler24AudioProcessorEditor::enterSlotParameters()
     loadBank.setVisible(false); saveBank.setVisible(false);
     parameterSelector.setVisible(true);
     parameterValue.setVisible(true);
-    selectedParameter = juce::jlimit(0, int(lsampler::grid.size())-1, selectedParameter);
+    const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
+    selectedParameter = juce::jlimit(0, normalGridSize - 1, selectedParameter);
     parameterSelector.setSelectedItemIndex(selectedParameter, juce::dontSendNotification);
     refreshParameterGrid();
     resized();
@@ -503,12 +520,82 @@ void LSampler24AudioProcessorEditor::leaveSlotParameters()
     resized();
 }
 
+void LSampler24AudioProcessorEditor::openGlobal()
+{
+    if (globalOpen || importBrowserActive || slotLibraryActive) return;
+
+    globalReturnWasParameterPage = parameterPage;
+    globalReturnSelectedParameter = selectedParameter;
+    for (int i = 0; i < lsampler::globalParameterCount; ++i)
+        globalSnapshot[static_cast<size_t>(i)] = processor.getGlobalOutputParameter(static_cast<lsampler::GlobalP>(i));
+
+    globalOpen = true;
+    parameterPage = true;
+    for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
+    loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
+    loadBank.setVisible(false); saveBank.setVisible(false);
+    parameterSelector.setVisible(true);
+    parameterValue.setVisible(true);
+    const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
+    selectedParameter = normalGridSize + juce::jlimit(0, lsampler::globalParameterCount - 1, globalGridIndex);
+    refreshParameterGrid();
+    resized();
+    parameterSelector.setTitle("Global");
+    parameterSelector.setEntryAccessibility();
+    parameterSelector.grabKeyboardFocus();
+    lsampler::announceToActiveScreenReader(parameterSelector, "Global");
+}
+
+void LSampler24AudioProcessorEditor::closeGlobal(bool accept)
+{
+    if (!globalOpen) return;
+
+    const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
+    globalGridIndex = juce::jlimit(0, lsampler::globalParameterCount - 1, selectedParameter - normalGridSize);
+
+    if (!accept)
+        for (int i = 0; i < lsampler::globalParameterCount; ++i)
+            processor.setGlobalOutputParameter(static_cast<lsampler::GlobalP>(i), globalSnapshot[static_cast<size_t>(i)]);
+
+    globalOpen = false;
+    parameterSelector.setTitle("Grid");
+
+    if (globalReturnWasParameterPage)
+    {
+        parameterPage = true;
+        selectedParameter = juce::jlimit(0, normalGridSize - 1, globalReturnSelectedParameter);
+        refreshParameterGrid();
+        resized();
+        parameterSelector.setEntryAccessibility();
+        parameterSelector.grabKeyboardFocus();
+    }
+    else
+    {
+        parameterPage = false;
+        parameterSelector.setVisible(false);
+        parameterValue.setVisible(false);
+        for (auto& cell : slotCells) cell.setVisible(true);
+        loadSample.setVisible(true); loadSlot.setVisible(true); saveSlot.setVisible(true);
+        loadBank.setVisible(true); saveBank.setVisible(true);
+        refreshSlotCells();
+        resized();
+        selectSlot(processor.getCurrentSlot(), true);
+    }
+
+    auto* source = juce::Component::getCurrentlyFocusedComponent();
+    if (source == nullptr) source = &status;
+    lsampler::announceToActiveScreenReader(*source, accept ? "Global confirmed" : "Global cancelled");
+}
+
 void LSampler24AudioProcessorEditor::selectParameter(int index, bool announce)
 {
-    index = juce::jlimit(0, static_cast<int>(lsampler::grid.size()) - 1, index);
+    const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
+    const int minimumIndex = globalOpen ? normalGridSize : 0;
+    const int maximumIndex = globalOpen ? static_cast<int>(lsampler::grid.size()) - 1 : normalGridSize - 1;
+    index = juce::jlimit(minimumIndex, maximumIndex, index);
     if(index==selectedParameter)return;
     selectedParameter = index;
-    parameterSelector.setSelectedItemIndex(selectedParameter,
+    parameterSelector.setSelectedItemIndex(globalOpen ? selectedParameter - normalGridSize : selectedParameter,
         announce ? juce::sendNotificationSync : juce::dontSendNotification);
     configureValueForSelectedParameter();
 }
@@ -999,15 +1086,27 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         return true;
     }
 
+    if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown() && ch == 'g')
+    {
+        if (globalOpen) closeGlobal(true); else openGlobal();
+        return true;
+    }
+
+    if (globalOpen)
+    {
+        if (code == juce::KeyPress::escapeKey) { closeGlobal(false); return true; }
+        if (code == juce::KeyPress::returnKey && !sourceIsValueEditor) { closeGlobal(true); return true; }
+    }
+
     if (code == juce::KeyPress::spaceKey && parameterPage)
     {
-        processor.requestPreviewToggle();
+        if (!globalOpen) processor.requestPreviewToggle();
         return true;
     }
 
     // Page/category navigation remains available, now on Alt+Shift+Left/Right.
     // Ctrl+Left/Right is reserved for Sample Play Start scrubbing.
-    if (parameterPage && !sourceIsValueEditor && mods.isAltDown() && mods.isShiftDown()
+    if (parameterPage && !globalOpen && !sourceIsValueEditor && mods.isAltDown() && mods.isShiftDown()
         && !mods.isCtrlDown() && !mods.isCommandDown()
         && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
     {
@@ -1016,7 +1115,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     }
 
     // Ctrl+Up/Down changes the current slot while keeping the parameter grid open.
-    if (parameterPage && !sourceIsValueEditor && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
+    if (parameterPage && !globalOpen && !sourceIsValueEditor && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
         && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
     {
         const int current = processor.getCurrentSlot();
@@ -1035,7 +1134,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     // Ctrl+Left/Right scrubs Sample Play Start without exposing it in the Grid.
     // Use the same coarse multiplier as Page Up/Down so sample navigation is fast,
     // while Alt+Left/Right still selects the step-width multiplier.
-    if (parameterPage && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
+    if (parameterPage && !globalOpen && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
         && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
     {
         const auto& d = lsampler::parameters[static_cast<size_t>(lsampler::P::sample_play_start)];
@@ -1064,7 +1163,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         if (ch == 's' && mods.isShiftDown()) { chooseSaveSlot(); return true; }
         if (ch == 'b' && mods.isShiftDown()) { chooseSaveBank(); return true; }
         if (ch == 'v' && parameterPage && !sourceIsValueEditor) { focusValue(); return true; }
-        if (ch == 'l' && parameterPage)
+        if (ch == 'l' && parameterPage && !globalOpen)
         {
             for (int i = 0; i < static_cast<int>(lsampler::grid.size()); ++i)
                 if (lsampler::grid[static_cast<size_t>(i)].parameter == int(lsampler::P::global_one_shot)
@@ -1196,10 +1295,16 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 else focusValue();
                 return true;
             }
-            if (mods.isCtrlDown() && code == juce::KeyPress::homeKey) { selectParameter(0, true); return true; }
+            if (mods.isCtrlDown() && code == juce::KeyPress::homeKey)
+            {
+                const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
+                selectParameter(globalOpen ? normalGridSize : 0, true);
+                return true;
+            }
             if (mods.isCtrlDown() && code == juce::KeyPress::endKey)
             {
-                selectParameter(static_cast<int>(lsampler::grid.size()) - 1, true);
+                const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
+                selectParameter(globalOpen ? static_cast<int>(lsampler::grid.size()) - 1 : normalGridSize - 1, true);
                 return true;
             }
             if (code == juce::KeyPress::homeKey) { selectParameter(categoryBegin(selectedParameter), true); return true; }
@@ -1217,15 +1322,19 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                     selectParameter(selectedParameter + 1, true);
                 return true;
             }
-            if (!mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown() && !mods.isCommandDown()
+            if (!globalOpen && !mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown() && !mods.isCommandDown()
                 && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
             {
                 moveParameterPage(code == juce::KeyPress::leftKey ? -1 : 1);
                 return true;
             }
             if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isCommandDown()&&juce::CharacterFunctions::isLetterOrDigit(ch)) {
-                for(int distance=1;distance<=int(lsampler::grid.size());++distance) {
-                    const int next=(selectedParameter+distance)%int(lsampler::grid.size());
+                const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
+                const int first = globalOpen ? normalGridSize : 0;
+                const int count = globalOpen ? lsampler::globalParameterCount : normalGridSize;
+                const int local = selectedParameter - first;
+                for(int distance=1;distance<=count;++distance) {
+                    const int next=first + ((local+distance)%count);
                     const auto name=juce::String(descriptor(lsampler::grid[size_t(next)]).name);
                     if(juce::CharacterFunctions::toLowerCase(name[0])==ch){selectParameter(next,true);break;}
                 }

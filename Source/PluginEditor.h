@@ -275,6 +275,8 @@ private:
 
     void enterSlotParameters();
     void leaveSlotParameters();
+    void openGlobal();
+    void closeGlobal(bool accept);
     void selectParameter(int index, bool announce);
     void refreshParameterGrid();
     void configureValueForSelectedParameter();
@@ -364,6 +366,11 @@ private:
     bool slotLibraryClipboardCut = false;
 
     bool parameterPage = false;
+    bool globalOpen = false;
+    bool globalReturnWasParameterPage = false;
+    int globalReturnSelectedParameter = 0;
+    int globalGridIndex = 0;
+    std::array<double, lsampler::globalParameterCount> globalSnapshot {};
     int selectedParameter = 0;
     int stepWidthIndex = 0;
     int selectedLoop = 0;
