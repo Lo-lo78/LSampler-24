@@ -714,6 +714,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             if (slotLibraryPreviewEnabled)
             {
                 slotLibraryPreviewEnabled = false;
+                importPreviewEnabled = false;
+                saveImportPreviewPreferenceOnly();
                 slotLibraryPendingPreview = {};
                 slotLibraryPreviewDelayTicks = 0;
                 processor.requestLibraryPreviewStop();
@@ -724,6 +726,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 if (processor.prepareLibrarySlotPreview(e.file, error))
                 {
                     slotLibraryPreviewEnabled = true;
+                    importPreviewEnabled = true;
+                    saveImportPreviewPreferenceOnly();
                     processor.requestLibraryPreviewToggle();
                 }
                 else lsampler::announceToActiveScreenReader(slotLibraryCell, error);
@@ -2282,7 +2286,18 @@ void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser()
     parameterPage = false;
     importBrowserActive = false;
     slotLibraryActive = true;
-    slotLibraryPreviewEnabled = false;
+
+    // Alt+O and Alt+S share the same persistent Preview On/Off preference.
+    // Read only that preference here: the rest of the Alt+O browser state must
+    // remain independent, especially after Escape has cancelled it.
+    importPreviewEnabled = false;
+    if (auto settings = importSettingsFile(); settings.existsAsFile())
+    {
+        juce::XmlDocument doc(settings);
+        if (auto xml = doc.getDocumentElement(); xml != nullptr && xml->hasTagName("LSampler24Settings"))
+            importPreviewEnabled = xml->getBoolAttribute("f3Preview", false);
+    }
+    slotLibraryPreviewEnabled = importPreviewEnabled;
     slotLibraryShiftSelectionActive = false;
     slotLibrarySelection.clear();
     slotLibraryStartSlot = processor.getCurrentSlot();
