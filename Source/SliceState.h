@@ -10,7 +10,7 @@ constexpr int maxSlices = 128;
 inline constexpr std::array<int,14> sliceDivisions {1,2,3,4,6,8,12,16,24,32,48,64,96,128};
 enum class SliceG { mode, division, pitchTime, random, shuffle, shufflePitch, fadeIn, fadeOut,
                     panMode, panDepth, pitchMode, pitchDepth, midiMap, count };
-enum class SliceP { source, repeat, fit, pitch, repeatPitch, repeatPan, repeatLP, repeatHP,
+enum class SliceP { source, repeat, repeatType, fit, pitch, repeatPitch, repeatPan, repeatLP, repeatHP,
                     volume, mute, midiNote, pan, output, reverse, downsample, fadeIn, fadeOut, count };
 struct SliceDescriptor { const char* key; const char* name; double min,max,step,initial; const char* labels; };
 inline constexpr std::array<SliceDescriptor,13> sliceGlobals {{
@@ -25,8 +25,9 @@ inline constexpr std::array<SliceDescriptor,13> sliceGlobals {{
     {"pitchMode","Slice Pitch Mode",0,2,1,0,"Off|Follow Slice Mode|Follow Slice Mode Reverse"},
     {"pitchDepth","Slice Pitch Depth",0,48,.1,12,""}, {"midiMap","Slice MIDI Map",0,1,1,0,"Off|On"}
 }};
-inline constexpr std::array<SliceDescriptor,17> sliceProperties {{
+inline constexpr std::array<SliceDescriptor,18> sliceProperties {{
     {"source","Source Slice",1,128,1,1,""}, {"repeat","Repeat",1,128,1,1,""},
+    {"repeatType","Repeat Type",0,1,1,0,"Extend|Consume Steps"},
     {"fit","Fit",0,1,1,0,"Lengthen|Fit"}, {"pitch","Pitch",-96,96,.01,0,""},
     {"repeatPitch","Repeat Pitch Depth",-100,100,.01,0,""}, {"repeatPan","Repeat Pan",-100,100,.01,0,""},
     {"repeatLP","Repeat LP",-96,96,.01,0,""}, {"repeatHP","Repeat HP",-96,96,.01,0,""},
@@ -46,7 +47,7 @@ inline double sliceSanitise(const SliceDescriptor& d, double x) noexcept {
     return d.step==1 ? std::round(x) : x;
 }
 struct SliceStep {
-    std::array<double,17> values {};
+    std::array<double,18> values {};
     SliceStep() {for(size_t i=0;i<values.size();++i)values[i]=sliceProperties[i].initial;}
     double operator[](SliceP p) const noexcept {return values[size_t(p)];}
     double& operator[](SliceP p) noexcept {return values[size_t(p)];}

@@ -1,0 +1,14 @@
+LSampler-24 TEST43 — ordine pagine Alt+E
+
+Modifica esclusivamente organizzativa dell'editor Slice:
+
+1 = Global Slice Settings
+2 = Slice Sequencer
+3 = Boundaries
+
+Alt+E entra direttamente in Global Slice Settings.
+Tab cicla nello stesso ordine: Global -> Sequencer -> Boundaries -> Global.
+Shift+Tab percorre l'ordine inverso.
+La mini-griglia da 8 righe resta associata a Global Slice Settings, ora pagina 1.
+DSP e parametri Slice invariati.
+Nessuna compilazione eseguita.

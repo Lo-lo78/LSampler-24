@@ -20,7 +20,7 @@ public:
     void focusLost(FocusChangeType) override;
     void focusOfChildComponentChanged(FocusChangeType) override;
 private:
-    enum class Page { boundaries, globals, steps };
+    enum class Page { globals, steps, boundaries };
     class NumberEditor final : public juce::TextEditor {
     public:
         std::function<void(bool)> finish;
@@ -35,7 +35,7 @@ private:
     } number;
     LSampler24AudioProcessor& processor;
     const int slot;
-    Page page=Page::boundaries;
+    Page page=Page::globals;
     int item=0,property=0,global=0,boundarySide=1,anchor=-1;
     int stepWidthIndex=0;
     bool numeric=false;

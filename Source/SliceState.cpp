@@ -69,7 +69,21 @@ SliceAudioState prepareSliceAudio(const SliceState& state,int length) {
     for(int i=0;i<a.count;++i) {
         const auto& p=a.state.steps[size_t(i)];
         a.gains[size_t(i)]=p[SliceP::mute]!=0?0:std::pow(10.0,p[SliceP::volume]/20);
-        a.cycleUnits+=p[SliceP::fit]!=0?1:p[SliceP::repeat];
+    }
+    // Published sequence duration. Extend adds virtual time exactly as before.
+    // Consume Steps spends existing grid cells and skips over the cells it covers,
+    // so a 16-step pattern remains bounded by its 16-cell grid.
+    for(int i=0;i<a.count;) {
+        const auto& p=a.state.steps[size_t(i)];
+        const int repeatCount=std::max(1,int(p[SliceP::repeat]));
+        const bool fit=p[SliceP::fit]!=0;
+        const bool consume=p[SliceP::repeatType]!=0&&!fit;
+        if(consume) {
+            const int used=std::min(repeatCount,a.count-i);
+            a.cycleUnits+=used;i+=used;
+        } else {
+            a.cycleUnits+=fit?1:repeatCount;++i;
+        }
     }
     return a;
 }

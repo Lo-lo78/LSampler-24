@@ -67,7 +67,18 @@ void SlicePlayback::configure(const SliceAudioState& a,int /*totalLength*/,doubl
     // The JSFX has equal source windows. With manually edited shared boundaries,
     // an event follows the real source-window duration instead of retuning it.
     unit=length;
-    repeats=programmed?int(p[SliceP::repeat]):1;repeat=std::min(repeat,repeats-1);fit=p[SliceP::fit]!=0;
+    repeats=programmed?int(p[SliceP::repeat]):1;
+    fit=p[SliceP::fit]!=0;
+    // Repeat Type:
+    // Extend keeps the legacy virtual-step behaviour. Consume Steps uses the
+    // following real sequencer cells as time, without modifying their stored data.
+    // Fit already compresses all repeats into the current cell, so Consume Steps
+    // only changes Lengthen mode. Single-step audition still plays the complete
+    // programmed repeat count because it has no surrounding sequence grid.
+    consumeSteps=programmed&&!single&&mode==7&&p[SliceP::repeatType]!=0&&!fit;
+    if(consumeSteps)repeats=std::min(repeats,std::max(1,a.count-timeline));
+    repeat=std::min(repeat,repeats-1);
+    timelineAdvance=consumeSteps?repeats:1;
     eventUnits=fit?1:repeats;
     const double sourceNorm=a.count>1?2.0*source/(a.count-1)-1:0;
     double semi=p[SliceP::pitch];
@@ -141,7 +152,7 @@ bool SlicePlayback::advance(const SliceAudioState& a,double increment) noexcept 
     if(single){finished=true;return true;}
     units+=eventUnits;consumedUnits+=eventUnits;
     const double cycle=mode==7?a.cycleUnits:a.count;
-    ++timeline;
+    timeline+=timelineAdvance;
     const bool ended=(mode==7&&a.state[SliceG::random]!=0)?consumedUnits>=cycle:timeline>=a.count;
     if(ended){timeline=0;units=0;consumedUnits=0;}
     else timeline%=std::max(1,a.count);

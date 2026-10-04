@@ -1,0 +1,14 @@
+LSampler-24 TEST42 - Repeat Type
+
+Aggiunto nella pagina 3 di Alt+E, subito dopo Repeat:
+- Repeat Type: Extend / Consume Steps
+
+Extend mantiene esattamente il comportamento precedente.
+Consume Steps, con Fit=Lengthen, usa gli step successivi come tempo delle ripetizioni senza modificarne i dati.
+Esempio: Repeat=2 significa esecuzione originale + una ripetizione; in Consume Steps occupa lo step corrente e quello successivo.
+Alla fine della sequenza le ripetizioni vengono troncate: non oltrepassano l'ultimo step e non fanno wrap allo step 1.
+Con Fit=Fit le ripetizioni restano compresse nello step corrente, quindi Repeat Type non altera il comportamento Fit.
+La preview del singolo step continua a riprodurre tutte le ripetizioni programmate.
+Persistenza backward-compatible: i preset vecchi senza repeatType usano Extend.
+
+Nessuna compilazione eseguita.
