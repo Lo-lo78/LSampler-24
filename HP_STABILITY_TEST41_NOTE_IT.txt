@@ -1,0 +1,8 @@
+LSampler-24 TEST41 - stabilità filtro HP
+
+- Reset dello stato interno HP (low/band) quando cambiano HP Cutoff o HP Resonance durante una voce attiva.
+- Reset dello stato HP quando il filtro rientra dal bypass, inclusa l'attivazione temporanea da Slice/Loop.
+- Guard contro NaN/Inf nel filtro HP: in caso di stato numerico non valido, lo stato viene azzerato e il singolo campione passa pulito.
+- Nessun limiter aggiunto al filtro e nessuna modifica al filtro LP.
+- Inviluppi/LFO/Repeat HP/Slice HP continuano a modulare il cutoff senza reset per-sample.
+- Nessuna build eseguita.

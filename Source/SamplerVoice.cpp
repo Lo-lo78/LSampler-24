@@ -94,8 +94,24 @@ void GlobalVoicePool::updateVoice(Voice& v,const SlotAudioState& s) noexcept {
         v.lpCoefficients=s.lpStatic;
     }
     {
+        // The legacy HP is a state-variable filter.  When the user edits its
+        // static cutoff/resonance while a voice is already sounding, carrying
+        // the old integrator state into the new coefficient set can create a
+        // very large one-sample transient (large enough to trip REAPER auto-mute).
+        // Reset only the HP integrators on a manual HP configuration change;
+        // normal envelope/LFO/loop/slice modulation keeps continuous state.
+        const double cutoffParam=p[P::hp_cutoff];
+        const double resonanceParam=p[P::hp_resonance];
+        if(v.hpConfigValid &&
+           (std::abs(cutoffParam-v.hpCutoffParamCached)>1.0e-12 ||
+            std::abs(resonanceParam-v.hpResonanceParamCached)>1.0e-12))
+            v.hp={};
+        v.hpCutoffParamCached=cutoffParam;
+        v.hpResonanceParamCached=resonanceParam;
+        v.hpConfigValid=true;
+
         const double vel=p[P::hp_vel_amount];
-        double base=p[P::hp_cutoff];
+        double base=cutoffParam;
         base+=(1-base)*(vel>=0?v.velocity*vel:(1-v.velocity)*(-vel));
         v.hpBase=20*std::pow(500,base);v.hpCoefficients=s.hpStatic;
     }
@@ -530,7 +546,12 @@ void GlobalVoicePool::render(juce::AudioBuffer<float>& output,int start,int coun
                     return v.lp.low[ch]; // preserve the legacy integrator output
                 };left=filter(left,0);right=filter(right,1);
             }
-            if(s.hp||(v.slice.active&&v.slice.hp!=0)) {
+            const bool hpProcessing=s.hp||(v.slice.active&&v.slice.hp!=0);
+            if(hpProcessing) {
+                // Do not revive stale integrator memory when HP is enabled again
+                // (including temporary Slice/Loop activation while slot HP is Off).
+                if(!v.hpProcessingLast) { v.hp={}; v.hpModCached=1e30; }
+                v.hpProcessingLast=true;
                 ++diagnostics.hp;
                 const double env=p[P::hp_env_amount]!=0?v.hpEnvelope.tick(s.hpEnv):0;
                 const double mod=env*p[P::hp_env_amount]+l1*s.lfo[0].hp+l2*s.lfo[1].hp-(loop?repeats*loop->hp:0)+(v.slice.active?v.slice.hp:0);
@@ -538,9 +559,24 @@ void GlobalVoicePool::render(juce::AudioBuffer<float>& output,int start,int coun
                     v.hpCoefficients=mod==0&&p[P::hp_vel_amount]==0?s.hpStatic:filterCoefficients(true,v.hpBase*std::pow(2.0,mod/12),p[P::hp_resonance],hostSampleRate);
                     v.hpModCached=mod;
                 }
-                auto filter=[&](double x,int ch) {const auto& c=v.hpCoefficients;const double y=x-v.hp.low[ch]-c.q*v.hp.band[ch];
-                    v.hp.band[ch]=clamp(v.hp.band[ch]+c.f*y,-16,16);v.hp.low[ch]=clamp(v.hp.low[ch]+c.f*v.hp.band[ch],-16,16);return y;};
+                auto filter=[&](double x,int ch) {
+                    const auto& c=v.hpCoefficients;
+                    const double y=x-v.hp.low[ch]-c.q*v.hp.band[ch];
+                    if(!std::isfinite(y)) { v.hp.band[ch]=0; v.hp.low[ch]=0; return x; }
+                    const double nextBand=v.hp.band[ch]+c.f*y;
+                    const double nextLow=v.hp.low[ch]+c.f*nextBand;
+                    if(!std::isfinite(nextBand)||!std::isfinite(nextLow)) {
+                        v.hp.band[ch]=0;v.hp.low[ch]=0;return x;
+                    }
+                    v.hp.band[ch]=clamp(nextBand,-16,16);
+                    v.hp.low[ch]=clamp(nextLow,-16,16);
+                    return y;
+                };
                 left=filter(left,0);right=filter(right,1);
+            } else {
+                // Bypass must not keep a potentially incompatible state around.
+                if(v.hpProcessingLast)v.hp={};
+                v.hpProcessingLast=false;
             }
             v.velocitySmooth+=(v.velocityGain-v.velocitySmooth)*std::min(1.0,1/(.002*hostSampleRate));
             const double rawAmp=amp*v.velocitySmooth;

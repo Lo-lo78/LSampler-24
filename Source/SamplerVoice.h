@@ -44,6 +44,8 @@ private:
         double position=0,effectiveNote=60,velocity=1,velocityGain=1,velocitySmooth=1,drift=0;
         double pitchCached=1e30,increment=1,ampSmooth=0,followCached=1e30,ringIncrement=0,fmIncrement=0;
         double lpBase=10000,hpBase=20,lpModCached=1e30,hpModCached=1e30;
+        double hpCutoffParamCached=1e30,hpResonanceParamCached=1e30;
+        bool hpConfigValid=false,hpProcessingLast=false;
         lsampler::FilterCoefficients lpCoefficients,hpCoefficients;
         Envelope amp,lpEnvelope,hpEnvelope;
         std::array<Lfo,2> lfo;
