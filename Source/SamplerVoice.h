@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "SlotAudioState.h"
+#include "SliceEngine.h"
 #include <array>
 
 class GlobalVoicePool
@@ -12,7 +13,7 @@ public:
     void setStates(const std::array<lsampler::SlotAudioState, slotCount>* states) noexcept;
     void setTempo(double tempo) noexcept { bpm = tempo; }
     void setOutputRoutes(const std::array<int,25>& routes) noexcept { outputRoutes=routes; }
-    void noteOn(int slotIndex,int note,float velocity,int channel=0,bool preview=false,double previewStartPercent=-1.0);
+    void noteOn(int slotIndex,int note,float velocity,int channel=0,bool preview=false,double previewStartPercent=-1.0,int sliceRequest=-1,bool sliceMidiPad=false);
     void noteOff(int note,int channel=0);
     void controller(int channel,int number,int value);
     void pitchBend(int channel,int value) noexcept;
@@ -35,6 +36,7 @@ private:
     struct Lfo { double phase=0,output=0,hold=0; uint64_t age=0; };
     struct Filter { double band[2]{},low[2]{}; };
     struct Voice {
+        lsampler::SlicePlayback slice;
         bool active=false,preview=false,keyDown=true,sustained=false,loopsReleased=false;
         int slotIndex=-1,note=-1,channel=0,stage=-1,repeat=0,skipStage=-1;
         uint64_t age=0,revision=0;
@@ -64,6 +66,7 @@ private:
     double read(const Voice&,const lsampler::SlotAudioState&,double position,int channel) const noexcept;
     void processEffects(Voice&,const lsampler::SlotAudioState&,double& left,double& right);
     void applyMachine(Voice&,const lsampler::SlotAudioState&,double& left,double& right) noexcept;
+    void advanceSlice(Voice&,const lsampler::SlotAudioState&,double) noexcept;
     void advanceLoops(Voice&,const lsampler::SlotAudioState&,double increment) noexcept;
     void selectStage(Voice&,const lsampler::SlotAudioState&) noexcept;
     std::array<Voice,voiceCount> voices {};

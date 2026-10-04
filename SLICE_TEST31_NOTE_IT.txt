@@ -1,0 +1,233 @@
+LSampler-24 — TEST31 — Slice Engine / Slice Edit / Slice Sequencer
+Base: LSampler-24_GLOBAL_ALT_G_TEST30(1).zip
+
+STATO DELLA CONSEGNA
+Sorgenti completi. Nessuna compilazione, nessun CMake eseguito, nessuna
+esecuzione di Visual Studio o GitHub Actions, nessun binario VST3 prodotto.
+I test C++ aggiunti sono sorgenti da compilare/eseguire successivamente.
+Questa è una versione di integrazione da collaudare, non una build verificata.
+
+1. ARCHITETTURA E FILE
+Nuovi:
+- Source/SliceState.h e .cpp: cataloghi, stato, confini condivisi,
+  preparazione delle coordinate audio, validazione e serializzazione.
+- Source/SliceEngine.h e .cpp: clock per voce, ordine delle slice, eventi,
+  ripetizioni, modulazioni, shuffle, random e preparazione del DSP per evento.
+- Source/SliceEditor.h e .cpp: ambiente accessibile dedicato, tre pagine,
+  tastiera esclusiva, selezione multipla, copia/incolla, Undo/Redo e anteprime.
+- Tests/SliceTests.cpp: regressioni del modello, DSP, tempi, routing e stato.
+Modificati:
+- Source/PluginProcessor.h e .cpp: stato Slice per slot, snapshot audio,
+  richieste di anteprima, MIDI Map, persistenza e buffer tagliato incorporato.
+- Source/SamplerVoice.h e .cpp: esecuzione Slice nel voice pool esistente,
+  lettura limitata alla regione, filtri per repeat e routing per step.
+- Source/SlotAudioState.h e .cpp: snapshot Slice e preparazione dei filtri
+  che possono essere risvegliati dalle ripetizioni anche quando sono Off.
+- Source/PluginEditor.h e .cpp: Alt+E/F6, apertura/chiusura modale,
+  intercettazione tasti e ritorno al controllo precedente.
+- CMakeLists.txt: registrazione dei nuovi sorgenti e dei test. Solo editato.
+- Tests/SamplerTests.cpp: collegamento dei test Slice; dati grandi su heap.
+- README.md e questo file: documentazione della nuova integrazione.
+Invariati: workflow GitHub, Tools/build-windows.ps1, Parameters.h,
+LibraryManager, SamplePool, ScreenReaderAnnouncer e i relativi percorsi.
+Nessuna modifica ai progetti di riferimento LJuno e LBPMCaptureSample.
+
+2. STRUTTURE DATI
+SliceState:
+- 13 impostazioni globali, con enum SliceG.
+- divisioni 1,2,3,4,6,8,12,16,24,32,48,64,96,128; default 8.
+- 129 posizioni di confine condivise, normalizzate rispetto alla finestra
+  Sample Start/End. Gli estremi sono sempre 0 e 1 della finestra attiva.
+- 128 SliceStep indipendenti dai confini; i riferimenti Source sono 1-based.
+- preferenza Zero Crossing per l'editor.
+SliceStep / SliceP:
+Source, Repeat, Fit, Pitch, Repeat Pitch Depth, Repeat Pan, Repeat LP,
+Repeat HP, Volume, Mute, MIDI Note, Pan, Output, Reverse, Downsample,
+Fade In, Fade Out.
+SliceAudioState:
+- copia preparata dello stato;
+- confini in frame relativi allo Start assoluto del campione;
+- conteggio effettivo, gain precalcolati e durata in unità del ciclo.
+SlicePlayback:
+- clock indipendente per ogni voce, step scelto, sorgente, repeat corrente,
+  stato random, cache dei parametri e modalità di anteprima.
+Nessuna allocazione o scansione di zero crossing nel render Slice.
+Gli snapshot restano a triplo buffer con un solo scrittore protetto.
+Le tabelle grandi risiedono su heap, non sullo stack Windows.
+
+La divisione rigenera soltanto i confini uniformi. Non cancella i 128 step.
+Un riferimento a una slice temporaneamente fuori divisione resta salvato:
+durante il playback viene limitato all'ultima slice disponibile. Tornando a
+una divisione maggiore si recuperano riferimenti e dati precedenti.
+Campioni più corti del numero richiesto di slice hanno al massimo una slice
+per frame: non si creano regioni vuote. In quel caso i confini interni non
+sono editabili fino alla scelta di una divisione compatibile.
+
+3. USO E SHORTCUT
+Alt+E: apre Slice Edit nella pagina Boundaries del campione nello slot.
+F6: apre direttamente la pagina Slice Sequencer.
+Questi comandi non sostituiscono scorciatoie dei browser già aperti.
+Alt+O mantiene il suo browser/importatore e i suoi tagli fisici indipendenti.
+
+Dentro Slice Edit:
+- Tab / Shift+Tab: Boundaries, Global Slice Settings, Slice Sequencer.
+- Up/Down: slice o step precedente/successivo; in Globals, parametro.
+- Home/End: primo/ultimo elemento della pagina. Nessun avvolgimento.
+- Left/Right: Start/End in Boundaries, parametro dello step in Sequencer;
+  in Globals diminuisce/aumenta il valore.
+- Page Up/Down: aumenta/diminuisce il valore corrente. In Boundaries sposta
+  il confine a destra/sinistra di un frame.
+- Shift+Page Up/Down: incremento maggiore; nei confini 100 frame.
+- Z in Boundaries: Zero Crossing On/Off. Quando è On, il movimento va al
+  prossimo/precedente attraversamento dello zero, entro i confini adiacenti.
+  Si usa lo stesso criterio stereo del comando Zero Crossing esistente.
+- Enter in Globals/Sequencer: editor numerico nativo accessibile.
+  Enter conferma, Escape annulla e torna al parametro. Tab resta catturato.
+  Gli enum accettano i loro indici numerici; Source è 1-based.
+- Backspace in Globals/Sequencer: reset del parametro corrente; con selezione
+  opera sugli step selezionati. Source torna all'ordine naturale per step.
+- Shift+Up/Down: selezione continua degli step.
+- Shift+Space: include/esclude lo step corrente dalla selezione.
+- Ctrl+Delete: cancella soltanto la selezione.
+- Ctrl+C: copia i dati completi degli step selezionati, oppure dello step.
+- Ctrl+V: con selezione riempie gli step selezionati ripetendo il clipboard;
+  senza selezione incolla consecutivamente dal cursore, fermandosi alla fine.
+- Ctrl+Z / Ctrl+Y: Undo/Redo, fino a 64 stati nell'editor aperto.
+- F1: annuncia l'aiuto dell'editor.
+- Escape: chiude, ferma le anteprime e restituisce il focus precedente.
+Le lettere e combinazioni non assegnate sono consumate. L'editor usa una
+superficie modale JUCE e intercetta anche gli eventi di stato dei tasti.
+NVDA deve leggere la riga corrente dal titolo accessibile; gli annunci di
+navigazione contengono solo step/slice, parametro, valore e Selected.
+I confini esterni si cambiano nella griglia Sample Start/End, non qui.
+
+Anteprime distinte:
+- Space in Boundaries: intero campione dello slot, con Slice bypassato.
+- Space in Globals/Sequencer: sequenza completa, anche se Slice Mode è Off.
+- Ctrl+Space in Boundaries: slice fisica corrente.
+- Ctrl+Space in Globals/Sequencer: step corrente con tutti i suoi parametri.
+- Alt+Space in tutte le pagine: intero campione, con Slice bypassato.
+La stessa combinazione ferma l'anteprima; una modalità diversa la sostituisce.
+Le anteprime fisiche/step terminano dopo il loro evento e non avvolgono lo slot.
+Modifiche e navigazione riavviano l'audizione slice/step quando ancora attiva.
+Uscita, distruzione dell'editor o perdita del focus fermano l'anteprima.
+La nota di anteprima è C4 come nel sorgente stabile LSampler-24.
+Per ascoltare la sequenza con MIDI normale: Globals, Slice Mode, Sequencer.
+Aprire l'editor o usare Space non modifica permanentemente Slice Mode.
+MIDI Map On rende lo slot sensibile alle note assegnate agli step; gli altri
+slot continuano a rispettare le proprie zone MIDI. La nota pad sceglie lo
+step e suona al root dello slot, senza trasporre in base al numero del pad.
+
+4. PERSISTENZA
+Formato slot, bank e stato host aggiornato a 4; sottoalbero Slice versione 1.
+Slice contiene globals, Zero Crossing, Boundaries e Steps (tutti i 128).
+Mancanza del sottoalbero: default sicuri, Mode Off e MIDI Map Off.
+Range, valori non finiti e ordinamento dei confini vengono validati al load.
+Copy/Cut/Paste slot trasportano automaticamente anche SliceState.
+Le posizioni sono relative alla finestra Start/End: cambiandola si rimappa
+la suddivisione preservando proporzioni e ordine degli step.
+Il Zero Crossing distruttivo già esistente rimappa i confini nel nuovo
+buffer ritagliato; lo Zero Crossing dell'editor non modifica mai l'audio.
+
+Protezione del campione editato nei progetti:
+Quando sampleAudioModified è true, lo stato host include EditedAudio con
+encoding float32-le-planar, canali, frame, sampleRate e dati base64.
+Il ripristino privilegia quel buffer, conservando anche flag di modifica,
+peak e DC; non dipende dalla disponibilità del file originale per quel buffer.
+Il salvataggio slot/bank continua a materializzare il buffer tramite il
+sistema già esistente. Non vengono generati WAV separati per ogni slice.
+L'audio non modificato resta referenziato come nella base TEST30.
+Undo, selezione, clipboard degli step e playback sono transitori: non fanno
+parte del preset e si azzerano quando si ricrea l'editor.
+
+5. DSP E RANGE DAL RIFERIMENTO
+Ripresi da LBPMCaptureSample.lua/jsfx:
+- Slice Mode Off, Reverse, Pendulum (scambio di coppie), Random,
+  Random No Repeat, Center Out, Edges In, Sequencer.
+- Repeat 1..128: Lengthen aggiunge durata; Fit comprime le ripetizioni.
+- Pitch -96..96; Repeat Pitch Depth -100..100 semitoni per ripetizione.
+- Original Pitch Step: clock a pitch zero, audio trasposto, silenzio dopo
+  la fine anticipata della lettura. Pitch Resizes Step: clock elastico.
+- Volume -60..24 dB e Mute separato.
+- Pan -100..100; Repeat Pan -100..100, progressione fra le ripetizioni.
+- Repeat LP/HP -96..96 semitoni con segno del JSFX (-repeat*amount),
+  risveglio dei filtri Off solo negli eventi con modulazione non nulla.
+- Pan globale follow/reverse 0..1; pitch globale follow/reverse 0..48.
+- Shuffle 0..100 e Shuffle Pitch: timing spostato con clipping/hold oppure
+  variazione della velocità di lettura; random mantenuto per l'intero evento,
+  controllo No Repeat sulla slice sorgente, fallback dei repeat depth.
+- Downsample eredita oppure usa Off/10 combinazioni di frequenza e bit
+  del reader JSFX; interpolazione e quantizzazione limitate alla slice.
+- Fade 0..1000 ms: fino a 500 ms massimo mezza slice; sopra 500 progressione
+  quadratica fino al 98%; curva di guadagno da cubica a esponente 12.
+- Output 0 eredita lo slot; 1..24 usa le coppie 3/4 fino a 49/50.
+- Reverse e parametri RAM dello slot integrati nel lettore della regione.
+La catena di effetti esistente e lo stadio d'uscita restano utilizzati.
+Loop memories e crossfade del loop operano nel percorso normale dello slot;
+Slice usa i propri confini, repeat e fades. Alt+Space permette di confrontare
+il percorso intero senza cambiare il preset.
+
+SCELTE DI INTEGRAZIONE DA CONFRONTARE ALL'ASCOLTO
+Non si dichiara equivalenza bit-per-bit al JSFX senza il confronto runtime.
+- Confini non uniformi: la durata base segue la lunghezza della slice fisica
+  referenziata, per evitare una trasposizione involontaria quando si sposta
+  un confine. Nel JSFX le finestre originali sono uniformi.
+- Pitch Resizes Step usa una sola trasposizione sonora e varia la durata;
+  non replica la moltiplicazione ripetuta del pitch presente in alcuni rami
+  storici del sequencer JSFX. Verificare specialmente pitch negativi e repeat.
+- Il range Fade dello step segue Lua e preview 0..1000; il helper sequencer
+  JSFX conserva un vecchio clamp a 100, che qui non viene applicato.
+- Reverse per step è esplicito Inherit/Off/On: Off esclude il reverse slot
+  per quell'evento, On lo applica nella slice, senza una doppia inversione.
+- Gli eventi estremamente brevi hanno almeno un frame di uscita per repeat;
+  a pitch/divisioni estremi non si inseguono salti illimitati nel render.
+- Lo shuffle è applicato agli eventi, e i confini manuali possono cambiare
+  le durate relative. Confrontare anche divisioni dispari e Random Lengthen.
+- I nuovi dati Slice sono stato nativo dello slot; non sono aggiunti al
+  catalogo dei parametri automatizzabili del vecchio plugin.
+
+6. CONTROLLI ESEGUITI SENZA COMPILAZIONE
+Controllo lessicale di delimitatori e include locali dei sorgenti C++.
+Presenza di tutti i file originali e registrazione dei nuovi .cpp.
+Confronto byte per byte di workflow, script di build, catalogo parametri,
+SamplePool, LibraryManager e ScreenReaderAnnouncer con TEST30.
+Controllo aritmetico in Python della stretta contiguità dei confini su tutte
+le divisioni e 515 lunghezze, incluse lunghezze inferiori alla divisione.
+Questa verifica numerica non esegue né sostituisce il codice C++.
+Assenza di binari nell'archivio. Nessun test nativo eseguito.
+
+7. COMPILAZIONE E COLLAUDO A CURA DELL'UTENTE
+A. GitHub Actions
+   Usare il workflow esistente. Verificare compilazione/link dei nuovi .cpp
+   con JUCE 8.0.15/MSVC e produzione del bundle dal percorso abituale.
+   Nessuna dipendenza nuova. Nessuna Action è stata avviata in questa sessione.
+   Il target opzionale LSAMPLER_BUILD_TESTS include ora Tests/SliceTests.cpp;
+   il workflow ordinario non lo abilita automaticamente.
+B. Regressioni con Slice Mode Off
+   Vecchi preset/bank, browser Alt+O/Alt+S, import di slice, slot copy/paste,
+   Sample Start/End/Play Start, Zero Crossing e salvataggio del campione
+   tagliato, preview, loop, routing e stadio d'uscita.
+C. Confini
+   Tutte le divisioni, campioni cortissimi, mono/stereo e diverse frequenze;
+   muovere il confine comune e ascoltare le due slice adiacenti. Provare
+   zero crossing On/Off, estremi bloccati, Undo/Redo e Start/End ristretto.
+D. Sequencer/DSP
+   Mappare 4,1,7; Repeat 1/2/128; Fit/Lengthen; pitch positivo/negativo e per
+   repeat; entrambi i clock; pan e filtri per repeat con LP/HP inizialmente
+   Off; mute, reverse, downsample, fades, random/shuffle e tutte le uscite.
+   Confrontare con il JSFX, in particolare le scelte elencate sopra.
+E. Stato
+   Salvare/ricaricare progetto REAPER, bank e slot; copia/incolla fra slot;
+   ridurre/rialzare divisione; verificare i dati degli step non visibili.
+   Dopo taglio distruttivo salvare direttamente il progetto senza prima
+   salvare lo slot, chiudere/riaprire e verificare audio e slice.
+F. MIDI e risorse
+   MIDI Map in un solo slot insieme ad altri slot normali; note off,
+   sustain, polyphony, stealing; CPU con Slice Off/On e molte voci;
+   salvataggio o modifica mentre il motore suona.
+G. NVDA / REAPER
+   Alt+E/F6 da slot, griglia, value e campo numerico; lettura riga NVDA+Up;
+   annunci Selected, selezioni, clipboard, numeri, Escape, focus precedente.
+   Confermare che Space/frecce/Home/End/Ctrl+C/Ctrl+V e tasti inutilizzati
+   non azionino REAPER mentre l'editor è aperto; dopo Escape torni il
+   comportamento condiviso. Provare Alt+Tab e chiusura della finestra FX.

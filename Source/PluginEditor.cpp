@@ -22,7 +22,7 @@ public:
 
     bool keyPressed(const juce::KeyPress& key) override
     {
-        if (key.getModifiers().isAltDown() && shortcut)
+        if ((key.getModifiers().isAltDown() || key.getKeyCode()==juce::KeyPress::F6Key) && shortcut)
         {
             const auto code = key.getKeyCode();
             const bool valueNavigation = code == juce::KeyPress::upKey
@@ -247,6 +247,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
 
 LSampler24AudioProcessorEditor::~LSampler24AudioProcessorEditor()
 {
+    if(sliceEditor){sliceEditor->exitModalState(0);sliceEditor.reset();}
     parameterValue.setLookAndFeel(nullptr);
 }
 
@@ -260,6 +261,7 @@ void LSampler24AudioProcessorEditor::paint(juce::Graphics& g)
 
 void LSampler24AudioProcessorEditor::resized()
 {
+    if(sliceEditor)sliceEditor->setBounds(getLocalBounds());
     auto area = getLocalBounds().reduced(16);
     area.removeFromTop(42);
 
@@ -689,7 +691,7 @@ bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key, juce:
 bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, juce::Component* source)
 {
     // Modal editors own every key before main grid or host shortcut dispatch.
-    if(activeModalSurface!=nullptr){activeModalSurface->handleKey(key);return true;}
+    if(sliceEditor!=nullptr){sliceEditor->keyPressed(key);return true;}
     const auto mods = key.getModifiers();
     const auto code = key.getKeyCode();
     const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
@@ -1060,6 +1062,11 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         return true;
     }
 
+    if(!mods.isCtrlDown()&&!mods.isShiftDown()&&!mods.isCommandDown()
+       && ((mods.isAltDown()&&(ch=='e'||code=='E')) || (!mods.isAltDown()&&code==juce::KeyPress::F6Key))) {
+        openSliceEditor(code==juce::KeyPress::F6Key);return true;
+    }
+
     const auto moveParameterPage = [this](int direction)
     {
         const int begin = categoryBegin(selectedParameter);
@@ -1424,6 +1431,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
 void LSampler24AudioProcessorEditor::timerCallback()
 {
+    if(sliceEditor)return;
     status.setText(processor.getSampleStatus(), juce::dontSendNotification);
     refreshSlotCells();
     if (parameterPage)
@@ -2987,4 +2995,36 @@ void LSampler24AudioProcessorEditor::chooseSaveBank()
             }
             safeThis->returnToCurrentSlotAndAnnounce();
         });
+}
+
+void LSampler24AudioProcessorEditor::openSliceEditor(bool sequencer)
+{
+    if(sliceEditor)return;
+    const int slot=processor.getCurrentSlot();int start=0;double rate=0;
+    if(processor.getSliceLayout(slot,start,rate).count==0) {
+        lsampler::announceToActiveScreenReader(*this,"No sample loaded");return;
+    }
+    sliceReturnFocus=juce::Component::getCurrentlyFocusedComponent();
+    processor.requestPreviewStop();processor.requestImportPreviewStop();processor.requestLibraryPreviewStop();
+    sliceEditor=std::make_unique<SliceEditor>(processor,slot,sequencer);
+    sliceEditor->onClose=[safeThis=juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)] {
+        // Never delete the focused component in the middle of its keyPressed call.
+        juce::MessageManager::callAsync([safeThis]{if(safeThis!=nullptr)safeThis->closeSliceEditor();});
+    };
+    addAndMakeVisible(*sliceEditor);sliceEditor->setBounds(getLocalBounds());sliceEditor->toFront(false);
+    sliceEditor->enterModalState(true,nullptr,false);
+    juce::MessageManager::callAsync([safeThis=juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)] {
+        if(safeThis!=nullptr&&safeThis->sliceEditor)safeThis->sliceEditor->announceEntry();
+    });
+}
+void LSampler24AudioProcessorEditor::closeSliceEditor()
+{
+    if(!sliceEditor)return;
+    processor.stopSlicePreview();sliceEditor->exitModalState(0);sliceEditor.reset();
+    if(sliceReturnFocus!=nullptr&&sliceReturnFocus->isShowing()) {
+        sliceReturnFocus->grabKeyboardFocus();
+        if(auto* h=sliceReturnFocus->getAccessibilityHandler())h->grabFocus();
+    } else if(parameterPage)parameterSelector.grabKeyboardFocus();
+    else returnToCurrentSlotAndAnnounce();
+    sliceReturnFocus=nullptr;repaint();
 }

@@ -18,6 +18,7 @@ void operator delete(void* p) noexcept {if(realtimeGuard&&p)++realtimeDeletes;st
 void operator delete[](void* p) noexcept {::operator delete(p);}
 void operator delete(void* p,std::size_t) noexcept {::operator delete(p);}
 void operator delete[](void* p,std::size_t) noexcept {::operator delete(p);}
+void runSliceTests(const juce::File&);
 using namespace lsampler;
 namespace {
 int checks=0;
@@ -27,7 +28,8 @@ int index(P parameter){for(size_t i=0;i<grid.size();++i)if(grid[i].parameter==in
 int loopIndex(L parameter){for(size_t i=0;i<grid.size();++i)if(grid[i].loop==int(parameter))return int(i);throw std::runtime_error("Missing loop entry");}
 struct Rig {
     SharedSample sample;
-    std::array<SlotAudioState,24> states;
+    std::unique_ptr<std::array<SlotAudioState,24>> stateStorage=std::make_unique<std::array<SlotAudioState,24>>();
+    std::array<SlotAudioState,24>& states=*stateStorage;
     GlobalVoicePool pool;
     juce::AudioBuffer<float> output {50,65536};
     uint64_t revision=0;
@@ -251,7 +253,7 @@ int main() {
         juce::ScopedJuceInitialiser_GUI initialise;
         const auto folder=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("lsampler-regression","",false);folder.createDirectory();
         catalogTests();cleanAndBypassTests();voiceTests();pitchAndStereoTests();dspReferenceTests();loopAndEffectTests();
-        persistenceAndProcessorTests(folder);concurrentPublicationTest(folder);editorTests(folder);
+        persistenceAndProcessorTests(folder);concurrentPublicationTest(folder);editorTests(folder);runSliceTests(folder);
         require(realtimeAllocations==0&&realtimeDeletes==0,"Zero allocations and frees across all guarded render/note-on/process calls");
         folder.deleteRecursively();
         std::cout<<"PASS "<<checks<<" checks; zero guarded realtime allocations/deletions\n";return 0;

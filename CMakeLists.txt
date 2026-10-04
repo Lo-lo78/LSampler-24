@@ -47,6 +47,12 @@ target_sources(LSampler24 PRIVATE
     Source/SlotAudioState.cpp
     Source/SamplerVoice.cpp
     Source/SamplerVoice.h
+    Source/SliceState.h
+    Source/SliceState.cpp
+    Source/SliceEngine.h
+    Source/SliceEngine.cpp
+    Source/SliceEditor.h
+    Source/SliceEditor.cpp
     Source/LibraryManager.cpp
     Source/LibraryManager.h
 )
@@ -74,7 +80,7 @@ option(LSAMPLER_BUILD_TESTS "Build native sampler regression tests" OFF)
 if(LSAMPLER_BUILD_TESTS)
     enable_testing()
     juce_add_console_app(LSampler24Tests PRODUCT_NAME "LSampler-24 Regression Tests")
-    target_sources(LSampler24Tests PRIVATE Tests/SamplerTests.cpp)
+    target_sources(LSampler24Tests PRIVATE Tests/SamplerTests.cpp Tests/SliceTests.cpp)
     target_compile_features(LSampler24Tests PRIVATE cxx_std_20)
     target_link_libraries(LSampler24Tests PRIVATE LSampler24 juce::juce_audio_utils)
     add_test(NAME sampler-regression COMMAND LSampler24Tests)

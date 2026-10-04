@@ -86,14 +86,14 @@ void GlobalVoicePool::updateVoice(Voice& v,const SlotAudioState& s) noexcept {
     const auto& p=s.params;
     v.revision=s.revision;v.pitchCached=v.followCached=v.lpModCached=v.hpModCached=1e30;
     v.velocityGain=velocityGain(v.velocity,p[P::vel_volume_depth]);
-    if(s.lp) {
+    {
         const double vel=p[P::lp_vel_amount];
         double base=p[P::lp_cutoff];
         base*=vel>=0?1-(1-v.velocity)*vel:1-v.velocity*(-vel);
         v.lpBase=20*std::pow(500,base);
         v.lpCoefficients=s.lpStatic;
     }
-    if(s.hp) {
+    {
         const double vel=p[P::hp_vel_amount];
         double base=p[P::hp_cutoff];
         base+=(1-base)*(vel>=0?v.velocity*vel:(1-v.velocity)*(-vel));
@@ -101,6 +101,12 @@ void GlobalVoicePool::updateVoice(Voice& v,const SlotAudioState& s) noexcept {
     }
     if(v.sustained && !p[P::sustain_pedal])release(v);
     selectStage(v,s);
+    if(v.slice.request==-1) {
+        const int mode=int(s.slice.state[SliceG::mode]);
+        if(v.slice.mode!=mode || (v.slice.active!=(mode!=0&&s.slice.count>0)))
+            v.slice.start(s.slice,-1,v.randomState);
+    }
+    v.slice.configured=false;
 }
 void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudioState& s,bool retrigger) {
     v.note=note;v.velocity=velocity;v.keyDown=true;v.sustained=false;
@@ -116,20 +122,21 @@ void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudio
         }
         for(int i=0;i<2;++i)if(s.lfo[size_t(i)].trigger||s.lfo[size_t(i)].oneShot)v.lfo[size_t(i)]={};
     }
+    if(retrigger)v.slice.start(s.slice,-1,v.randomState);
     if(s.params[P::portamento]==0)v.effectiveNote=note;
     updateVoice(v,s);
 }
-void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool preview,double previewStartPercent) {
+void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool preview,double previewStartPercent,int sliceRequest,bool sliceMidiPad) {
     if(!states||slot<0||slot>=slotCount||note<0||note>127||channel<0||channel>15)return;
     const auto& s=(*states)[size_t(slot)];const auto& p=s.params;
     if(!s.sample||s.length<1||s.sample->peak<1e-12)return;
     if(!preview)held[size_t(channel)][size_t(note)]={++noteCounter,velocity};
     const bool mono=p[P::polyphony]==0;
-    if(!mono&&!preview&&p[P::retrigger_smooth]>0)
+    if(!mono&&!preview&&!sliceMidiPad&&p[P::retrigger_smooth]>0)
         for(auto& existing:voices)if(existing.active&&!existing.preview&&existing.slotIndex==slot) {
             existing.channel=channel;retarget(existing,note,velocity,s,true);return;
         }
-    if(mono&&!preview)for(auto& v:voices)if(v.active&&!v.preview&&v.slotIndex==slot) {
+    if(mono&&!preview&&!sliceMidiPad)for(auto& v:voices)if(v.active&&!v.preview&&v.slotIndex==slot) {
         const bool connected=v.keyDown||v.sustained;
         v.channel=channel;retarget(v,note,velocity,s,p[P::retrigger_smooth]>0||!(connected&&p[P::legato]!=0));return;
     }
@@ -161,13 +168,15 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
         v.lfo[size_t(i)].hold=random(v);
     }
     updateVoice(v,s);
+    v.slice.start(s.slice,sliceRequest,v.randomState,sliceMidiPad);
+    if(sliceMidiPad)v.effectiveNote=p[P::root];
 }
 void GlobalVoicePool::noteOff(int note,int channel) {
     if(!states||note<0||note>127||channel<0||channel>15)return;
     held[size_t(channel)][size_t(note)]={};
     for(auto& v:voices)if(v.active&&!v.preview&&v.note==note&&v.channel==channel) {
         const auto& s=(*states)[size_t(v.slotIndex)];const auto& p=s.params;
-        if(p[P::polyphony]==0) {
+        if(p[P::polyphony]==0&&!v.slice.pad) {
             int last=-1,lastChannel=0;uint64_t order=0;
             for(int ch=0;ch<16;++ch)for(int n=0;n<128;++n) {
                 const auto& h=held[size_t(ch)][size_t(n)];const auto vel=std::round(h.velocity*127);
@@ -235,12 +244,15 @@ double GlobalVoicePool::lfoTick(Voice& v,int index,const LfoSettings& s,double w
 double GlobalVoicePool::read(const Voice& v,const SlotAudioState& s,double pos,int channel) const noexcept {
     if(pos<0)return 0; // native equivalent of the legacy per-channel delay's silent pre-roll
     pos=clamp(pos,0,double(s.length-1));
-    if(s.params[P::ram_reverse]!=0)pos=s.length-1-pos;
+    if(!v.slice.active&&s.params[P::ram_reverse]!=0)pos=s.length-1-pos;
+    const int low=v.slice.active?int(v.slice.begin):0;
+    const int high=v.slice.active?int(v.slice.begin+v.slice.length)-1:s.length-1;
+    if(v.slice.active&&(pos<low||pos>high))return 0;
     const auto& audio=v.sample->audio;
     channel=(s.params[P::mode]==0)?0:std::min(channel,audio.getNumChannels()-1);
     const auto* data=audio.getReadPointer(channel);
     auto at=[&](int relative) {
-        const int index=s.start+relative;
+        const int index=s.start+std::clamp(relative,low,high);
         double x=data[index];
         if(s.params[P::dc_remove]!=0)x-=v.sample->dc[size_t(channel)];
         // Legacy RAM fades are sequential multiplications, including overlapping fades.
@@ -251,9 +263,12 @@ double GlobalVoicePool::read(const Voice& v,const SlotAudioState& s,double pos,i
     };
     const int idx=int(pos);
     double value;
-    if(s.params[P::ram_downsample]!=0) {
-        value=at((idx/s.downsampleHold)*s.downsampleHold);
-        value=clamp(std::copysign(std::floor(std::abs(value)*s.downsampleScale+.5)/s.downsampleScale,value),-1,1);
+    const int ds=v.slice.active&&v.slice.downsample>=0?v.slice.downsample:int(s.params[P::ram_downsample]);
+    if(ds!=0) {
+        const int hold=v.slice.active?v.slice.downsampleHold:s.downsampleHold;
+        const double scale=v.slice.active?v.slice.downsampleScale:s.downsampleScale;
+        value=at(low+((idx-low)/hold)*hold);
+        value=clamp(std::copysign(std::floor(std::abs(value)*scale+.5)/scale,value),-1,1);
     } else {const double a=at(idx);value=a+(at(std::min(idx+1,s.length-1))-a)*(pos-idx);}
     return value;
 }
@@ -398,6 +413,12 @@ void GlobalVoicePool::advanceLoops(Voice& v,const SlotAudioState& s,double incre
         v.position=wrap(v.position,cycle);v.repeat=0;v.skipStage=-1;selectStage(v,s);
     }
 }
+void GlobalVoicePool::advanceSlice(Voice& v,const SlotAudioState& s,double increment) noexcept {
+    if(v.slice.advance(s.slice,increment)) {
+        if(v.slice.single||s.params[P::global_one_shot]==1){stop(v);return;}
+        if(s.params[P::global_one_shot]==2&&!v.loopsReleased)release(v);
+    }
+}
 void GlobalVoicePool::render(juce::AudioBuffer<float>& output,int start,int count) {
     if(!states||count<=0||activeVoiceCount()==0)return;
     for(auto& v:voices) {
@@ -409,19 +430,24 @@ void GlobalVoicePool::render(juce::AudioBuffer<float>& output,int start,int coun
         const double mirror=p[P::polyphony]!=0&&((&v-voices.data())%2)!=0?-1:1;
         for(int frame=start;frame<start+count && v.active;++frame) {
             if(v.amp.phase==0){stop(v);break;}
-            if(std::abs(v.effectiveNote-v.note)>.0000001)v.effectiveNote+=(v.note-v.effectiveNote)*s.portamento;
-            else v.effectiveNote=v.note;
+            if(v.slice.active) {
+                if(s.slice.count<=0){stop(v);break;}
+                if(!v.slice.configured)v.slice.configure(s.slice,s.length,s.sample->sourceSampleRate,p[P::ram_reverse]!=0,int(p[P::ram_downsample]));
+            }
+            const double targetNote=v.slice.pad?p[P::root]:v.note;
+            if(std::abs(v.effectiveNote-targetNote)>.0000001)v.effectiveNote+=(targetNote-v.effectiveNote)*s.portamento;
+            else v.effectiveNote=targetNote;
             const double effective=v.effectiveNote+bend[size_t(v.channel)]*p[P::pitch_bend_range];
             // Zero level / settled silent sustain keeps its musical read clock but sleeps every optional processor.
             if(s.level==0 || (v.amp.phase==3 && s.amp.sustain==0)) {
                 v.amp.tick(s.amp);
                 const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+v.drift;
                 if(pitch!=v.pitchCached){v.increment=std::pow(2.0,pitch/12)*s.sourceRatio;v.pitchCached=pitch;}
-                advanceLoops(v,s,v.increment);continue;
+                if(v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);continue;
             }
             const double wheelValue=wheel[size_t(v.channel)];
             const double l1=lfoTick(v,0,s.lfo[0],wheelValue),l2=lfoTick(v,1,s.lfo[1],wheelValue);
-            const LoopAudioState* loop=v.stage>=0?&s.stages[size_t(v.stage)]:nullptr;
+            const LoopAudioState* loop=!v.slice.active&&v.stage>=0?&s.stages[size_t(v.stage)]:nullptr;
             const double repeats=loop&&loop->repeats>2?std::min(v.repeat,loop->repeats):0;
             const double repeatPitch=loop?-repeats*loop->pitch:0;
             const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+v.drift
@@ -433,9 +459,10 @@ void GlobalVoicePool::render(juce::AudioBuffer<float>& output,int start,int coun
                 if(s.fm)v.fmIncrement=clamp(440*follow*p[P::fm_ratio],.1,20000)/hostSampleRate;
                 v.followCached=effective;
             }
-            double pos=v.position;
-            if(p[P::stretch_amount]>0)pos=std::floor(pos/(s.grain*s.stretchFactor))*s.grain+wrap(pos,s.grain);
-            else if(p[P::stretch_amount]<0)pos=std::floor(pos/s.grain)*(s.grain/s.stretchFactor)+wrap(pos,s.grain);
+            bool sliceSilent=false;
+            double pos=v.slice.active?v.slice.position(sliceSilent):v.position;
+            if(!v.slice.active&&p[P::stretch_amount]>0)pos=std::floor(pos/(s.grain*s.stretchFactor))*s.grain+wrap(pos,s.grain);
+            else if(!v.slice.active&&p[P::stretch_amount]<0)pos=std::floor(pos/s.grain)*(s.grain/s.stretchFactor)+wrap(pos,s.grain);
             pos=clamp(pos,0,double(s.length-1));
             if(s.lfo[0].move!=0||s.lfo[1].move!=0)pos=clamp(pos+(l1*s.lfo[0].move+l2*s.lfo[1].move)*.01*s.length,0,double(s.length-1));
             if(s.fm) {
@@ -444,7 +471,13 @@ void GlobalVoicePool::render(juce::AudioBuffer<float>& output,int start,int coun
                 pos=clamp(pos+v.fmFeedback*p[P::fm_amount]*.01*std::min(2048.0,std::max(1.0,s.length*.025)),0,double(s.length-1));
             }
             double left=read(v,s,pos-s.delayL,0),right=read(v,s,pos-s.delayR,1);
-            if(s.crossfade>1) {
+            if(v.slice.active) {
+                const auto& q=v.slice;
+                const double fade=q.fade(pos-q.begin)*(sliceSilent?0:q.gain);
+                left*=fade*(1-std::max(0.0,q.pan))*(1-std::max(0.0,q.repeatPan));
+                right*=fade*(1+std::min(0.0,q.pan))*(1+std::min(0.0,q.repeatPan));
+            }
+            if(!v.slice.active&&s.crossfade>1) {
                 const double ls=loop?loop->start:0,le=loop?loop->end:s.length;
                 const bool one=loop?loop->oneShot:p[P::global_one_shot]!=0;
                 const double fade=std::min(s.crossfade,(le-ls)*.5);
@@ -467,17 +500,22 @@ void GlobalVoicePool::render(juce::AudioBuffer<float>& output,int start,int coun
                 left*=loopFade(pos-s.delayL);right*=loopFade(pos-s.delayR);
             }
             processEffects(v,s,left,right);
+            if(v.slice.active&&v.slice.globalPanDepth>0) {
+                const auto& q=v.slice;const double mid=(left+right)*.70710678,phase=(q.globalPan+1)*pi*.25;
+                left=left*(1-q.globalPanDepth)+mid*std::cos(phase)*q.globalPanDepth;
+                right=right*(1-q.globalPanDepth)+mid*std::sin(phase)*q.globalPanDepth;
+            }
             const double lfoPan=clamp((l1*s.lfo[0].pan+l2*s.lfo[1].pan)*mirror,-1,1);
             if(lfoPan!=0) {
                 const double depth=std::abs(lfoPan),mono=(left+right)*.70710678,phase=(lfoPan+1)*pi*.25;
                 left=left*(1-depth)+mono*std::cos(phase)*depth;right=right*(1-depth)+mono*std::sin(phase)*depth;
             }
             const double amp=v.amp.tick(s.amp);
-            if(s.lp) {
+            if(s.lp||(v.slice.active&&v.slice.lp!=0)) {
                 ++diagnostics.lp;
                 const double env=p[P::lp_env_amount]!=0?v.lpEnvelope.tick(s.lpEnv):0;
                 const double mod=env*p[P::lp_env_amount]+(v.note-p[P::root])*p[P::lp_key_follow]
-                    +l1*s.lfo[0].lp+l2*s.lfo[1].lp-(loop?repeats*loop->lp:0);
+                    +l1*s.lfo[0].lp+l2*s.lfo[1].lp-(loop?repeats*loop->lp:0)+(v.slice.active?v.slice.lp:0);
                 if(mod!=v.lpModCached) {
                     v.lpCoefficients=mod==0&&p[P::lp_vel_amount]==0?s.lpStatic:filterCoefficients(false,v.lpBase*std::pow(2.0,mod/12),p[P::lp_resonance],hostSampleRate);
                     v.lpModCached=mod;
@@ -489,10 +527,10 @@ void GlobalVoicePool::render(juce::AudioBuffer<float>& output,int start,int coun
                     return v.lp.low[ch]; // preserve the legacy integrator output
                 };left=filter(left,0);right=filter(right,1);
             }
-            if(s.hp) {
+            if(s.hp||(v.slice.active&&v.slice.hp!=0)) {
                 ++diagnostics.hp;
                 const double env=p[P::hp_env_amount]!=0?v.hpEnvelope.tick(s.hpEnv):0;
-                const double mod=env*p[P::hp_env_amount]+l1*s.lfo[0].hp+l2*s.lfo[1].hp-(loop?repeats*loop->hp:0);
+                const double mod=env*p[P::hp_env_amount]+l1*s.lfo[0].hp+l2*s.lfo[1].hp-(loop?repeats*loop->hp:0)+(v.slice.active?v.slice.hp:0);
                 if(mod!=v.hpModCached) {
                     v.hpCoefficients=mod==0&&p[P::hp_vel_amount]==0?s.hpStatic:filterCoefficients(true,v.hpBase*std::pow(2.0,mod/12),p[P::hp_resonance],hostSampleRate);
                     v.hpModCached=mod;
@@ -509,9 +547,16 @@ void GlobalVoicePool::render(juce::AudioBuffer<float>& output,int start,int coun
             if(p[P::pan_env]!=0){const double pan=clamp((p[P::pan]+amp*p[P::pan_env]*mirror)*.01,-1,1);panL=1-std::max(0.0,pan);panR=1+std::min(0.0,pan);}
             left*=gain*panL;right*=gain*panR;
             if(s.machine)applyMachine(v,s,left,right);
-            if(outL)* (outL+frame)+=float(left);
-            if(outR)* (outR+frame)+=float(right);
-            advanceLoops(v,s,v.increment);
+            if(v.slice.active&&v.slice.output>0) {
+                const int route=outputRoutes[size_t(v.slice.output)];
+                if(route>=0&&route+1<output.getNumChannels()) {
+                    output.addSample(route,frame,float(left));output.addSample(route+1,frame,float(right));
+                }
+            } else {
+                if(outL)* (outL+frame)+=float(left);
+                if(outR)* (outR+frame)+=float(right);
+            }
+            if(v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);
         }
     }
     // Free-running phase is slot-shared and advanced analytically once per render span.

@@ -5,6 +5,48 @@
 #include <juce_cryptography/juce_cryptography.h>
 using namespace lsampler;
 
+namespace {
+// Only destructively edited RAM audio needs an inline fallback in host state.
+// Slot/bank saving already materialises this buffer and clears its modified flag.
+// IEEE float samples use JUCE's little-endian stream encoding, with no quantisation.
+juce::ValueTree storeEditedAudio(const SharedSample& sample) {
+    juce::ValueTree tree("EditedAudio");
+    const int channels=sample.audio.getNumChannels(),frames=sample.audio.getNumSamples();
+    tree.setProperty("encoding","float32-le-planar",nullptr);
+    tree.setProperty("channels",channels,nullptr);tree.setProperty("frames",frames,nullptr);
+    tree.setProperty("sampleRate",sample.sourceSampleRate,nullptr);
+    juce::MemoryOutputStream stream;
+    for(int ch=0;ch<channels;++ch)for(int i=0;i<frames;++i)stream.writeFloat(sample.audio.getSample(ch,i));
+    tree.setProperty("data",stream.getMemoryBlock().toBase64Encoding(),nullptr);return tree;
+}
+std::shared_ptr<SharedSample> restoreEditedAudio(const juce::ValueTree& tree,const juce::File& source,juce::String& error) {
+    const int channels=int(tree.getProperty("channels",0)),frames=int(tree.getProperty("frames",0));
+    const double rate=double(tree.getProperty("sampleRate",0));
+    if(tree.getProperty("encoding").toString()!="float32-le-planar"||channels<1||channels>2||frames<1||!std::isfinite(rate)||rate<=0) {
+        error="Invalid edited slot audio header";return {};
+    }
+    juce::MemoryBlock bytes;
+    const auto required=uint64_t(channels)*uint64_t(frames)*sizeof(float);
+    if(!bytes.fromBase64Encoding(tree.getProperty("data").toString())||uint64_t(bytes.getSize())!=required) {
+        error="Invalid edited slot audio data";return {};
+    }
+    auto sample=std::make_shared<SharedSample>();sample->audio.setSize(channels,frames);
+    sample->sourceSampleRate=rate;sample->sourceFile=source;
+    juce::MemoryInputStream stream(bytes,false);double peak=0;
+    for(int ch=0;ch<channels;++ch) {
+        double sum=0;
+        for(int i=0;i<frames;++i) {
+            const float x=stream.readFloat();
+            if(!std::isfinite(x)){error="Non-finite edited slot audio";return {};}
+            sample->audio.setSample(ch,i,x);sum+=x;peak=std::max(peak,std::abs(double(x)));
+        }
+        sample->dc[size_t(ch)]=sum/frames;
+    }
+    if(channels==1)sample->dc[1]=sample->dc[0];sample->peak=peak;return sample;
+}
+}
+
+
 LSampler24AudioProcessor::LSampler24AudioProcessor(const juce::File& libraryRootOverride)
     : AudioProcessor([] {
         BusesProperties buses;
@@ -43,6 +85,7 @@ void LSampler24AudioProcessor::releaseResources()
     libraryPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
     previewPlaying = false;
     previewPlayingSlot = -1;
+    slicePreviewKind.store(0);slicePreviewCommand.store(-1);
     importPreviewPlaying = false;
     importPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
 }
@@ -68,6 +111,7 @@ void LSampler24AudioProcessor::markAudioStateDirty()
             retiredSamples.push_back(target.owners[idx]);
         target.owners[idx] = slots[idx].sample;
         target.states[idx] = prepareSlotAudioState(slots[idx].parameters, slots[idx].sample.get(), preparedSampleRate, ++nextRevision);
+        target.states[idx].slice = prepareSliceAudio(slots[idx].slice,target.states[idx].length);
     }
     writerSnapshot = middleSnapshot.exchange(writerSnapshot | 4, std::memory_order_acq_rel) & 3;
     // Sample references held by voices are intrusive counters: deletion always occurs here.
@@ -357,6 +401,22 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     }
     // Process MIDI at its sample offset; getMessage() can allocate for SysEx, so
     // inspect the short MIDI bytes directly and ignore non-performance messages.
+    const int sliceCommand=slicePreviewCommand.exchange(-1,std::memory_order_acq_rel);
+    if(slicePreviewKind.load()!=0&&!voicePool.hasPreviewVoices(slicePreviewSlot))slicePreviewKind.store(0);
+    if(sliceCommand>=0) {
+        const int kind=sliceCommand&7,slot=(sliceCommand>>3)&31,item=(sliceCommand>>8)&127;
+        const bool toggle=(sliceCommand&(1<<15))!=0;
+        const bool stopping=kind==0||(toggle&&slicePreviewKind.load()==kind&&slicePreviewSlot==slot&&(kind==1||kind==3||slicePreviewItem==item));
+        voicePool.stopPreviewVoices();previewPlaying=false;previewPlayingSlot=-1;slicePreviewKind.store(0);
+        if(!stopping&&slot<slotCount&&audio[size_t(slot)].sample) {
+            // 1 whole, 2 physical slice, 3 sequence, 4 programmed step.
+            const int request=kind==1?-2:kind==2?-1000-item:kind==3?-3:item;
+            voicePool.noteOn(slot,60,1.0f,0,true,-1.0,request);
+            slicePreviewSlot=slot;slicePreviewItem=item;slicePreviewKind.store(kind);
+            previewPlaying=voicePool.hasPreviewVoices(slot);previewPlayingSlot=previewPlaying?slot:-1;
+        }
+    }
+
     int offset = 0;
     for (const auto event : midi) {
         const int time = juce::jlimit(offset, buffer.getNumSamples(), event.samplePosition);
@@ -369,9 +429,14 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             voicePool.choke(note);
             for (int i = 0; i < slotCount; ++i) {
                 const auto& s = audio[size_t(i)]; const auto& p = s.params;
-                if (s.sample && note >= p[P::low] && note <= p[P::high]
-                    && velocity >= p[P::velocity_low] && velocity <= p[P::velocity_high])
-                    voicePool.noteOn(i, note, float(velocity)/127.0f, channel);
+                if(!s.sample||velocity<p[P::velocity_low]||velocity>p[P::velocity_high])continue;
+                if(s.slice.state[SliceG::midiMap]!=0) {
+                    for(int step=0;step<s.slice.count;++step)
+                        if(s.slice.state.steps[size_t(step)][SliceP::midiNote]==note&&s.slice.state.steps[size_t(step)][SliceP::mute]==0) {
+                            voicePool.noteOn(i,note,float(velocity)/127.0f,channel,false,-1.0,step,true);break;
+                        }
+                } else if(note>=p[P::low]&&note<=p[P::high])
+                    voicePool.noteOn(i,note,float(velocity)/127.0f,channel);
             }
         } else if (event.numBytes >= 3 && (command == 0x80 || (command == 0x90 && d[2] == 0)))
             voicePool.noteOff(d[1] & 127, channel);
@@ -489,6 +554,7 @@ bool LSampler24AudioProcessor::loadSample(const juce::File& file, juce::String& 
     {
         const juce::ScopedLock lock(stateLock);
         auto& s = slots[static_cast<size_t>(currentSlot.load())];
+        s.slice = SliceState{};
         s.sample = std::move(loaded);
         s.sampleFile = file;
         s.slotName = file.getFileNameWithoutExtension();
@@ -562,6 +628,7 @@ bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int sl
         slot.sampleFile = file;
         slot.slotName = file.getFileNameWithoutExtension();
         slot.sampleAudioModified = hasSlice;
+        slot.slice = SliceState{};
         slot.parameters = lsampler::SlotParameters{};
         slot.parameters[lsampler::P::root] = 60.0;
         slot.parameters[lsampler::P::low] = 0.0;
@@ -692,14 +759,7 @@ void LSampler24AudioProcessor::applyZeroCrossing(bool loopWindow,int loopIndex) 
     const int last=loopWindow?std::clamp(int(count*p[P::sample_end]*.01),first+1,count):count;
     auto snap=[&](double pct) {
         const int target=std::clamp(first+int(std::round((last-first)*pct*.01)),first,last-1);
-        auto crosses=[&](int at) {
-            if(at<=first||at>=last)return false;
-            for(int ch=0;ch<a.getNumChannels();++ch) {
-                const float x=a.getSample(ch,at-1),y=a.getSample(ch,at);
-                if((x<=0&&y>=0)||(x>=0&&y<=0))return true;
-            }
-            return false;
-        };
+        auto crosses=[&](int at) {return sampleCrossesZero(a,at,first,last);};
         int found=target;
         for(int distance=0;distance<last-first;++distance) {
             if(crosses(target-distance)){found=target-distance;break;}
@@ -740,6 +800,12 @@ void LSampler24AudioProcessor::applyZeroCrossing(bool loopWindow,int loopIndex) 
         }
         trimmed->peak = peak;
         trimmed->dc = dc;
+        // Rebase existing internal boundaries to the newly trimmed buffer.
+        const double oldStart=std::clamp(int(std::floor(count*p[P::sample_start]*.01)),0,count-2);
+        const double oldLength=std::clamp(int(std::floor(count*p[P::sample_end]*.01)),int(oldStart)+1,count)-oldStart;
+        for(int i=1;i<slot.slice.division();++i)
+            slot.slice.boundaries[size_t(i)]=(oldStart+oldLength*slot.slice.boundaries[size_t(i)]-startSample)/newCount;
+        slot.slice.sanitise();
         slot.sample = std::move(trimmed);
         slot.sampleAudioModified = true;
         p[P::sample_start] = 0.0;
@@ -815,7 +881,7 @@ juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slotIndex, const juc
     const auto& s = slots[static_cast<size_t>(slotIndex)];
     juce::ValueTree tree(type);
     tree.setProperty("format", "LSampler-24 Slot", nullptr);
-    tree.setProperty("formatVersion", 3, nullptr);
+    tree.setProperty("formatVersion", 4, nullptr);
     tree.setProperty("index", slotIndex, nullptr);
     tree.setProperty("slotName", s.slotName.isNotEmpty() ? s.slotName : s.sampleFile.getFileNameWithoutExtension(), nullptr);
     tree.setProperty("sampleReference", library.makeSampleReference(s.sampleFile), nullptr);
@@ -835,6 +901,8 @@ juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slotIndex, const juc
         loops.addChild(loop,-1,nullptr);
     }
     tree.addChild(loops,-1,nullptr);
+    tree.addChild(s.slice.toTree(),-1,nullptr);
+    if(s.sampleAudioModified&&s.sample)tree.addChild(storeEditedAudio(*s.sample),-1,nullptr);
     return tree;
 }
 
@@ -862,7 +930,12 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
     juce::String statusText = "No sample loaded";
     bool ok = true;
 
-    if (file.getFullPathName().isNotEmpty())
+    const auto editedAudio=tree.getChildWithName("EditedAudio");
+    if(editedAudio.isValid()) {
+        loaded=restoreEditedAudio(editedAudio,file,error);ok=bool(loaded);
+        statusText=ok?"Loaded edited slot audio":error;
+    }
+    else if (file.getFullPathName().isNotEmpty())
     {
         if (!file.existsAsFile())
         {
@@ -907,10 +980,11 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
                 slot.parameters.loops[size_t(index)][size_t(i)]=sanitise(d,double(loop.getProperty(d.key,d.initial)));
             }
         }
+        slot.slice = SliceState::fromTree(tree.getChildWithName("Slice"));
         slot.sample = std::move(loaded);
         slot.sampleFile = file;
         slot.slotName = tree.getProperty("slotName").toString().trim();
-        slot.sampleAudioModified = false;
+        slot.sampleAudioModified = editedAudio.isValid()&&bool(slot.sample);
         slot.status = statusText;
         markAudioStateDirty();
     }
@@ -1135,6 +1209,7 @@ bool LSampler24AudioProcessor::prepareLibrarySlotPreview(const juce::File& prese
     libraryPreviewStates = {};
     libraryPreviewOwners[0] = loaded;
     libraryPreviewStates[0] = lsampler::prepareSlotAudioState(params, loaded.get(), preparedSampleRate, ++nextRevision);
+    libraryPreviewStates[0].slice=prepareSliceAudio(SliceState::fromTree(tree.getChildWithName("Slice")),libraryPreviewStates[0].length);
     libraryPreviewVoicePool.setStates(&libraryPreviewStates);
     // Browser/grid preview always auditions MIDI C4. Original Pitch therefore changes
     // the heard tuning deterministically instead of moving the preview note with the root.
@@ -1152,7 +1227,7 @@ bool LSampler24AudioProcessor::saveBankPreset(const juce::File& presetFile, juce
 
     juce::ValueTree bank("LSampler24Bank");
     bank.setProperty("format", "LSampler-24 Bank", nullptr);
-    bank.setProperty("formatVersion", 3, nullptr);
+    bank.setProperty("formatVersion", 4, nullptr);
     bank.setProperty("slotCount", slotCount, nullptr);
     bank.setProperty("currentSlot", currentSlot.load(), nullptr);
     for (int i = 0; i < globalParameterCount; ++i)
@@ -1622,7 +1697,7 @@ bool LSampler24AudioProcessor::importLibraryArchive(const juce::File& archiveFil
 void LSampler24AudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     juce::ValueTree state("LSampler24State");
-    state.setProperty("formatVersion", 3, nullptr);
+    state.setProperty("formatVersion", 4, nullptr);
     state.setProperty("slotCount", slotCount, nullptr);
     state.setProperty("currentSlot", currentSlot.load(), nullptr);
     for (int i = 0; i < globalParameterCount; ++i)
@@ -1670,4 +1745,47 @@ void LSampler24AudioProcessor::setStateInformation(const void* data, int sizeInB
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new LSampler24AudioProcessor();
+}
+
+lsampler::SliceState LSampler24AudioProcessor::getSliceState(int slot) const {
+    const juce::ScopedLock lock(stateLock);
+    return slots[size_t(juce::jlimit(0,slotCount-1,slot))].slice;
+}
+void LSampler24AudioProcessor::setSliceState(int slot,const lsampler::SliceState& state) {
+    const juce::ScopedLock lock(stateLock);
+    auto& target=slots[size_t(juce::jlimit(0,slotCount-1,slot))];
+    target.slice=state;target.slice.sanitise();markAudioStateDirty();
+}
+lsampler::SliceAudioState LSampler24AudioProcessor::getSliceLayout(int slot,int& absoluteStart,double& rate) const {
+    const juce::ScopedLock lock(stateLock);
+    const auto& s=slots[size_t(juce::jlimit(0,slotCount-1,slot))];
+    const auto audio=prepareSlotAudioState(s.parameters,s.sample.get(),preparedSampleRate,0);
+    absoluteStart=audio.start;rate=s.sample?s.sample->sourceSampleRate:preparedSampleRate;
+    return prepareSliceAudio(s.slice,audio.length);
+}
+bool LSampler24AudioProcessor::moveSliceBoundary(int slot,int boundary,int direction,int frames) {
+    const juce::ScopedLock lock(stateLock);
+    auto& s=slots[size_t(juce::jlimit(0,slotCount-1,slot))];
+    if(!s.sample||direction==0)return false;
+    const auto audio=prepareSlotAudioState(s.parameters,s.sample.get(),preparedSampleRate,0);
+    const auto layout=prepareSliceAudio(s.slice,audio.length);
+    if(boundary<=0||boundary>=layout.count||layout.count!=s.slice.division())return false;
+    const int lower=layout.boundaries[size_t(boundary-1)]+1,upper=layout.boundaries[size_t(boundary+1)]-1;
+    if(lower>upper)return false;
+    const int old=layout.boundaries[size_t(boundary)];
+    int next=std::clamp(old+(direction<0?-1:1)*std::max(1,frames),lower,upper);
+    if(s.slice.zeroCrossing) {
+        const int delta=direction<0?-1:1;next=old;
+        for(int i=old+delta;i>=lower&&i<=upper;i+=delta)
+            if(sampleCrossesZero(s.sample->audio,audio.start+i,audio.start,audio.start+audio.length)){next=i;break;}
+    }
+    if(next==old)return false;
+    // A quarter frame offset makes integer floor conversion stable in doubles.
+    s.slice.boundaries[size_t(boundary)]=(next+.25)/audio.length;
+    markAudioStateDirty();return true;
+}
+void LSampler24AudioProcessor::requestSlicePreview(int slot,int kind,int item,bool toggle) noexcept {
+    const int command=juce::jlimit(0,4,kind)|(juce::jlimit(0,slotCount-1,slot)<<3)
+        |(juce::jlimit(0,127,item)<<8)|(toggle?(1<<15):0);
+    slicePreviewCommand.store(command,std::memory_order_release);
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include "Parameters.h"
 #include "SamplePool.h"
+#include "SliceState.h"
 
 namespace lsampler {
 struct EnvelopeSettings {
@@ -25,6 +26,7 @@ struct LoopAudioState {
 };
 struct SlotAudioState {
     SlotParameters params;
+    SliceAudioState slice;
     SharedSample* sample = nullptr; // ownership lives exclusively in snapshot owners/retirement list
     uint64_t revision = 0;
     double sampleRate = 44100, sourceRatio = 1;

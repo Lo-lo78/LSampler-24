@@ -2,6 +2,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <map>
 #include "PluginProcessor.h"
+#include "SliceEditor.h"
 #include <array>
 #include <functional>
 #include <vector>
@@ -51,7 +52,7 @@ public:
         const auto mods = key.getModifiers();
         const auto code = key.getKeyCode();
         const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
-        const bool dedicated = (mods.isCtrlDown() && !mods.isAltDown()
+        const bool dedicated = code==juce::KeyPress::F6Key || (mods.isAltDown() && ch=='e') || (mods.isCtrlDown() && !mods.isAltDown()
                                 && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
                                     || code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
                             || (mods.isAltDown() && !mods.isCtrlDown() && ch == 'l');
@@ -107,7 +108,7 @@ public:
         const auto mods = key.getModifiers();
         const auto code = key.getKeyCode();
         const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
-        const bool dedicated = (mods.isCtrlDown() && !mods.isAltDown()
+        const bool dedicated = code==juce::KeyPress::F6Key || (mods.isAltDown() && ch=='e') || (mods.isCtrlDown() && !mods.isAltDown()
                                 && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
                                     || code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
                             || (mods.isAltDown() && !mods.isCtrlDown() && ch == 'l');
@@ -190,16 +191,14 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     bool keyPressed(const juce::KeyPress& key) override;
+    bool keyStateChanged(bool) override { return sliceEditor != nullptr; }
     bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
 
 private:
-    // Future dedicated Slice Editor routes through this owned modal surface first.
-    // No Slice state or Alt+E command is implemented in this phase.
-    struct ModalKeyboardSurface {
-        virtual ~ModalKeyboardSurface() = default;
-        virtual bool handleKey(const juce::KeyPress&) = 0;
-    };
-    ModalKeyboardSurface* activeModalSurface = nullptr;
+    std::unique_ptr<SliceEditor> sliceEditor;
+    juce::Component::SafePointer<juce::Component> sliceReturnFocus;
+    void openSliceEditor(bool sequencer);
+    void closeSliceEditor();
     void openValueEditor();
     const lsampler::GridEntry& selectedEntry() const;
     bool selectedRateIsSynced() const;

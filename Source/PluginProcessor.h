@@ -121,6 +121,15 @@ public:
     // Diagnostics used by offline regression tests, never by the screen reader.
     int getActiveVoiceCount() const noexcept { return voicePool.activeVoiceCount(); }
 
+    lsampler::SliceState getSliceState(int slot) const;
+    void setSliceState(int slot, const lsampler::SliceState&);
+    lsampler::SliceAudioState getSliceLayout(int slot, int& absoluteStart, double& sourceRate) const;
+    bool moveSliceBoundary(int slot,int boundary,int direction,int frames);
+    // One packed command: no separately published target/kind fields can tear.
+    void requestSlicePreview(int slot,int kind,int item=0,bool toggle=true) noexcept;
+    void stopSlicePreview() noexcept { slicePreviewCommand.store(0,std::memory_order_release); }
+    int getSlicePreviewKind() const noexcept { return slicePreviewKind.load(std::memory_order_relaxed); }
+
     LibraryManager& getLibrary() noexcept { return library; }
 
 private:
@@ -131,6 +140,7 @@ private:
         juce::String slotName;
         bool sampleAudioModified = false;
         lsampler::SlotParameters parameters;
+        lsampler::SliceState slice;
         juce::String status = "No sample loaded";
     };
 
@@ -143,7 +153,8 @@ private:
     void syncAudioStateFromSlots();
 
     mutable juce::CriticalSection stateLock;
-    std::array<SlotState, slotCount> slots;
+    std::unique_ptr<std::array<SlotState,slotCount>> slotStorage=std::make_unique<std::array<SlotState,slotCount>>();
+    std::array<SlotState,slotCount>& slots=*slotStorage;
     std::atomic<int> currentSlot { 0 };
     std::atomic<bool> previewToggleRequested { false };
     std::atomic<bool> previewStopRequested { false };
@@ -152,6 +163,9 @@ private:
     std::atomic<double> previewAuditionStartPercent { 0.0 };
     std::atomic<int> previewTargetSlot { 0 };
     std::atomic<uint32_t> stopVoicesMask { 0 };
+    std::atomic<int> slicePreviewCommand {-1};
+    std::atomic<int> slicePreviewKind {0};
+    int slicePreviewSlot=-1,slicePreviewItem=-1;
     bool previewPlaying = false;
     int previewPlayingSlot = -1;
 
@@ -184,7 +198,8 @@ private:
     };
     // Single writer (stateLock), single audio reader. Only the writer touches owners.
     // Dirty flag and buffer index travel in the same lock-free atomic exchange.
-    std::array<AudioSnapshot, 3> snapshots;
+    std::unique_ptr<std::array<AudioSnapshot,3>> snapshotStorage=std::make_unique<std::array<AudioSnapshot,3>>();
+    std::array<AudioSnapshot,3>& snapshots=*snapshotStorage;
     std::atomic<int> middleSnapshot { 1 };
     int writerSnapshot = 2, readerSnapshot = 0;
     uint64_t nextRevision = 0;
@@ -202,7 +217,9 @@ private:
     double outputGlueEnvelope = 0.0; // audio-thread state, JSFX lbpm_output_glue_env
     void applyOutputStage(juce::AudioBuffer<float>& buffer, const std::array<int, 25>& routes) noexcept;
     GlobalVoicePool libraryPreviewVoicePool;
-    std::array<lsampler::SlotAudioState, GlobalVoicePool::slotCount> libraryPreviewStates {};
+    std::unique_ptr<std::array<lsampler::SlotAudioState,GlobalVoicePool::slotCount>> libraryPreviewStorage=
+        std::make_unique<std::array<lsampler::SlotAudioState,GlobalVoicePool::slotCount>>();
+    std::array<lsampler::SlotAudioState,GlobalVoicePool::slotCount>& libraryPreviewStates=*libraryPreviewStorage;
     std::array<std::shared_ptr<SharedSample>, GlobalVoicePool::slotCount> libraryPreviewOwners {};
     std::atomic<bool> libraryPreviewToggleRequested { false };
     std::atomic<bool> libraryPreviewStopRequested { false };

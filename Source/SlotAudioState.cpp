@@ -49,11 +49,11 @@ SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sampl
     s.portamento=1/std::max(1.0,ms(P::portamento));s.smooth=1/std::max(1.0,ms(P::retrigger_smooth));
     s.amp=envelope(v(P::attack),v(P::decay),v(P::sustain),v(P::release),sr,false);
     s.lp=v(P::lp_on)!=0;s.hp=v(P::hp_on)!=0;
-    if(s.lp) {
+    {
         s.lpEnv=envelope(v(P::lp_env_attack),v(P::lp_env_decay),v(P::lp_env_sustain),v(P::lp_env_release),sr,true);
         s.lpHz=20*std::pow(500,v(P::lp_cutoff));s.lpStatic=filterCoefficients(false,s.lpHz,v(P::lp_resonance),sr);
     }
-    if(s.hp) {
+    {
         s.hpEnv=envelope(v(P::hp_env_attack),v(P::hp_env_decay),v(P::hp_env_sustain),v(P::hp_env_release),sr,true);
         s.hpHz=20*std::pow(500,v(P::hp_cutoff));s.hpStatic=filterCoefficients(true,s.hpHz,v(P::hp_resonance),sr);
     }

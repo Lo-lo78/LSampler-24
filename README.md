@@ -14,3 +14,14 @@ TEST15 dynamic library:
 - Slot recipes store SHA-256 sample identity and recover moved audio anywhere below Library\Samples.
 - Old recipes self-upgrade when successfully loaded/previewed.
 - Browser accessibility line metadata is cleaned so NVDA current-line reading does not duplicate the entry.
+
+## TEST31: Slice Engine, Slice Edit e Slice Sequencer
+
+Integrazione sorgente basata su TEST30, non compilata in questa consegna.
+Alt+E apre Slice Edit sul campione già caricato; F6 apre il sequencer.
+Tab passa tra confini, globali e step. F1 annuncia l'aiuto dell'editor.
+Alt+O resta il browser di importazione esistente.
+
+Leggere `SLICE_TEST31_NOTE_IT.txt` per strutture dati, shortcut, persistenza,
+DSP, differenze dal riferimento JSFX e collaudo Windows/REAPER/NVDA.
+Il workflow di build è invariato; i test Slice sono nel target opzionale.
