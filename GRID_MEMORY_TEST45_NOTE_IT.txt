@@ -1,0 +1,11 @@
+LSampler-24 TEST45 - memoria runtime posizione griglia
+
+Correzione:
+- la posizione per slot continua a vivere solo in RAM nel Processor;
+- il costruttore dell'Editor legge subito la posizione memorizzata dello slot corrente;
+- leaveSlotParameters() salva il cursore solo quando si sta davvero lasciando la griglia;
+- l'inizializzazione della finestra non sovrascrive piu' la memoria con Level/indice 0.
+
+Nessuna persistenza in progetto, preset, bank o settings.xml.
+Nessuna modifica DSP.
+Non compilato localmente.

@@ -158,6 +158,8 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     });
     parameterSelector.addKeyListener(this);
     const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
+    selectedParameter = juce::jlimit(0, normalGridSize - 1,
+                                     processor.getSlotGridPosition(processor.getCurrentSlot()));
     for (int i = 0; i < normalGridSize; ++i)
         parameterSelector.addItem(parameterCellText(i), i + 1);
     parameterSelector.setSelectedItemIndex(selectedParameter, juce::dontSendNotification);
@@ -513,11 +515,18 @@ void LSampler24AudioProcessorEditor::enterSlotParameters()
 
 void LSampler24AudioProcessorEditor::leaveSlotParameters()
 {
-    const int currentGridIndex = parameterSelector.getSelectedItemIndex();
-    if (currentGridIndex >= 0)
+    // Persist the runtime-only cursor only when we are genuinely leaving the
+    // slot parameter grid.  The editor constructor also calls this helper to
+    // establish the slot-page visibility; saving there would overwrite the
+    // processor's remembered cursor with the selector's default item (Level).
+    if (parameterPage)
     {
-        selectedParameter = currentGridIndex;
-        processor.setSlotGridPosition(processor.getCurrentSlot(), selectedParameter);
+        const int currentGridIndex = parameterSelector.getSelectedItemIndex();
+        if (currentGridIndex >= 0)
+        {
+            selectedParameter = currentGridIndex;
+            processor.setSlotGridPosition(processor.getCurrentSlot(), selectedParameter);
+        }
     }
     processor.requestPreviewStop();
     parameterPage = false;
