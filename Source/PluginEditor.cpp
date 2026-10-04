@@ -262,17 +262,18 @@ void LSampler24AudioProcessorEditor::paint(juce::Graphics& g)
     g.fillAll(rackgui::chassis);
     rackgui::caption(g, {20, 12, getWidth()-40, 26}, "LSampler-24  /  DIGITAL SAMPLING WORKSTATION");
     g.setColour(rackgui::muted);g.setFont(12.0f);
-    g.drawText("24 SLOTS   •   SAMPLE / SLICE / MULTI OUTPUT",20,40,getWidth()-40,18,juce::Justification::centredLeft);
+    g.drawText("24 SLOTS   /   SAMPLE / SLICE / MULTI OUTPUT",20,40,getWidth()-40,18,juce::Justification::centredLeft);
     if(!importBrowserActive && !slotLibraryActive) {
-        rackgui::frame(g, {16,72,352,490}, "SLOTS / 01–24");
+        rackgui::frame(g, {16,72,352,490}, "SLOTS / 01-24");
         g.setColour(rackgui::muted);g.setFont(13.0f);
-        g.drawText(parameterPage?"Alt+L Grid  /  Alt+V Value  /  Alt+E Slice":"Alt+L Edit slot  /  Alt+E Slice",384,588,getWidth()-400,24,juce::Justification::centredLeft);
+        g.drawText(globalOpen?"Enter: Confirm  /  Esc: Cancel  /  Alt+V: Value":parameterPage?"Alt+V: Value  /  Alt+L: Loop On-Off  /  Alt+E: Slice":"Enter: Edit selected slot  /  Alt+E: Slice",384,588,getWidth()-400,24,juce::Justification::centredLeft);
     }
 }
 
 void LSampler24AudioProcessorEditor::resized()
 {
     if(sliceEditor)sliceEditor->setBounds(getLocalBounds());
+    repaint(); // Refresh the painted help line when switching editor modes.
     const bool browser=importBrowserActive||slotLibraryActive;
     for(auto* display:std::array<juce::Component*,4>{ &waveform,&currentEdit,&sliceOverview,&masterOutput })display->setVisible(!browser);
     slotOverview.setVisible(!browser && parameterPage);
@@ -316,7 +317,7 @@ void LSampler24AudioProcessorEditor::refreshVisuals()
     }
     slotOverview.repaint();
     currentEdit.category=parameterPage?juce::String(selectedEntry().category):"Slot "+juce::String(slot+1);
-    currentEdit.name=parameterPage?selectedParameterName():"Select a parameter with Alt+L";
+    currentEdit.name=parameterPage?selectedParameterName():"Press Enter on the selected slot to edit";
     currentEdit.value=parameterPage?selectedParameterValueText():processor.getSlotName(slot);
     currentEdit.repaint();sliceOverview.state=snapshot.slice;sliceOverview.repaint();
     for(int i=0;i<5;++i)masterOutput.values[size_t(i)]=processor.getGlobalOutputParameter(static_cast<lsampler::GlobalP>(i));

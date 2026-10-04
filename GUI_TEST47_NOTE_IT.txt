@@ -1,0 +1,61 @@
+LSampler-24 TEST47 - Correzioni dopo verifica delle schermate reali
+================================================================
+Base: TEST46 Vintage Rack GUI, compilata dall'utente con GitHub Actions.
+Esaminate le schermate reali: slot vuoti, campione caricato, parametri dello
+slot, Global Slice Settings, Slice Sequencer e Boundaries.
+
+CORREZIONI
+- Eliminati i caratteri decorativi non ASCII dalle nuove scritte GUI:
+  trattini, pallini e moltiplicazioni non dipendono piu' dalla codifica delle
+  stringhe del compilatore/JUCE. Non modificati nomi dei campioni dell'utente.
+- Corretti suggerimenti: Invio apre i parametri dallo slot; Alt+L nei parametri
+  attiva/disattiva il loop. Nessun cambiamento ai gestori dei tasti.
+- Aggiunto repaint del contenitore al cambio pagina, affinche' i suggerimenti
+  disegnati riflettano la modalita' corrente e non restino quelli della pagina precedente.
+- Global Slice Settings: 8 righe nella prima colonna e 5 nella seconda,
+  corrispondenti alla navigazione esistente. Font 15 e righe da 22 pixel.
+- Ridistribuiti gli spazi di Slice Edit: waveform 260 pixel, riepilogo corrente
+  compatto 94 pixel e pannello Slice 276 pixel. Finestra ancora 1120 x 800.
+- Sequencer: caselle alte 70 pixel nel layout previsto, con numero step,
+  S=Source Slice, x=Repeat e Repeat Type (Extend/Consume). Vista di massimo
+  16 step che segue il cursore esistente; una sola riga per divisioni fino a 8.
+- Waveform: etichette Eff. Start/Eff. End quando le soglie spostano i limiti;
+  Edit Start/Edit End identifica il bordo in modifica. Metadati su tre righe
+  e font maggiore. Posizioni dei marker e dati audio invariati.
+- Master: testo ridisposto su tre righe, meter stereo separati a destra e
+  indicazione Main 1/2 - dBFS. Protezione legacy mostrata quando Stage e' Off.
+- Nomi degli slot lievemente ingranditi nel controllo e nel riepilogo visivo.
+
+FILE MODIFICATI RISPETTO A TEST46
+Source/RackGui.h: Waveform, SlotOverview, CurrentParameter, SliceOverview,
+                 MasterOutput; nessuna nuova classe interattiva.
+Source/PluginEditor.cpp: scritte guida e repaint del contenitore.
+Source/PluginEditor.h: solo font del nome in LSamplerSlotCell.
+Source/SliceEditor.cpp: layout e modalita' compatta del riepilogo.
+GUI_TEST47_NOTE_IT.txt: queste note.
+Le note TEST46 rimangono nell'archivio come documentazione della prima GUI;
+questo documento aggiorna le indicazioni relative al layout e ai suggerimenti.
+
+ACCESSIBILITA' E AUDIO
+Nessun nuovo controllo, focus, handler, annuncio o shortcut. Resta il modello
+accessibile precedente. I display aggiunti continuano a essere esclusi dal
+focus e dall'albero accessibile. Resta intatta la memoria runtime della griglia.
+PluginProcessor, SamplePool, voci, Slice DSP, parametri, preset, bank, routing,
+MIDI, output stage e workflow GitHub sono byte per byte identici alla TEST46.
+
+VERIFICA EFFETTUATA
+Confronto con l'archivio TEST46: soltanto i quattro file GUI indicati cambiano.
+Gestori di tastiera/editing/accessibilita' confrontati con la base e invariati.
+Controllata aritmeticamente l'altezza disponibile per le otto righe dei Global
+Settings e le righe dei 16 step, per tutte le divisioni da 1 a 128 e ogni cursore.
+Controllati limiti dei pannelli Slice e stringhe ASCII del nuovo RackGui.h.
+NESSUNA compilazione, esecuzione CMake, GitHub Actions o creazione di binari.
+Questi controlli non sono una renderizzazione JUCE della TEST47.
+
+PROSSIMA VERIFICA PRATICA
+Dopo la build dell'utente: prima una schermata di Slice Sequencer con 8 slice,
+poi Global Slice Settings. L'assistente controllera' leggibilita' delle righe,
+Source Slice/Repeat/Repeat Type e assenza dei caratteri strani.
+Con 16 o piu' slice va confermata anche la seconda riga; controllo successivo
+mirato di waveform/marker e riepilogo master. L'utente puo' verificare la
+continuita' dei percorsi tastiera e NVDA senza dover valutare la grafica.

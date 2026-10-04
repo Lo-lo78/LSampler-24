@@ -7,6 +7,7 @@ constexpr int slicePageStep = 40;
 }
 SliceEditor::SliceEditor(LSampler24AudioProcessor& p,int s,bool sequencer):processor(p),slot(s) {
     page=sequencer?Page::steps:Page::globals;
+    currentEdit.compact=true;
     addAndMakeVisible(waveform);addAndMakeVisible(overview);addAndMakeVisible(currentEdit);
     refreshVisuals();
     setWantsKeyboardFocus(true);setFocusContainerType(FocusContainerType::keyboardFocusContainer);
@@ -66,13 +67,13 @@ void SliceEditor::refreshVisuals() {
 void SliceEditor::paint(juce::Graphics& g) {
     g.fillAll(rackgui::chassis);rackgui::caption(g,{20,14,getWidth()-40,32},"LSampler-24 / SLICE EDIT");
     g.setColour(rackgui::muted);g.setFont(14.0f);
-    g.drawFittedText("1/2/3 or Tab: page | Arrows/Home/End: navigate (page 1: 8-row grid) | Alt+Up/Down: value | Alt+PgUp/PgDn: coarse value\nAlt+Left/Right: value step | Alt+Home/End: max/min | Enter: type value\nSpace: normal preview On/Off; when Off, slice/step navigation and edits auto-audition | F1: help | Escape: close",20,getHeight()-100,getWidth()-40,86,juce::Justification::centredLeft,4);
+    g.drawFittedText("1/2/3 or Tab: page | Arrows/Home/End: navigate (page 1: 8-row grid) | Alt+Up/Down: value | Alt+PgUp/PgDn: coarse value\nAlt+Left/Right: value step | Alt+Home/End: max/min | Enter: type value\nSpace: normal preview On/Off; when Off, slice/step navigation and edits auto-audition | F1: help | Escape: close",20,getHeight()-76,getWidth()-40,64,juce::Justification::centredLeft,4);
 }
 void SliceEditor::resized(){
-    waveform.setBounds(20,58,getWidth()-40,310);
-    currentEdit.setBounds(20,380,getWidth()-40,124);
-    overview.setBounds(20,516,getWidth()-40,getHeight()-626);
-    number.setBounds(34,464,getWidth()-68,32);number.toFront(false);
+    waveform.setBounds(20,58,getWidth()-40,260);
+    currentEdit.setBounds(20,330,getWidth()-40,94);
+    overview.setBounds(20,436,getWidth()-40,getHeight()-524);
+    number.setBounds(34,374,getWidth()-68,36);number.toFront(false);
 }
 void SliceEditor::pushUndo() {
     undo.push_back(processor.getSliceState(slot));if(undo.size()>64)undo.pop_front();redo.clear();

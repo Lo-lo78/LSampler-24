@@ -34,7 +34,7 @@ public:
         g.setColour(visualLoaded?rackgui::green:rackgui::muted.withAlpha(.4f));g.fillEllipse(float(r.getRight()-10),float(r.getY()+7),4,4);
         g.setColour(visualSelected?rackgui::amber:rackgui::text);g.setFont(13.0f);
         g.drawText(juce::String(visualNumber).paddedLeft('0',2),r.reduced(6).withHeight(18),juce::Justification::centredLeft);
-        g.setColour(rackgui::muted);g.setFont(12.0f);g.drawText(visualName,r.reduced(6).withTrimmedTop(19),juce::Justification::centredLeft,true);
+        g.setColour(rackgui::muted);g.setFont(13.0f);g.drawText(visualName,r.reduced(6).withTrimmedTop(19),juce::Justification::centredLeft,true);
     }
 
     void mouseDown(const juce::MouseEvent&) override

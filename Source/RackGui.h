@@ -72,8 +72,8 @@ public:
     void paint(juce::Graphics& g) override {
         frame(g, getLocalBounds(), "SAMPLE / WAVEFORM");
         auto r = getLocalBounds().reduced(14); r.removeFromTop(30);
-        auto footer = r.removeFromBottom(46); auto header = r.removeFromTop(24);
-        g.setColour(green); g.setFont(14.0f);
+        auto footer = r.removeFromBottom(64); auto header = r.removeFromTop(24);
+        g.setColour(green); g.setFont(15.0f);
         const auto name = state.name.isNotEmpty() ? state.name : owner ? owner->sourceFile.getFileNameWithoutExtension() : juce::String("Empty slot");
         g.drawText(name, header, juce::Justification::centredLeft, true);
         g.setColour(screen); g.fillRect(r);
@@ -99,11 +99,14 @@ public:
             for(int b=first;b<last;++b) {lo=std::min(lo,peaks[size_t(b)].first);hi=std::max(hi,peaks[size_t(b)].second);}
             g.drawVerticalLine(r.getX()+pixel, mid-juce::jlimit(-1.0f,1.0f,hi)*scale, mid-juce::jlimit(-1.0f,1.0f,lo)*scale);
         }
-        auto marker = [&](double pos, juce::Colour colour, const juce::String& label, bool bottom=false) {
-            const float px=x(pos); g.setColour(colour); g.drawLine(px,float(r.getY()),px,float(r.getBottom()),1.4f);
+        auto marker = [&](double pos, juce::Colour colour, const juce::String& label, int lane=0) {
+            const float px=x(pos);
+            g.setColour(colour); g.drawLine(px,float(r.getY()),px,float(r.getBottom()),1.4f);
             if(label.isNotEmpty()) {
-                const int left=juce::jlimit(r.getX(),std::max(r.getX(),r.getRight()-46),int(px)+3);
-                g.setFont(12.0f);g.drawText(label,left,bottom?r.getBottom()-18:r.getY()+2,46,16,juce::Justification::centredLeft);
+                const int width=label.length()>5?94:50;
+                const int left=juce::jlimit(r.getX(),std::max(r.getX(),r.getRight()-width),int(px)+3);
+                const int top=lane==0?r.getY()+2:lane==1?r.getBottom()-20:lane==2?r.getY()+22:r.getBottom()-40;
+                g.setFont(14.0f);g.drawText(label,left,top,width,18,juce::Justification::centredLeft);
             }
         };
         const auto layout = lsampler::prepareSliceAudio(state.slice, std::max(0, state.effectiveEnd-state.effectiveStart));
@@ -113,23 +116,27 @@ public:
                 marker(framePercent(state.effectiveStart+layout.boundaries[size_t(i)]),current?amber:juce::Colour(0xff6b9fba),{},true);
             }
             if(highlight>=0 && boundarySide>=0 && highlight+boundarySide<=layout.count)
-                marker(framePercent(state.effectiveStart+layout.boundaries[size_t(highlight+boundarySide)]),amber,"Edit",true);
+                marker(framePercent(state.effectiveStart+layout.boundaries[size_t(highlight+boundarySide)]),amber,boundarySide==0?"Edit Start":"Edit End",3);
         }
         const auto& loop=state.parameters.loops[size_t(juce::jlimit(0,lsampler::loopCount-1,selectedLoop))];
         // Loop coordinates are percentages within the threshold-derived effective window.
         if(p[lsampler::P::global_one_shot]==0 && loop[1]>loop[0]) {
             const double span=framePercent(state.effectiveEnd-state.effectiveStart);
-            marker(framePercent(state.effectiveStart)+span*loop[0]*.01,juce::Colour(0xff86adc7),"L S",true);
-            marker(framePercent(state.effectiveStart)+span*loop[1]*.01,juce::Colour(0xff86adc7),"L E",true);
+            marker(framePercent(state.effectiveStart)+span*loop[0]*.01,juce::Colour(0xff86adc7),"Loop S",3);
+            marker(framePercent(state.effectiveStart)+span*loop[1]*.01,juce::Colour(0xff86adc7),"Loop E",3);
         }
-        marker(framePercent(state.effectiveStart),green.withAlpha(.55f),{});
-        marker(framePercent(state.effectiveEnd),green.withAlpha(.55f),{});
+        const double effectiveStart=framePercent(state.effectiveStart), effectiveEnd=framePercent(state.effectiveEnd);
+        const bool shiftedStart=std::abs(effectiveStart-p[lsampler::P::sample_start])>100.0/std::max(1,total);
+        const bool shiftedEnd=std::abs(effectiveEnd-p[lsampler::P::sample_end])>100.0/std::max(1,total);
+        if(shiftedStart)marker(effectiveStart,green,"Eff. Start",2);
+        if(shiftedEnd)marker(effectiveEnd,green,"Eff. End",2);
         marker(p[lsampler::P::sample_start],amber,"Start");marker(p[lsampler::P::sample_end],amber,"End");
         marker(p[lsampler::P::sample_play_start],text,"Play",true);
-        g.setColour(green);g.setFont(13.0f);
+        g.setColour(green);g.setFont(14.0f);
         g.drawText("Start "+juce::String(p[lsampler::P::sample_start],2)+"%    End "+juce::String(p[lsampler::P::sample_end],2)+"%    Play "+juce::String(p[lsampler::P::sample_play_start],2)+"%",footer.removeFromTop(22),juce::Justification::centredLeft,true);
         g.setColour(muted);
-        g.drawText(juce::String(owner->sourceSampleRate,0)+" Hz  /  "+juce::String(owner->audio.getNumChannels())+" ch  /  "+juce::String(total / std::max(1.0,owner->sourceSampleRate),2)+" s    Effective: "+juce::String(state.effectiveStart)+"–"+juce::String(state.effectiveEnd)+" frames",footer,juce::Justification::centredLeft,true);
+        g.drawText(juce::String(owner->sourceSampleRate,0)+" Hz  /  "+juce::String(owner->audio.getNumChannels())+" ch  /  "+juce::String(total / std::max(1.0,owner->sourceSampleRate),2)+" s",footer.removeFromTop(20),juce::Justification::centredLeft,true);
+        g.drawText("Effective Start "+juce::String(state.effectiveStart)+" / End "+juce::String(state.effectiveEnd)+" frames",footer,juce::Justification::centredLeft,true);
     }
 private:
     LSampler24AudioProcessor::VisualSlotState state;
@@ -143,7 +150,7 @@ public:
     std::array<bool,24> loaded {};
     int current=0;
     void paint(juce::Graphics& g) override {
-        frame(g,getLocalBounds(),"SLOTS / 01–24");
+        frame(g,getLocalBounds(),"SLOTS / 01-24");
         const auto r=getLocalBounds().reduced(12).withTrimmedTop(30);
         const int w=r.getWidth()/3,h=r.getHeight()/8;
         for(int col=0;col<3;++col)for(int row=0;row<8;++row) {
@@ -153,16 +160,22 @@ public:
             g.setColour(loaded[size_t(i)]?green:muted.withAlpha(.4f));g.fillEllipse(float(cell.getRight()-10),float(cell.getY()+6),4,4);
             g.setColour(i==current?amber:text);g.setFont(13.0f);
             g.drawText(juce::String(i+1).paddedLeft('0',2),cell.reduced(6).withHeight(17),juce::Justification::centredLeft);
-            g.setColour(muted);g.setFont(12.0f);g.drawText(names[size_t(i)],cell.reduced(6).withTrimmedTop(18),juce::Justification::centredLeft,true);
+            g.setColour(muted);g.setFont(13.0f);g.drawText(names[size_t(i)],cell.reduced(6).withTrimmedTop(18),juce::Justification::centredLeft,true);
         }
     }
 };
 class CurrentParameter final : public Display {
 public:
     juce::String category,name,value;
+    bool compact=false;
     void paint(juce::Graphics& g) override {
         frame(g,getLocalBounds(),"CURRENT EDIT / "+category);
-        auto r=getLocalBounds().reduced(14).withTrimmedTop(34);
+        auto r=getLocalBounds().reduced(14).withTrimmedTop(compact?26:34);
+        if(compact) {
+            g.setColour(text);g.setFont(18.0f);g.drawText(name,r.removeFromTop(22),juce::Justification::centredLeft,true);
+            g.setColour(green);g.setFont(15.0f);g.drawText(value,r,juce::Justification::centredLeft,true);
+            return;
+        }
         g.setColour(text);g.setFont(17.0f);g.drawFittedText(name,r.removeFromTop(40),juce::Justification::centredLeft,2);
         g.setColour(green);g.setFont(24.0f);g.drawText(value,r.removeFromTop(30),juce::Justification::centredLeft,true);
     }
@@ -173,33 +186,60 @@ public:
     int page=-1,current=-1,property=0,global=0;
     std::bitset<128> selected;
     void paint(juce::Graphics& g) override {
-        frame(g,getLocalBounds(),"SLICE / Alt+E");auto r=getLocalBounds().reduced(14).withTrimmedTop(32);
+        frame(g,getLocalBounds(),"SLICE / Alt+E");
+        auto r=getLocalBounds().reduced(14).withTrimmedTop(32);
         auto tabs=r.removeFromTop(26);const int w=tabs.getWidth()/3;
         const char* titles[]={"1 Global Slice Settings","2 Slice Sequencer","3 Boundaries"};
-        for(int i=0;i<3;++i) {g.setColour(i==page?amber:muted);g.setFont(13.0f);g.drawText(titles[i],tabs.removeFromLeft(w),juce::Justification::centredLeft,true);}
+        for(int i=0;i<3;++i) {
+            g.setColour(i==page?amber:muted);g.setFont(page<0?14.0f:15.0f);
+            g.drawText(titles[i],tabs.removeFromLeft(w),juce::Justification::centredLeft,true);
+        }
         r.removeFromTop(8);
-        if(page==0) {
-            const int rows=7,h=std::min(24,r.getHeight()/rows),w2=r.getWidth()/2;
-            for(int i=0;i<13;++i) {auto cell=juce::Rectangle<int>(r.getX()+(i/rows)*w2,r.getY()+(i%rows)*h,w2-8,h);
-                g.setColour(i==global?amber:text);g.setFont(13.0f);g.drawText(juce::String(lsampler::sliceGlobals[size_t(i)].name)+": "+lsampler::sliceValueText(lsampler::sliceGlobals[size_t(i)],state.globals[size_t(i)]),cell,juce::Justification::centredLeft,true);}
+        const int n=state.division();
+        if(page<0) {
+            g.setColour(green);g.setFont(15.0f);
+            g.drawText("Mode: "+lsampler::sliceValueText(lsampler::sliceGlobals[0],state.globals[0])+"   /   "+juce::String(n)+" slices",r,juce::Justification::centredLeft,true);
             return;
         }
-        const int n=state.division();
-        if(page==-1 || page==2) {
-            g.setColour(green);g.setFont(15.0f);g.drawText("Mode: "+lsampler::sliceValueText(lsampler::sliceGlobals[0],state.globals[0])+"   /   "+juce::String(n)+" slices",r.removeFromTop(26),juce::Justification::centredLeft,true);
-            g.setColour(muted);g.setFont(14.0f);g.drawText(page==2?"Amber marks the current slice / boundary on the waveform.":"Open Slice Edit for settings, sequence steps and boundaries.",r.removeFromTop(26),juce::Justification::centredLeft,true);return;
+        if(page==0) {
+            // Match the existing eight-row keyboard grid, including the short second column.
+            constexpr int rows=8;
+            const int h=std::min(24,r.getHeight()/rows),w2=r.getWidth()/2;
+            for(int i=0;i<int(lsampler::sliceGlobals.size());++i) {
+                auto cell=juce::Rectangle<int>(r.getX()+(i/rows)*w2,r.getY()+(i%rows)*h,w2-12,h-1);
+                if(i==global){g.setColour(screen);g.fillRect(cell);g.setColour(amber);g.fillRect(cell.removeFromLeft(3));}
+                g.setColour(i==global?amber:text);g.setFont(15.0f);
+                g.drawText(juce::String(lsampler::sliceGlobals[size_t(i)].name)+": "+lsampler::sliceValueText(lsampler::sliceGlobals[size_t(i)],state.globals[size_t(i)]),cell.reduced(7,0),juce::Justification::centredLeft,true);
+            }
+            return;
         }
-        // A readable 16-step viewport follows the existing cursor; no new navigation.
+        if(page==2) {
+            g.setColour(green);g.setFont(16.0f);
+            g.drawText("Mode: "+lsampler::sliceValueText(lsampler::sliceGlobals[0],state.globals[0])+"   /   "+juce::String(n)+" slices",r.removeFromTop(30),juce::Justification::centredLeft,true);
+            g.setColour(text);g.setFont(15.0f);
+            g.drawText("Edit Start / Edit End marks the boundary being edited.",r.removeFromTop(28),juce::Justification::centredLeft,true);
+            g.setColour(muted);
+            g.drawText("Amber: current slice. Blue: other slice boundaries. Green: effective sample window.",r.removeFromTop(28),juce::Justification::centredLeft,true);
+            return;
+        }
+        // Follow the existing edit cursor in groups of 16; no new navigation or playback cursor.
         const int first=std::max(0,current)/16*16,last=std::min(n,first+16),cols=8;
-        const int w2=r.getWidth()/cols,h=std::min(62,(r.getHeight()-26)/2);
+        const int rows=std::max(1,(last-first+cols-1)/cols);
+        auto footer=r.removeFromBottom(30);
+        const int w2=r.getWidth()/cols,h=std::min(76,r.getHeight()/rows);
         for(int i=first;i<last;++i) {
-            auto cell=juce::Rectangle<int>(r.getX()+((i-first)%cols)*w2,r.getY()+((i-first)/cols)*h,w2-5,h-5);
+            auto cell=juce::Rectangle<int>(r.getX()+((i-first)%cols)*w2,r.getY()+((i-first)/cols)*h,w2-5,h-6);
             const auto& step=state.steps[size_t(i)];g.setColour(screen);g.fillRect(cell);
-            g.setColour(i==current?amber:selected[size_t(i)]?green:muted);g.drawRect(cell, i==current?2:1);
-            g.setFont(13.0f);g.drawText(juce::String(i+1)+(step[lsampler::SliceP::mute]!=0?" M":""),cell.reduced(5).withHeight(18),juce::Justification::centredLeft);
-            g.setColour(text);g.setFont(12.0f);g.drawText("S"+juce::String(int(step[lsampler::SliceP::source]))+" ×"+juce::String(int(step[lsampler::SliceP::repeat])),cell.reduced(5).withTrimmedTop(20),juce::Justification::centredLeft,true);
+            g.setColour(i==current?amber:selected[size_t(i)]?green:muted);g.drawRect(cell,i==current?2:1);
+            auto content=cell.reduced(6);
+            g.setFont(15.0f);g.drawText(juce::String(i+1)+(step[lsampler::SliceP::mute]!=0?" M":""),content.removeFromTop(18),juce::Justification::centredLeft);
+            g.setColour(text);g.setFont(14.0f);
+            g.drawText("S"+juce::String(int(step[lsampler::SliceP::source]))+" x"+juce::String(int(step[lsampler::SliceP::repeat])),content.removeFromTop(20),juce::Justification::centredLeft,true);
+            g.setColour(muted);g.setFont(13.0f);
+            g.drawText(step[lsampler::SliceP::repeatType]==0?"Extend":"Consume",content,juce::Justification::centredLeft,true);
         }
-        g.setColour(muted);g.setFont(12.0f);g.drawText("Steps "+juce::String(first+1)+"–"+juce::String(last)+" / "+juce::String(n)+"   •   "+lsampler::sliceProperties[size_t(property)].name,r.withTrimmedTop(2*h),juce::Justification::centredLeft,true);
+        g.setColour(muted);g.setFont(14.0f);
+        g.drawText("Steps "+juce::String(first+1)+"-"+juce::String(last)+" / "+juce::String(n)+"   |   S = Source Slice, x = Repeat   |   "+lsampler::sliceProperties[size_t(property)].name,footer,juce::Justification::centredLeft,true);
     }
 };
 class MasterOutput final : public Display {
@@ -207,20 +247,25 @@ public:
     std::array<double,5> values {};
     std::array<float,2> peaks {};
     void paint(juce::Graphics& g) override {
-        frame(g,getLocalBounds(),"OUTPUT / MASTER");auto r=getLocalBounds().reduced(14).withTrimmedTop(32);
-        auto meters=r.removeFromRight(150);g.setFont(12.0f);
+        frame(g,getLocalBounds(),"OUTPUT / MASTER");
+        auto r=getLocalBounds().reduced(14).withTrimmedTop(32);
+        auto meters=r.removeFromRight(150);r.removeFromRight(12);
+        g.setFont(14.0f);
         for(int ch=0;ch<2;++ch) {
-            auto row=meters.removeFromTop(24);g.setColour(muted);g.drawText(ch==0?"L":"R",row.removeFromLeft(18),juce::Justification::centredLeft);
-            auto db=row.removeFromRight(46);const float level=juce::Decibels::gainToDecibels(peaks[size_t(ch)],-60.0f);
+            auto row=meters.removeFromTop(23);g.setColour(muted);
+            g.drawText(ch==0?"L":"R",row.removeFromLeft(16),juce::Justification::centredLeft);
+            auto db=row.removeFromRight(48);const float level=juce::Decibels::gainToDecibels(peaks[size_t(ch)],-60.0f);
             g.drawText(juce::String(level,1),db,juce::Justification::centredRight);
             row.reduce(0,6);g.setColour(screen);g.fillRect(row);g.setColour(level>=0?amber:green);
             g.fillRect(row.withWidth(int(row.getWidth()*juce::jlimit(0.0f,1.0f,(level+60)/60))));
         }
+        g.setColour(muted);g.setFont(13.0f);g.drawText("Main 1/2 - dBFS",meters,juce::Justification::centredLeft,true);
         g.setColour(green);g.setFont(15.0f);
-        g.drawText("Master "+juce::String(values[0],1)+" dB   /   Output Stage "+(values[1]!=0?"LR-608":"Off"),r.removeFromTop(24),juce::Justification::centredLeft,true);
+        g.drawText("Master "+juce::String(values[0],1)+" dB  /  Stage "+(values[1]!=0?"LR-608":"Off"),r.removeFromTop(23),juce::Justification::centredLeft,true);
         g.setColour(text);g.setFont(14.0f);
-        g.drawText("Glue "+juce::String(values[2],1)+"%   /   Soft Drive "+juce::String(values[3],1)+"%   /   Ceiling "+juce::String(values[4],3),r.removeFromTop(24),juce::Justification::centredLeft,true);
-        g.setColour(muted);g.setFont(12.0f);g.drawText(values[1]!=0?"LR-608 protection enabled • Main stereo peaks (dBFS)":"Legacy main-bus protection: 0.98 • Stereo peaks (dBFS)",r,juce::Justification::centredLeft,true);
+        g.drawText("Glue "+juce::String(values[2],1)+"%  /  Soft Drive "+juce::String(values[3],1)+"%",r.removeFromTop(23),juce::Justification::centredLeft,true);
+        g.setColour(muted);
+        g.drawText(values[1]!=0?"Protection On / Ceiling "+juce::String(values[4],3):juce::String("Legacy protection / Ceiling 0.980"),r,juce::Justification::centredLeft,true);
     }
 };
 } // namespace rackgui
