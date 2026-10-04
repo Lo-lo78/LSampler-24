@@ -39,6 +39,10 @@ inline constexpr std::array<SliceDescriptor,17> sliceProperties {{
 inline double sliceSanitise(const SliceDescriptor& d, double x) noexcept {
     if(!std::isfinite(x))x=d.initial;
     x=std::clamp(x,d.min,d.max);
+    // Per-step Fade In/Out use exactly one negative sentinel: -1 = Inherit.
+    // Values between -1 and 0 are not real parameter positions.
+    const juce::String key(d.key);
+    if((key=="fadeIn"||key=="fadeOut")&&d.min<0.0&&x<0.0)return -1.0;
     return d.step==1 ? std::round(x) : x;
 }
 struct SliceStep {

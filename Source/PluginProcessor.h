@@ -106,7 +106,7 @@ public:
         previewAuditionStartPercent.store(juce::jlimit(0.0, 100.0, startPercent), std::memory_order_relaxed);
         previewAuditionRequested.store(true, std::memory_order_release);
     }
-    void requestSampleBoundaryAudition(bool endBoundary);
+    void requestSampleBoundaryAudition(bool endBoundary, bool latchPlayStart = false);
 
     double getSlotParameter(int gridIndex, int loopIndex = 0) const;
     void setSlotParameter(int gridIndex, double value, int loopIndex = 0);

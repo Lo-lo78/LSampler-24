@@ -444,16 +444,34 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         if (event.numBytes >= 3 && command == 0x90 && d[2] != 0) {
             const int note = d[1] & 127, velocity = d[2] & 127;
             voicePool.choke(note);
-            for (int i = 0; i < slotCount; ++i) {
-                const auto& s = audio[size_t(i)]; const auto& p = s.params;
-                if(!s.sample||velocity<p[P::velocity_low]||velocity>p[P::velocity_high])continue;
-                if(s.slice.state[SliceG::midiMap]!=0) {
-                    for(int step=0;step<s.slice.count;++step)
-                        if(s.slice.state.steps[size_t(step)][SliceP::midiNote]==note&&s.slice.state.steps[size_t(step)][SliceP::mute]==0) {
-                            voicePool.noteOn(i,note,float(velocity)/127.0f,channel,false,-1.0,step,true);break;
-                        }
-                } else if(note>=p[P::low]&&note<=p[P::high])
-                    voicePool.noteOn(i,note,float(velocity)/127.0f,channel);
+
+            // Match the final LBPMCaptureSample.jsfx Slice MIDI Map priority.
+            // First search all mapped slots for an assigned, unmuted step.
+            // A pad address is independent of the slot Low/High and velocity
+            // zones and plays at the slot root (handled by sliceMidiPad).
+            int mappedSlot = -1, mappedStep = -1;
+            for (int i = 0; i < slotCount && mappedSlot < 0; ++i) {
+                const auto& s = audio[size_t(i)];
+                if(!s.sample || s.slice.state[SliceG::midiMap]==0) continue;
+                for(int step=0; step<s.slice.count; ++step) {
+                    const auto& programmed=s.slice.state.steps[size_t(step)];
+                    if(programmed[SliceP::midiNote]==note && programmed[SliceP::mute]==0) {
+                        mappedSlot=i; mappedStep=step; break;
+                    }
+                }
+            }
+            if(mappedSlot>=0) {
+                voicePool.noteOn(mappedSlot,note,float(velocity)/127.0f,channel,false,-1.0,mappedStep,true);
+            } else {
+                // Only when no Slice MIDI pad owns the note do normal slots use
+                // their key/velocity zones. Mapped slots are excluded here.
+                for (int i = 0; i < slotCount; ++i) {
+                    const auto& s = audio[size_t(i)]; const auto& p = s.params;
+                    if(!s.sample || s.slice.state[SliceG::midiMap]!=0) continue;
+                    if(velocity<p[P::velocity_low]||velocity>p[P::velocity_high])continue;
+                    if(note>=p[P::low]&&note<=p[P::high])
+                        voicePool.noteOn(i,note,float(velocity)/127.0f,channel);
+                }
             }
         } else if (event.numBytes >= 3 && (command == 0x80 || (command == 0x90 && d[2] == 0)))
             voicePool.noteOff(d[1] & 127, channel);
@@ -754,16 +772,16 @@ void LSampler24AudioProcessor::setSamplePlayStart(double value) {
     p[P::sample_play_start] = juce::jlimit(p[P::sample_start], p[P::sample_end], value);
     markAudioStateDirty();
 }
-void LSampler24AudioProcessor::requestSampleBoundaryAudition(bool endBoundary)
+void LSampler24AudioProcessor::requestSampleBoundaryAudition(bool endBoundary, bool latchPlayStart)
 {
     double startPercent = 0.0;
     {
         const juce::ScopedLock lock(stateLock);
-        const auto& slot = slots[size_t(currentSlot.load())];
+        auto& slot = slots[size_t(currentSlot.load())];
         if (!slot.sample || slot.sample->audio.getNumSamples() < 2)
             return;
 
-        const auto& p = slot.parameters;
+        auto& p = slot.parameters;
         const int total = slot.sample->audio.getNumSamples();
         if (!endBoundary) {
             // Always latch Start audition to the newly edited Start. If Start Threshold
@@ -784,7 +802,13 @@ void LSampler24AudioProcessor::requestSampleBoundaryAudition(bool endBoundary)
             const int previewStartFrame = juce::jmax(effectiveStart, effectiveEnd - tailFrames);
             startPercent = 100.0 * previewStartFrame / juce::jmax(1, total);
         }
+        // Only direct Sample Start/End edits move the persistent manual scrub
+        // anchor. Threshold and End Preview Length changes audition the result
+        // but must not silently relocate Ctrl+Left/Right.
+        if(latchPlayStart)
+            p[P::sample_play_start] = juce::jlimit(p[P::sample_start], p[P::sample_end], startPercent);
     }
+    if(latchPlayStart) markAudioStateDirty();
     requestPreviewAuditionFromPercent(startPercent);
 }
 

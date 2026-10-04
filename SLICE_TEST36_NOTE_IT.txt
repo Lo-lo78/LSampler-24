@@ -1,0 +1,11 @@
+LSampler-24 TEST36
+
+- Alt+E e' l'unico shortcut di ingresso Slice Edit; F6 rimosso.
+- 1/2/3 cambiano istantaneamente Boundaries / Globals / Sequencer; Tab resta disponibile.
+- Quando la preview Space non e' attiva, navigazione ed edit di slice/step fanno auto-audition del singolo slice/step con tutti i parametri correnti, come il comportamento finale Lua/JSFX.
+- Una preview Space attiva ha priorita' e non viene interrotta dall'auto-audition.
+- Sample Start/End aggiornano anche Sample Play Start al punto realmente ascoltato; Ctrl+Left/Right continua da li'.
+- Slice MIDI Map riallineato al JSFX: priorita' globale ai pad assegnati, mapped slot esclusi dalle normali zone, pad indipendenti da Low/High e velocity zone, pitch al root.
+- Fade In/Out: Inherit e' una sola posizione (-1); Alt+Up passa subito a 0 ms e Alt+Down da 0 torna subito a Inherit.
+- Selezione e Ctrl+C/V degli step mantenuti: copiano l'intera programmazione dello step, quindi restano utili anche con Source Slice.
+- Nessuna compilazione eseguita.

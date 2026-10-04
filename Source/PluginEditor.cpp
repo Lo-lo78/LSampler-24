@@ -22,7 +22,7 @@ public:
 
     bool keyPressed(const juce::KeyPress& key) override
     {
-        if ((key.getModifiers().isAltDown() || key.getKeyCode()==juce::KeyPress::F6Key) && shortcut)
+        if (key.getModifiers().isAltDown() && shortcut)
         {
             const auto code = key.getKeyCode();
             const bool valueNavigation = code == juce::KeyPress::upKey
@@ -410,11 +410,14 @@ void LSampler24AudioProcessorEditor::setSelectedParameterValue(double value)
 {
     const auto parameter = selectedEntry().parameter;
     processor.setSlotParameter(selectedParameter, value, selectedLoop);
-    if (parameter == int(P::sample_start) || parameter == int(P::start_threshold))
-        processor.requestSampleBoundaryAudition(false);
-    else if (parameter == int(P::sample_end) || parameter == int(P::end_threshold)
-             || parameter == int(P::end_preview_length))
-        processor.requestSampleBoundaryAudition(true);
+    if (parameter == int(P::sample_start))
+        processor.requestSampleBoundaryAudition(false, true);
+    else if (parameter == int(P::sample_end))
+        processor.requestSampleBoundaryAudition(true, true);
+    else if (parameter == int(P::start_threshold))
+        processor.requestSampleBoundaryAudition(false, false);
+    else if (parameter == int(P::end_threshold) || parameter == int(P::end_preview_length))
+        processor.requestSampleBoundaryAudition(true, false);
 }
 juce::String LSampler24AudioProcessorEditor::formatParameter(int index,double value) const {
     const auto& e=lsampler::grid[size_t(index)];const auto& d=descriptor(e);
@@ -1064,8 +1067,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     }
 
     if(!mods.isCtrlDown()&&!mods.isShiftDown()&&!mods.isCommandDown()
-       && ((mods.isAltDown()&&(ch=='e'||code=='E')) || (!mods.isAltDown()&&code==juce::KeyPress::F6Key))) {
-        openSliceEditor(code==juce::KeyPress::F6Key);return true;
+       && mods.isAltDown()&&(ch=='e'||code=='E')) {
+        openSliceEditor(false);return true;
     }
 
     const auto moveParameterPage = [this](int direction)

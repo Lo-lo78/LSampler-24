@@ -59,7 +59,7 @@ void SliceEditor::paint(juce::Graphics& g) {
     g.drawText(pageName+" / Slot "+juce::String(slot+1),20,62,getWidth()-40,30,juce::Justification::centredLeft);
     g.drawFittedText(line,getLocalBounds().reduced(20).withTrimmedTop(100).withHeight(120),juce::Justification::centredLeft,4);
     g.setFont(14.0f);
-    g.drawFittedText("Tab: page | Arrows/Home/End: navigate | Alt+Up/Down: value | Alt+PgUp/PgDn: coarse value\nAlt+Left/Right: value step | Alt+Home/End: max/min | Enter: type value | Ctrl+Space: slice/step\nSpace: normal MIDI-equivalent preview | F1: help | Escape: close",20,getHeight()-110,getWidth()-40,90,juce::Justification::centredLeft,4);
+    g.drawFittedText("1/2/3 or Tab: page | Arrows/Home/End: navigate | Alt+Up/Down: value | Alt+PgUp/PgDn: coarse value\nAlt+Left/Right: value step | Alt+Home/End: max/min | Enter: type value\nSpace: normal preview On/Off; when Off, slice/step navigation and edits auto-audition | F1: help | Escape: close",20,getHeight()-110,getWidth()-40,90,juce::Justification::centredLeft,4);
 }
 void SliceEditor::resized(){number.setBounds(20,getHeight()/2,getWidth()-40,40);}
 void SliceEditor::pushUndo() {
@@ -68,7 +68,10 @@ void SliceEditor::pushUndo() {
 void SliceEditor::commit(SliceState& state) {processor.setSliceState(slot,state);auditionEdit();speak();}
 void SliceEditor::auditionEdit() {
     const int kind=processor.getSlicePreviewKind();
-    if(kind==2||kind==4)preview(false,true,false);
+    // Match the final Lua/JSFX F6 behaviour: a running Space preview has
+    // priority.  When no full preview is running, navigation and edits give
+    // immediate one-shot feedback from the current physical slice/step.
+    if(kind==0||kind==2||kind==4)preview(false,true,false);
 }
 void SliceEditor::setValue(double value) {
     if(page==Page::boundaries)return;
@@ -104,6 +107,12 @@ void SliceEditor::changeValue(int direction,bool coarse) {
     const auto s=processor.getSliceState(slot);
     const auto& d=page==Page::globals?sliceGlobals[size_t(global)]:sliceProperties[size_t(property)];
     const double value=page==Page::globals?s.globals[size_t(global)]:s.steps[size_t(item)].values[size_t(property)];
+    // Fade In/Out have one sentinel position only: -1 = Inherit.  Do not make
+    // the user traverse -0.99, -0.98 ... before reaching 0 ms.
+    if(page==Page::steps&&(property==int(SliceP::fadeIn)||property==int(SliceP::fadeOut))) {
+        if(direction>0&&value<0){setValue(0.0);return;}
+        if(direction<0&&value<=0){setValue(-1.0);return;}
+    }
     const double multiplier=double(width)*(coarse?double(slicePageStep):1.0);
     setValue(value+direction*d.step*multiplier);
 }
@@ -190,7 +199,12 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
     const auto c=juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
     if(code==juce::KeyPress::escapeKey) {processor.stopSlicePreview();if(onClose)onClose();return true;}
     if(code==juce::KeyPress::F1Key) {
-        announceToActiveScreenReader(*this,"Slice Edit. Tab cycles Boundaries, Globals and Sequencer. Plain arrows, Home and End navigate. Alt Up and Alt Down change the current value. Alt Page Up and Alt Page Down change it coarsely. Alt Left and Alt Right select the value step. Alt Home sets maximum and Alt End sets minimum. Enter types a value. Z toggles boundary Zero Crossing. Space always plays the normal slot preview through the same Slice Mode path used by a MIDI note. Ctrl Space auditions the current physical slice in Boundaries or the current programmed step in Globals and Sequencer. Shift Up Down selects a step range. Shift Space toggles selection. Ctrl Delete clears selection. Ctrl C V copies and pastes steps. Ctrl Z Y undo and redo. Backspace resets current parameter. Escape closes and stops preview.");return true;
+        announceToActiveScreenReader(*this,"Slice Edit. 1, 2 and 3 jump directly to Boundaries, Global Slice Settings and Slice Sequencer. Tab also cycles the pages. Plain arrows, Home and End navigate. Alt Up and Alt Down change the current value. Alt Page Up and Alt Page Down change it coarsely. Alt Left and Alt Right select the value step. Alt Home sets maximum and Alt End sets minimum. Enter types a value. Z toggles boundary Zero Crossing. Space toggles the normal slot preview. While Space preview is off, moving between slices or steps and editing them automatically auditions the current slice or programmed step with its current parameters. Shift Up Down selects a step range. Shift Space toggles selection. Ctrl Delete clears selection. Ctrl C V copies and pastes steps. Ctrl Z Y undo and redo. Backspace resets current parameter. Escape closes and stops preview.");return true;
+    }
+    if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isShiftDown()&&!mods.isCommandDown()) {
+        if(c=='1'){setPage(Page::boundaries);return true;}
+        if(c=='2'){setPage(Page::globals);return true;}
+        if(c=='3'){setPage(Page::steps);return true;}
     }
     if(mods.isCtrlDown()&&!mods.isAltDown()) {
         if(c=='z'){restore(false);return true;}if(c=='y'){restore(true);return true;}
