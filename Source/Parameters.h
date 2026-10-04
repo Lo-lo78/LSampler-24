@@ -322,7 +322,7 @@ inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 }};
 enum class Action { none, sampleZero, loopZero };
 struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; int global = -1; };
-inline constexpr std::array<GridEntry, 157> grid {{
+inline constexpr std::array<GridEntry, 160> grid {{
 {int(P::input_gain), -1, Action::none, "Slot"},
 {int(P::polyphony), -1, Action::none, "Slot"},
 {int(P::slot_polyphony), -1, Action::none, "Slot"},
