@@ -1,0 +1,7 @@
+TEST35 - Annuncio compatto Ctrl+Freccia preview
+
+- Ctrl+Freccia sinistra/destra su Sample Play Start annuncia solo la percentuale, es. 10%, 50%, 10.25%.
+- Nessun nome parametro viene annunciato durante questo scrub manuale.
+- Sample Start e Sample End restano separati e continuano ad annunciare normalmente nome parametro e valore quando vengono modificati.
+- Nessuna modifica al DSP o alla logica Threshold/Slice.
+- Nessuna compilazione eseguita.

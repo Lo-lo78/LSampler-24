@@ -1158,7 +1158,18 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         {
             processor.setSamplePlayStart(next);
             processor.requestPreviewRestartIfPlaying();
-            // Deliberately silent: Ctrl+Left/Right is an auditory scrub.
+
+            auto percentText = juce::String(next, 2);
+            while (percentText.endsWithChar('0'))
+                percentText = percentText.dropLastCharacters(1);
+            if (percentText.endsWithChar('.'))
+                percentText = percentText.dropLastCharacters(1);
+
+            // Ctrl+Left/Right is a manual audition scrub: announce only the
+            // compact position (for example "10%"), never the parameter
+            // name. Sample Start/End edits keep their normal parameter
+            // announcements and remain a separate interaction.
+            lsampler::announceToActiveScreenReader(parameterSelector, percentText + "%");
         }
         return true;
     }
