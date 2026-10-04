@@ -133,6 +133,19 @@ public:
     void stopSlicePreview() noexcept { slicePreviewCommand.store(0,std::memory_order_release); }
     int getSlicePreviewKind() const noexcept { return slicePreviewKind.load(std::memory_order_relaxed); }
 
+    // Read-only GUI snapshot. Shared audio is immutable after publication.
+    struct VisualSlotState {
+        std::shared_ptr<const SharedSample> sample;
+        lsampler::SlotParameters parameters;
+        lsampler::SliceState slice;
+        int effectiveStart = 0, effectiveEnd = 0;
+        juce::String name;
+    };
+    VisualSlotState getVisualSlotState(int slot) const;
+    float consumeVisualPeak(int channel) noexcept {
+        return visualPeaks[size_t(juce::jlimit(0, 1, channel))].exchange(0.0f, std::memory_order_relaxed);
+    }
+
     LibraryManager& getLibrary() noexcept { return library; }
 
 private:
@@ -222,6 +235,7 @@ private:
         std::atomic<double>{ 0.0 },     // Bus Soft Drive, human percent; JSFX equivalent 0
         std::atomic<double>{ 0.98 }     // Output Ceiling
     };
+    std::array<std::atomic<float>, 2> visualPeaks {}; // observation only; no audio feedback
     double outputGlueEnvelope = 0.0; // audio-thread state, JSFX lbpm_output_glue_env
     void applyOutputStage(juce::AudioBuffer<float>& buffer, const std::array<int, 25>& routes) noexcept;
     GlobalVoicePool libraryPreviewVoicePool;

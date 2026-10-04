@@ -7,6 +7,8 @@ constexpr int slicePageStep = 40;
 }
 SliceEditor::SliceEditor(LSampler24AudioProcessor& p,int s,bool sequencer):processor(p),slot(s) {
     page=sequencer?Page::steps:Page::globals;
+    addAndMakeVisible(waveform);addAndMakeVisible(overview);addAndMakeVisible(currentEdit);
+    refreshVisuals();
     setWantsKeyboardFocus(true);setFocusContainerType(FocusContainerType::keyboardFocusContainer);
     setOpaque(true);addChildComponent(number);number.setInputRestrictions(32,"-0123456789.");
     number.setTitle("Value");number.setMultiLine(false);
@@ -42,7 +44,7 @@ juce::String SliceEditor::currentLine() const {
         +(b==0||b==layout.count?". Sample window edge":"")+". Zero Crossing "+(state.zeroCrossing?"On":"Off");
 }
 void SliceEditor::speak(const juce::String& prefix) {
-    line=currentLine();setTitle(line);setName({});setDescription({});repaint();
+    line=currentLine();setTitle(line);setName({});setDescription({});refreshVisuals();repaint();
     // One speech path only.  Mixing titleChanged with the explicit NVDA
     // announcer caused consecutive overlapping messages on some Slice pages.
     announceToActiveScreenReader(*this,prefix+line);setDescription({});
@@ -52,17 +54,26 @@ void SliceEditor::announceEntry() {
     speak("Slice Edit. Slot "+juce::String(slot+1)+". "+juce::String(count())+" slices. "
         +(page==Page::globals?"Global Slice Settings. ":page==Page::steps?"Slice Sequencer. ":"Boundaries. "));
 }
-void SliceEditor::paint(juce::Graphics& g) {
-    g.fillAll(juce::Colour(0xff18202a));g.setColour(juce::Colours::white);g.setFont(22.0f);
-    g.drawText("LSampler-24 - Slice Edit",20,14,getWidth()-40,34,juce::Justification::centredLeft);
-    g.setFont(17.0f);
-    const juce::String pageName=page==Page::boundaries?"Boundaries":page==Page::globals?"Global Slice Settings":"Slice Sequencer";
-    g.drawText(pageName+" / Slot "+juce::String(slot+1),20,62,getWidth()-40,30,juce::Justification::centredLeft);
-    g.drawFittedText(line,getLocalBounds().reduced(20).withTrimmedTop(100).withHeight(120),juce::Justification::centredLeft,4);
-    g.setFont(14.0f);
-    g.drawFittedText("1/2/3 or Tab: page | Arrows/Home/End: navigate (page 1: 8-row grid) | Alt+Up/Down: value | Alt+PgUp/PgDn: coarse value\nAlt+Left/Right: value step | Alt+Home/End: max/min | Enter: type value\nSpace: normal preview On/Off; when Off, slice/step navigation and edits auto-audition | F1: help | Escape: close",20,getHeight()-110,getWidth()-40,90,juce::Justification::centredLeft,4);
+void SliceEditor::refreshVisuals() {
+    const auto snapshot=processor.getVisualSlotState(slot);
+    const int physical=page==Page::steps?int(snapshot.slice.steps[size_t(item)][SliceP::source])-1:item;
+    waveform.update(snapshot,page==Page::globals?-1:physical,page==Page::boundaries?boundarySide:-1);
+    overview.state=snapshot.slice;overview.page=page==Page::globals?0:page==Page::steps?1:2;
+    overview.current=item;overview.property=property;overview.global=global;overview.selected=selected;overview.repaint();
+    currentEdit.category=page==Page::globals?"Global Slice Settings":page==Page::steps?"Slice Sequencer":"Boundaries";
+    currentEdit.name=currentLine();currentEdit.value="Slot "+juce::String(slot+1)+" / "+juce::String(count())+" slices";currentEdit.repaint();
 }
-void SliceEditor::resized(){number.setBounds(20,getHeight()/2,getWidth()-40,40);}
+void SliceEditor::paint(juce::Graphics& g) {
+    g.fillAll(rackgui::chassis);rackgui::caption(g,{20,14,getWidth()-40,32},"LSampler-24 / SLICE EDIT");
+    g.setColour(rackgui::muted);g.setFont(14.0f);
+    g.drawFittedText("1/2/3 or Tab: page | Arrows/Home/End: navigate (page 1: 8-row grid) | Alt+Up/Down: value | Alt+PgUp/PgDn: coarse value\nAlt+Left/Right: value step | Alt+Home/End: max/min | Enter: type value\nSpace: normal preview On/Off; when Off, slice/step navigation and edits auto-audition | F1: help | Escape: close",20,getHeight()-100,getWidth()-40,86,juce::Justification::centredLeft,4);
+}
+void SliceEditor::resized(){
+    waveform.setBounds(20,58,getWidth()-40,310);
+    currentEdit.setBounds(20,380,getWidth()-40,124);
+    overview.setBounds(20,516,getWidth()-40,getHeight()-626);
+    number.setBounds(34,464,getWidth()-68,32);number.toFront(false);
+}
 void SliceEditor::pushUndo() {
     undo.push_back(processor.getSliceState(slot));if(undo.size()>64)undo.pop_front();redo.clear();
 }

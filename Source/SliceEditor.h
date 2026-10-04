@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "PluginProcessor.h"
+#include "RackGui.h"
 #include <bitset>
 #include <deque>
 
@@ -17,9 +18,13 @@ public:
     void resized() override;
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
     void announceEntry();
+    void refreshVisuals();
     void focusLost(FocusChangeType) override;
     void focusOfChildComponentChanged(FocusChangeType) override;
 private:
+    rackgui::Waveform waveform;
+    rackgui::SliceOverview overview;
+    rackgui::CurrentParameter currentEdit;
     enum class Page { globals, steps, boundaries };
     class NumberEditor final : public juce::TextEditor {
     public:

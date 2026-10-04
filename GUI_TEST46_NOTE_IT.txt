@@ -1,0 +1,97 @@
+LSampler-24 — TEST46 Vintage Rack GUI
+====================================
+Sorgente completo, derivato esclusivamente da GRID_MEMORY_REOPEN_TEST45.
+NON è stata eseguita alcuna compilazione, configurazione CMake o GitHub Actions.
+Non sono stati creati binari. Il PNG è stato esaminato solo come riferimento estetico.
+
+CHANGELOG TECNICO
+- Tema JUCE riutilizzabile: graphite, display verde, accenti ambra.
+- Finestra fissa 1120 x 800: layout prevedibile, nessuna nuova logica responsive.
+- Waveform del campione in RAM, anche dopo il ritaglio: cache min/max di 1024
+  intervalli, calcolata sul thread GUI solo quando cambia l'oggetto campione.
+  I canali sono sovrapposti in un unico inviluppo min/max; non è un editor stereo separato.
+- Marker Sample Start/End/Play Start, area effettiva delle soglie, loop corrente
+  quando pertinente, boundaries Slice e selezione del Slice editor.
+- Slot accessibili originali ridisegnati senza sostituirli. Nel modo parametri
+  un riepilogo esclusivamente visivo mantiene leggibili tutti i 24 slot.
+- Area contestuale categoria/nome/valore sopra combo e slider originali.
+- Slice: Global Slice Settings, Slice Sequencer, Boundaries nello stesso ordine.
+  Sequencer con vista di 16 step che segue il cursore, Source Slice, Repeat,
+  mute, selezioni e step corrente. Non è un indicatore della posizione DSP in esecuzione.
+- Master: gain, Output Stage, Glue, Soft Drive, Ceiling e meter stereo dBFS
+  del bus principale dopo lo stadio d'uscita. Decadimento visivo a 10 Hz.
+  Non rappresenta i bus separati né una misura di gain reduction.
+  Con Output Stage Off viene indicata correttamente la protezione legacy 0.98.
+- Snapshot GUI in sola lettura sotto stateLock, proprietario shared_ptr<const>
+  per leggere l'audio fuori dal lock; nessuna modifica ai campioni.
+- Due atomiche raccolgono i picchi finali. Nessun parametro audio, DSP,
+  routing, MIDI o serializzazione è stato modificato per alimentare il display.
+
+FILE E CLASSI
+Nuovo: Source/RackGui.h
+  rackgui::Theme: palette JUCE.
+  rackgui::Display: base non interattiva, non accessibile, senza focus.
+  rackgui::Waveform: waveform e marker.
+  rackgui::SlotOverview: riepilogo visivo 24 slot.
+  rackgui::CurrentParameter: categoria, parametro e valore.
+  rackgui::SliceOverview: pagine Slice e step contestuali.
+  rackgui::MasterOutput: parametri master e meter.
+Modificati:
+  Source/PluginEditor.h/.cpp — LSamplerSlotCell e
+    LSampler24AudioProcessorEditor: stile, componenti e layout; refresh visivo.
+  Source/SliceEditor.h/.cpp — SliceEditor: layout e visualizzazione;
+    gestori di editing/tastiera non modificati.
+  Source/PluginProcessor.h/.cpp — LSampler24AudioProcessor:
+    VisualSlotState, getter read-only e osservazione picchi finali.
+  CMakeLists.txt — aggiunto soltanto Source/RackGui.h alla lista sorgenti.
+  GUI_TEST46_NOTE_IT.txt — questo documento.
+
+LAYOUT
+Testata con identità del sampler. A sinistra 3 colonne x 8 slot, con numero,
+nome logico, presenza campione e stato corrente; sotto i pulsanti originali
+Load Sample, Load Slot, Save Slot, Load Bank e Save Bank in due righe.
+A destra waveform dominante e area di editing contestuale, con combo/slider
+originali nel modo Alt+L/Global. In basso Slice a sinistra, Master a destra.
+I browser mantengono i controlli originali su una superficie dedicata.
+Alt+E apre la superficie modale Slice: waveform larga sopra, contesto corrente
+al centro, visualizzazione della pagina sotto, guida tasti in fondo.
+
+ACCESSIBILITA'
+I nuovi display hanno setAccessible(false), setWantsKeyboardFocus(false) e
+setInterceptsMouseClicks(false,false). Non aggiungono handler, key listener,
+scorciatoie, callback di editing o eventi di accessibilità. Nessuna funzione
+nuova mouse-only. I controlli reali originali e il loro ordine di focus restano
+operativi, compreso l'editor numerico specializzato del Value slider.
+Rimangono invariati gestori tastiera, annunci, titoli accessibili, griglia,
+memoria runtime per slot, bordi silenziosi, browser e modalità esclusive.
+La disposizione 3 x 8 corrisponde alla navigazione frecce preesistente.
+Il riepilogo slot nel modo parametri è informativo: la selezione segue i
+comandi originali. Nessun nuovo comando o pulsante finto.
+
+VERIFICHE E LIMITI
+Confronto byte per byte con archivio originale: tutti i file originali diversi
+dai sette file di implementazione sopra elencati sono invariati, compresi DSP
+Slice, voci, parametri, preset, bank, sample pool e workflow GitHub Actions.
+Confronto statico delle funzioni tastiera/accessibilità/editing principali:
+identiche alla base. applyOutputStage identico. Nessuna build eseguita.
+Il controllo statico non sostituisce compilazione e verifica runtime.
+Non è stato possibile renderizzare la GUI JUCE senza compilare: nessuna
+screenshot o anteprima viene presentata come immagine della GUI effettiva.
+
+DOPO LA BUILD GITHUB ACTIONS
+1. Verificare apertura in REAPER, dimensione 1120 x 800, DPI/scaling di Windows,
+   leggibilità, ritagli dei testi lunghi e menu a comparsa nel nuovo tema.
+2. Controllare tutti i 24 slot (3 colonne x 8), selezione ambra e LED campione.
+3. Caricare mono/stereo, file lunghi, slot vuoti e audio ritagliato/salvato:
+   waveform e durata devono riferirsi all'audio realmente presente in RAM.
+4. Muovere Start/End/Play Start, soglie e loop corrente: verificare posizioni
+   dei marker, soprattutto quando sono molto vicini o coincidono.
+5. Alt+E: verificare le tre pagine, fino a 128 slice; evidenziazione boundary,
+   selezioni e viewport step quando il cursore attraversa gruppi di 16.
+6. Verificare master/metri in playback e pausa, stage On/Off, bus 1/2 e routing
+   separato. I meter misurano solo 1/2; non devono fingere attività di altri bus.
+7. Con NVDA ripetere Alt+L/Alt+V, manual edit ed Esc, Alt+E, browser,
+   scorciatoie, modalità esclusive, bordi silenziosi e riapertura editor:
+   nessun annuncio aggiuntivo dei display, memoria griglia ancora presente.
+8. Ascoltare i preset abituali e verificare che playback e uscita coincidano
+   con TEST45. Nessun DSP è stato ridisegnato.

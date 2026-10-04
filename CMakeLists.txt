@@ -38,6 +38,7 @@ target_sources(LSampler24 PRIVATE
     Source/PluginProcessor.h
     Source/PluginEditor.cpp
     Source/PluginEditor.h
+    Source/RackGui.h
     Source/ScreenReaderAnnouncer.cpp
     Source/ScreenReaderAnnouncer.h
     Source/SamplePool.cpp

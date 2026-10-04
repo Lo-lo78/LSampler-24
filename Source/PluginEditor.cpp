@@ -96,7 +96,7 @@ class ValueLookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
     explicit ValueLookAndFeel(ValueEditorShortcut shortcutToUse)
-        : shortcut(std::move(shortcutToUse)) {}
+        : shortcut(std::move(shortcutToUse)) { rackgui::Theme::apply(*this); }
 
     juce::Label* createSliderTextBox(juce::Slider& slider) override
     {
@@ -117,7 +117,10 @@ private:
 LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioProcessor& p)
     : AudioProcessorEditor(&p), processor(p)
 {
-    setSize(760, 520);
+    setLookAndFeel(&rackTheme);
+    for (auto* display : std::array<juce::Component*,5>{ &waveform, &slotOverview, &currentEdit, &sliceOverview, &masterOutput })
+        addAndMakeVisible(*display);
+    setSize(1120, 800);
 
     for (int i = 0; i < static_cast<int>(slotCells.size()); ++i)
     {
@@ -251,86 +254,74 @@ LSampler24AudioProcessorEditor::~LSampler24AudioProcessorEditor()
 {
     if(sliceEditor){sliceEditor->exitModalState(0);sliceEditor.reset();}
     parameterValue.setLookAndFeel(nullptr);
+    setLookAndFeel(nullptr);
 }
 
 void LSampler24AudioProcessorEditor::paint(juce::Graphics& g)
 {
-    g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
-    g.setColour(getLookAndFeel().findColour(juce::Label::textColourId));
-    g.setFont(20.0f);
-    g.drawText(globalOpen ? "LSampler-24 - Global" : "LSampler-24 - 24 Slots", 16, 12, getWidth() - 32, 28, juce::Justification::centredLeft);
+    g.fillAll(rackgui::chassis);
+    rackgui::caption(g, {20, 12, getWidth()-40, 26}, "LSampler-24  /  DIGITAL SAMPLING WORKSTATION");
+    g.setColour(rackgui::muted);g.setFont(12.0f);
+    g.drawText("24 SLOTS   •   SAMPLE / SLICE / MULTI OUTPUT",20,40,getWidth()-40,18,juce::Justification::centredLeft);
+    if(!importBrowserActive && !slotLibraryActive) {
+        rackgui::frame(g, {16,72,352,490}, "SLOTS / 01–24");
+        g.setColour(rackgui::muted);g.setFont(13.0f);
+        g.drawText(parameterPage?"Alt+L Grid  /  Alt+V Value  /  Alt+E Slice":"Alt+L Edit slot  /  Alt+E Slice",384,588,getWidth()-400,24,juce::Justification::centredLeft);
+    }
 }
 
 void LSampler24AudioProcessorEditor::resized()
 {
     if(sliceEditor)sliceEditor->setBounds(getLocalBounds());
-    auto area = getLocalBounds().reduced(16);
-    area.removeFromTop(42);
-
-    if (slotLibraryActive)
-    {
-        slotLibraryCell.setBounds(area.removeFromTop(42));
-        area.removeFromTop(10);
-        auto libraryButtons = area.removeFromTop(36);
-        const int gap = 8;
-        const int w = (libraryButtons.getWidth() - gap) / 2;
-        exportLibraryButton.setBounds(libraryButtons.removeFromLeft(w));
-        libraryButtons.removeFromLeft(gap);
-        importLibraryButton.setBounds(libraryButtons);
+    const bool browser=importBrowserActive||slotLibraryActive;
+    for(auto* display:std::array<juce::Component*,4>{ &waveform,&currentEdit,&sliceOverview,&masterOutput })display->setVisible(!browser);
+    slotOverview.setVisible(!browser && parameterPage);
+    if(browser) {
+        auto area=getLocalBounds().reduced(20).withTrimmedTop(60);
+        auto& browserCell=slotLibraryActive?slotLibraryCell:importBrowserCell;
+        browserCell.setBounds(area.removeFromTop(60));area.removeFromTop(12);
+        auto buttons=area.removeFromTop(36);
+        if(importBrowserActive) {importSourceCombo.setBounds(buttons.removeFromLeft(250));buttons.removeFromLeft(10);}
+        exportLibraryButton.setBounds(buttons.removeFromLeft(250));buttons.removeFromLeft(10);
+        importLibraryButton.setBounds(buttons.removeFromLeft(250));
         return;
     }
+    waveform.setBounds(384,72,getWidth()-400,294);
+    slotOverview.setBounds(16,72,352,490);
+    const auto grid=juce::Rectangle<int>(28,114,328,436);
+    for(int col=0;col<3;++col)for(int row=0;row<8;++row)
+        slotCells[size_t(col*8+row)].setBounds(grid.getX()+col*110,grid.getY()+row*54,104,50);
+    currentEdit.setBounds(384,378,getWidth()-400,200);
+    parameterSelector.setBounds(398,504,getWidth()-428,30);
+    parameterValue.setBounds(398,540,getWidth()-428,30);
+    const std::array<juce::TextButton*,5> buttons { &loadSample,&loadSlot,&saveSlot,&loadBank,&saveBank };
+    for(int i=0;i<5;++i)buttons[size_t(i)]->setBounds(16+(i%3)*118,574+(i/3)*36,114,32);
+    sliceOverview.setBounds(16,650,540,126);
+    masterOutput.setBounds(568,650,getWidth()-584,126);
+    status.setBounds(16, getHeight()-18, getWidth()-32, 18);
+    refreshVisuals();
+}
 
-    if (importBrowserActive)
-    {
-        importBrowserCell.setBounds(area.removeFromTop(42));
-        area.removeFromTop(10);
-        auto importButtons = area.removeFromTop(36);
-        const int gap = 8;
-        const int w = (importButtons.getWidth() - gap * 2) / 3;
-        importSourceCombo.setBounds(importButtons.removeFromLeft(w));
-        importButtons.removeFromLeft(gap);
-        exportLibraryButton.setBounds(importButtons.removeFromLeft(w));
-        importButtons.removeFromLeft(gap);
-        importLibraryButton.setBounds(importButtons);
-        return;
+void LSampler24AudioProcessorEditor::refreshVisuals()
+{
+    if(importBrowserActive||slotLibraryActive)return;
+    const int slot=processor.getCurrentSlot();
+    const auto snapshot=processor.getVisualSlotState(slot);
+    waveform.update(snapshot,-1,-1,selectedLoop);
+    slotOverview.current=slot;
+    for(int i=0;i<24;++i) {
+        const auto name=processor.getSlotName(i);
+        slotOverview.names[size_t(i)]=name.isNotEmpty()?name:(processor.slotHasSample(i)?"Sample":"Empty");
+        slotOverview.loaded[size_t(i)]=processor.slotHasSample(i);
     }
-
-    if (!parameterPage)
-    {
-        auto grid = area.removeFromTop(8 * 34);
-        const int gap = 4;
-        const int colWidth = (grid.getWidth() - gap * 2) / 3;
-        for (int col = 0; col < 3; ++col)
-        {
-            auto colArea = grid.removeFromLeft(colWidth);
-            if (col < 2) grid.removeFromLeft(gap);
-            for (int row = 0; row < 8; ++row)
-            {
-                const int index = col * 8 + row;
-                slotCells[static_cast<size_t>(index)].setBounds(colArea.removeFromTop(32));
-                colArea.removeFromTop(2);
-            }
-        }
-
-        area.removeFromTop(10);
-        auto buttons = area.removeFromTop(36);
-        const int w = (buttons.getWidth() - gap * 4) / 5;
-        loadSample.setBounds(buttons.removeFromLeft(w)); buttons.removeFromLeft(gap);
-        loadSlot.setBounds(buttons.removeFromLeft(w)); buttons.removeFromLeft(gap);
-        saveSlot.setBounds(buttons.removeFromLeft(w)); buttons.removeFromLeft(gap);
-        loadBank.setBounds(buttons.removeFromLeft(w)); buttons.removeFromLeft(gap);
-        saveBank.setBounds(buttons);
-
-        area.removeFromTop(10);
-        status.setBounds(area.removeFromTop(28));
-    }
-    else
-    {
-        status.setBounds(area.removeFromBottom(28));
-        parameterSelector.setBounds(area.removeFromTop(42));
-        area.removeFromTop(10);
-        parameterValue.setBounds(area.removeFromTop(42));
-    }
+    slotOverview.repaint();
+    currentEdit.category=parameterPage?juce::String(selectedEntry().category):"Slot "+juce::String(slot+1);
+    currentEdit.name=parameterPage?selectedParameterName():"Select a parameter with Alt+L";
+    currentEdit.value=parameterPage?selectedParameterValueText():processor.getSlotName(slot);
+    currentEdit.repaint();sliceOverview.state=snapshot.slice;sliceOverview.repaint();
+    for(int i=0;i<5;++i)masterOutput.values[size_t(i)]=processor.getGlobalOutputParameter(static_cast<lsampler::GlobalP>(i));
+    for(int ch=0;ch<2;++ch)masterOutput.peaks[size_t(ch)]=std::max(processor.consumeVisualPeak(ch),masterOutput.peaks[size_t(ch)]*.75f);
+    masterOutput.repaint();
 }
 
 void LSampler24AudioProcessorEditor::selectSlot(int slotIndex, bool moveKeyboardFocus)
@@ -374,6 +365,8 @@ void LSampler24AudioProcessorEditor::refreshSlotCells()
         auto& cell = slotCells[static_cast<size_t>(i)];
         const auto label = processor.getSlotLabel(i);
         cell.setSlotText(label);
+        const auto name=processor.getSlotName(i);
+        cell.setVisualState(i+1,name.isNotEmpty()?name:(processor.slotHasSample(i)?"Sample":"Empty"),processor.slotHasSample(i),i==selected);
         cell.setWantsKeyboardFocus(!parameterPage && i == selected);
     }
 }
@@ -1499,7 +1492,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
 void LSampler24AudioProcessorEditor::timerCallback()
 {
-    if(sliceEditor)return;
+    if(sliceEditor){sliceEditor->refreshVisuals();return;}
+    refreshVisuals();
     status.setText(processor.getSampleStatus(), juce::dontSendNotification);
     refreshSlotCells();
     if (parameterPage)

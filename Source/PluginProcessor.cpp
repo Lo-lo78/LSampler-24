@@ -537,6 +537,13 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     }
 
     applyOutputStage(buffer, routes);
+    // Tap the final main stereo bus without changing a sample or DSP state.
+    for (int channel = 0; channel < juce::jmin(2, buffer.getNumChannels()); ++channel) {
+        const float peak = buffer.getMagnitude(channel, 0, buffer.getNumSamples());
+        auto& meter = visualPeaks[size_t(channel)];
+        float old = meter.load(std::memory_order_relaxed);
+        while (peak > old && !meter.compare_exchange_weak(old, peak, std::memory_order_relaxed)) {}
+    }
     midi.clear();
     if (previewPlaying && !voicePool.hasPreviewVoices(previewPlayingSlot)) { previewPlaying = false; previewPlayingSlot = -1; }
 }
@@ -1874,4 +1881,12 @@ void LSampler24AudioProcessor::requestSlicePreview(int slot,int kind,int item,bo
     const int command=juce::jlimit(0,5,kind)|(juce::jlimit(0,slotCount-1,slot)<<3)
         |(juce::jlimit(0,127,item)<<8)|(toggle?(1<<15):0);
     slicePreviewCommand.store(command,std::memory_order_release);
+}
+
+LSampler24AudioProcessor::VisualSlotState LSampler24AudioProcessor::getVisualSlotState(int slot) const
+{
+    const juce::ScopedLock lock(stateLock);
+    const auto& source = slots[size_t(juce::jlimit(0, slotCount - 1, slot))];
+    return { source.sample, source.parameters, source.slice,
+             source.thresholdStartFrame, source.thresholdEndFrame, source.slotName };
 }

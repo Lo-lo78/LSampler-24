@@ -3,6 +3,7 @@
 #include <map>
 #include "PluginProcessor.h"
 #include "SliceEditor.h"
+#include "RackGui.h"
 #include <array>
 #include <functional>
 #include <vector>
@@ -23,11 +24,17 @@ public:
 
     const juce::String& getSlotText() const noexcept { return slotText; }
 
-    void paint(juce::Graphics& g) override
-    {
-        g.setColour(findColour(juce::Label::textColourId));
-        g.setFont(15.0f);
-        g.drawText(slotText, getLocalBounds().reduced(4, 0), juce::Justification::centredLeft, true);
+    void setVisualState(int number, const juce::String& name, bool loaded, bool selected) {
+        visualNumber=number; visualName=name; visualLoaded=loaded; visualSelected=selected; repaint();
+    }
+    void paint(juce::Graphics& g) override {
+        auto r=getLocalBounds().reduced(1);
+        g.setColour(visualSelected?juce::Colour(0xff4b4034):rackgui::screen);g.fillRoundedRectangle(r.toFloat(),3);
+        g.setColour(visualSelected||hasKeyboardFocus(true)?rackgui::amber:rackgui::muted);g.drawRoundedRectangle(r.toFloat().reduced(.5f),3,hasKeyboardFocus(true)?2.0f:1.0f);
+        g.setColour(visualLoaded?rackgui::green:rackgui::muted.withAlpha(.4f));g.fillEllipse(float(r.getRight()-10),float(r.getY()+7),4,4);
+        g.setColour(visualSelected?rackgui::amber:rackgui::text);g.setFont(13.0f);
+        g.drawText(juce::String(visualNumber).paddedLeft('0',2),r.reduced(6).withHeight(18),juce::Justification::centredLeft);
+        g.setColour(rackgui::muted);g.setFont(12.0f);g.drawText(visualName,r.reduced(6).withTrimmedTop(19),juce::Justification::centredLeft,true);
     }
 
     void mouseDown(const juce::MouseEvent&) override
@@ -38,7 +45,9 @@ public:
     }
 
 private:
-    juce::String slotText;
+    juce::String slotText, visualName;
+    int visualNumber=1;
+    bool visualLoaded=false,visualSelected=false;
 };
 
 class LSamplerParameterComboBox final : public juce::ComboBox
@@ -195,6 +204,13 @@ public:
     bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
 
 private:
+    rackgui::Theme rackTheme;
+    rackgui::Waveform waveform;
+    rackgui::SlotOverview slotOverview;
+    rackgui::CurrentParameter currentEdit;
+    rackgui::SliceOverview sliceOverview;
+    rackgui::MasterOutput masterOutput;
+    void refreshVisuals();
     std::unique_ptr<SliceEditor> sliceEditor;
     juce::Component::SafePointer<juce::Component> sliceReturnFocus;
     void openSliceEditor(bool sequencer);
