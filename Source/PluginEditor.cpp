@@ -502,7 +502,8 @@ void LSampler24AudioProcessorEditor::enterSlotParameters()
     parameterSelector.setVisible(true);
     parameterValue.setVisible(true);
     const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
-    selectedParameter = juce::jlimit(0, normalGridSize - 1, selectedParameter);
+    selectedParameter = juce::jlimit(0, normalGridSize - 1,
+                                     processor.getSlotGridPosition(processor.getCurrentSlot()));
     parameterSelector.setSelectedItemIndex(selectedParameter, juce::dontSendNotification);
     refreshParameterGrid();
     resized();
@@ -514,7 +515,10 @@ void LSampler24AudioProcessorEditor::leaveSlotParameters()
 {
     const int currentGridIndex = parameterSelector.getSelectedItemIndex();
     if (currentGridIndex >= 0)
+    {
         selectedParameter = currentGridIndex;
+        processor.setSlotGridPosition(processor.getCurrentSlot(), selectedParameter);
+    }
     processor.requestPreviewStop();
     parameterPage = false;
     parameterSelector.setVisible(false);
@@ -601,6 +605,8 @@ void LSampler24AudioProcessorEditor::selectParameter(int index, bool announce)
     index = juce::jlimit(minimumIndex, maximumIndex, index);
     if(index==selectedParameter)return;
     selectedParameter = index;
+    if (!globalOpen)
+        processor.setSlotGridPosition(processor.getCurrentSlot(), selectedParameter);
     parameterSelector.setSelectedItemIndex(globalOpen ? selectedParameter - normalGridSize : selectedParameter,
         announce ? juce::sendNotificationSync : juce::dontSendNotification);
     configureValueForSelectedParameter();
@@ -1141,7 +1147,11 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         const int next = current + (code == juce::KeyPress::upKey ? -1 : 1);
         if (next >= 0 && next < LSampler24AudioProcessor::slotCount)
         {
+            processor.setSlotGridPosition(current, selectedParameter);
             processor.setCurrentSlot(next);
+            const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
+            selectedParameter = juce::jlimit(0, normalGridSize - 1, processor.getSlotGridPosition(next));
+            parameterSelector.setSelectedItemIndex(selectedParameter, juce::dontSendNotification);
             refreshSlotCells();
             refreshParameterGrid();
             configureValueForSelectedParameter();
@@ -1434,14 +1444,31 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     if (code == juce::KeyPress::deleteKey)
     {
         if (mods.isAltDown())
+        {
             processor.clearBank();
+            refreshSlotCells();
+            lsampler::announceToActiveScreenReader(slotCells[static_cast<size_t>(currentSlot)], "Bank cleared");
+        }
         else
+        {
             processor.clearCurrentSlot();
-        announceCurrentSlot();
+            refreshSlotCells();
+            lsampler::announceToActiveScreenReader(slotCells[static_cast<size_t>(currentSlot)],
+                                                   "Slot " + juce::String(currentSlot + 1) + " cleared");
+        }
         return true;
     }
 
-    if (code == juce::KeyPress::returnKey) { enterSlotParameters(); return true; }
+    if (code == juce::KeyPress::returnKey)
+    {
+        if (!processor.slotHasSample(currentSlot))
+        {
+            lsampler::announceToActiveScreenReader(slotCells[static_cast<size_t>(currentSlot)], "Empty slot");
+            return true;
+        }
+        enterSlotParameters();
+        return true;
+    }
     if (mods.isCtrlDown() && code == juce::KeyPress::homeKey) { selectSlot(0, true); return true; }
     if (mods.isCtrlDown() && code == juce::KeyPress::endKey)
     {

@@ -72,6 +72,9 @@ public:
     bool pasteCurrentSlot();
     void clearCurrentSlot();
     void clearBank();
+    bool slotHasSample(int slotIndex) const;
+    int getSlotGridPosition(int slotIndex) const noexcept;
+    void setSlotGridPosition(int slotIndex, int gridIndex) noexcept;
 
     int getCurrentSlot() const noexcept { return currentSlot.load(std::memory_order_relaxed); }
     void setCurrentSlot(int slotIndex);
@@ -159,6 +162,8 @@ private:
     std::unique_ptr<std::array<SlotState,slotCount>> slotStorage=std::make_unique<std::array<SlotState,slotCount>>();
     std::array<SlotState,slotCount>& slots=*slotStorage;
     std::atomic<int> currentSlot { 0 };
+    // UI working memory only. Deliberately excluded from plugin/project/preset state.
+    std::array<std::atomic<int>, slotCount> slotGridPositions {};
     std::atomic<bool> previewToggleRequested { false };
     std::atomic<bool> previewStopRequested { false };
     std::atomic<bool> previewRestartRequested { false };

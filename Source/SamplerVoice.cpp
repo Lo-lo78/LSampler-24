@@ -150,6 +150,13 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
     if(!s.sample||s.length<1||s.sample->peak<1e-12)return;
     if(!preview)held[size_t(channel)][size_t(note)]={++noteCounter,velocity};
     const bool mono=p[P::polyphony]==0;
+    // Optional per-slot voice economy/retrigger mode.  A new Note On for the
+    // same MIDI note replaces any older voice of that note in this slot, even
+    // when sustain is holding it. Other notes and other slots are untouched.
+    if(!mono && !preview && !sliceMidiPad && p[P::same_note_replace]!=0)
+        for(auto& existing:voices)
+            if(existing.active && !existing.preview && existing.slotIndex==slot && existing.note==note)
+                stop(existing);
     if(!mono&&!preview&&!sliceMidiPad&&p[P::retrigger_smooth]>0)
         for(auto& existing:voices)if(existing.active&&!existing.preview&&existing.slotIndex==slot) {
             existing.channel=channel;retarget(existing,note,velocity,s,true);return;

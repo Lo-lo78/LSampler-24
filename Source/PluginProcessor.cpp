@@ -926,6 +926,25 @@ void LSampler24AudioProcessor::clearBank()
     stopVoicesMask.fetch_or(0xffffffu, std::memory_order_release);
 }
 
+bool LSampler24AudioProcessor::slotHasSample(int slotIndex) const
+{
+    slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
+    const juce::ScopedLock lock(stateLock);
+    return slots[static_cast<size_t>(slotIndex)].sample != nullptr;
+}
+
+int LSampler24AudioProcessor::getSlotGridPosition(int slotIndex) const noexcept
+{
+    slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
+    return slotGridPositions[static_cast<size_t>(slotIndex)].load(std::memory_order_relaxed);
+}
+
+void LSampler24AudioProcessor::setSlotGridPosition(int slotIndex, int gridIndex) noexcept
+{
+    slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
+    slotGridPositions[static_cast<size_t>(slotIndex)].store(juce::jmax(0, gridIndex), std::memory_order_relaxed);
+}
+
 juce::File LSampler24AudioProcessor::getCurrentSampleFile() const
 {
     const juce::ScopedLock lock(stateLock);

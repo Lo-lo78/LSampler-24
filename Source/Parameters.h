@@ -17,6 +17,7 @@ enum class P {
     portamento,
     legato,
     sustain_pedal,
+    same_note_replace,
     pitch_bend_range,
     mode,
     output_route,
@@ -155,7 +156,7 @@ enum class P {
     count
 };
 enum class L { start, end, repeats, fade_in, fade_out, pitch_down, lp_down, hp_down, one_shot, count };
-inline constexpr int parameterCount = 142, loopParameterCount = 9, loopCount = 10;
+inline constexpr int parameterCount = 143, loopParameterCount = 9, loopCount = 10;
 inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"input_gain", "Level", "Slot", Kind::continuous, 0.0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""},
 {"polyphony", "Voice Mode", "Slot", Kind::enumeration, 1.0, 0.0, 1.0, 1.0, 1.0, "", 0, "Mono|Poly"},
@@ -164,6 +165,7 @@ inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"portamento", "Portamento", "Slot", Kind::integer, 0.0, 0.0, 1000.0, 1.0, 25.0, "ms", 0, ""},
 {"legato", "Legato", "Slot", Kind::enumeration, 1.0, 0.0, 1.0, 1.0, 1.0, "", 0, "Off|On"},
 {"sustain_pedal", "Sustain Pedal", "Slot", Kind::enumeration, 0.0, 0.0, 1.0, 1.0, 1.0, "", 0, "Off|On"},
+{"same_note_replace", "Same Note Replace", "Slot", Kind::enumeration, 0.0, 0.0, 1.0, 1.0, 1.0, "", 0, "Off|On"},
 {"pitch_bend_range", "Pitch Bend Range", "Slot", Kind::continuous, 2.0, 0.0, 48.0, 0.1, 1.0, "semitones", 1, ""},
 {"mode", "Audio", "Slot", Kind::enumeration, 1.0, 0.0, 1.0, 1.0, 1.0, "", 0, "Mono|Stereo"},
 {"output_route", "Slot Output", "Slot", Kind::enumeration, 0.0, 0.0, 24.0, 1.0, 1.0, "", 0, "Main 1/2|Out 3/4|Out 5/6|Out 7/8|Out 9/10|Out 11/12|Out 13/14|Out 15/16|Out 17/18|Out 19/20|Out 21/22|Out 23/24|Out 25/26|Out 27/28|Out 29/30|Out 31/32|Out 33/34|Out 35/36|Out 37/38|Out 39/40|Out 41/42|Out 43/44|Out 45/46|Out 47/48|Out 49/50"},
@@ -322,7 +324,7 @@ inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 }};
 enum class Action { none, sampleZero, loopZero };
 struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; int global = -1; };
-inline constexpr std::array<GridEntry, 160> grid {{
+inline constexpr std::array<GridEntry, 161> grid {{
 {int(P::input_gain), -1, Action::none, "Slot"},
 {int(P::polyphony), -1, Action::none, "Slot"},
 {int(P::slot_polyphony), -1, Action::none, "Slot"},
@@ -330,6 +332,7 @@ inline constexpr std::array<GridEntry, 160> grid {{
 {int(P::portamento), -1, Action::none, "Slot"},
 {int(P::legato), -1, Action::none, "Slot"},
 {int(P::sustain_pedal), -1, Action::none, "Slot"},
+{int(P::same_note_replace), -1, Action::none, "Slot"},
 {int(P::pitch_bend_range), -1, Action::none, "Slot"},
 {int(P::mode), -1, Action::none, "Slot"},
 {int(P::output_route), -1, Action::none, "Slot"},

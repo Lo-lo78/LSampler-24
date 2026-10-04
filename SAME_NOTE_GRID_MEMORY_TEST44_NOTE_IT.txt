@@ -1,0 +1,8 @@
+LSampler-24 TEST44
+
+- Added per-slot Same Note Replace, Off/On. When On in Poly mode, a new Note On hard-replaces older active voices of the same MIDI note in the same slot, including sustain-held voices. Other notes/slots are untouched.
+- Main-grid cursor is remembered in Processor RAM separately for each of the 24 slots. It is intentionally not serialized into project, bank or slot presets.
+- Ctrl+Up/Down while the grid is open stores/restores the remembered cursor for each slot.
+- Enter on an empty slot no longer opens the parameter grid and announces Empty slot.
+- Delete announces Slot N cleared. Alt+Delete announces Bank cleared.
+- No build was run.
