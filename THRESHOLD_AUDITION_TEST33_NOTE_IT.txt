@@ -1,0 +1,13 @@
+LSampler-24 TEST33 — Threshold RAM window + Start/End audition
+
+- Portata la logica Start Threshold / End Threshold dal JSFX come finestra efficace non distruttiva nel buffer RAM.
+- Start Threshold default -60 dB; End Threshold default -120 dB (Off), con hold di 65 ms come LBPMCaptureSample.
+- Threshold non modifica il file sorgente, non crea WAV e non compatta il buffer; limita solo i frame effettivi pubblicati al motore.
+- La scansione Threshold viene ricalcolata solo quando cambia sample, Sample Start/End o Threshold, non nel thread audio.
+- Aggiunto End Preview Length: Auto, 50..5000 ms. Auto = 20% della finestra effettiva, minimo 100 ms, massimo 2000 ms.
+- Editing Sample Start: audition sempre agganciata al nuovo Start, anche tornando indietro.
+- Editing Sample End: audition sempre della coda immediatamente precedente al nuovo End.
+- Ctrl+Left/Right continua a gestire liberamente Sample Play Start; appena si tocca Start/End l'audition torna agganciata al bordo editato.
+- Alt+O slice resta buffer ritagliato solo in RAM al caricamento; nessun nuovo file viene creato in quel momento.
+- Zero Crossing resta trim reale del buffer RAM e ribasa Start/End/Play Start a 0/100/0.
+- Nessuna compilazione eseguita.

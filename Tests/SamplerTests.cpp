@@ -44,7 +44,7 @@ struct Rig {
 };
 void catalogTests() {
     SlotParameters p;require(p[P::root]==60&&p[P::low]==0&&p[P::high]==127,"Approved mapping defaults");
-    require(parameterCount==139&&loopCount==10,"Catalog size and loop count");
+    require(parameterCount==142&&loopCount==10,"Catalog size and loop count");
     for(int i=0;i<parameterCount;++i) {
         const auto& d=parameters[size_t(i)];require(d.initial>=d.minimum&&d.initial<=d.maximum,"Catalog default in range");
         for(int j=0;j<i;++j)require(std::strcmp(d.key,parameters[size_t(j)].key)!=0,"Unique persistent keys");

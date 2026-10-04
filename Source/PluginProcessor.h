@@ -139,6 +139,8 @@ private:
         juce::File sampleFile;
         juce::String slotName;
         bool sampleAudioModified = false;
+        int thresholdStartFrame = 0;
+        int thresholdEndFrame = 0;
         lsampler::SlotParameters parameters;
         lsampler::SliceState slice;
         juce::String status = "No sample loaded";
@@ -149,6 +151,7 @@ private:
     bool writePreset(const juce::File& file, const juce::ValueTree& tree, juce::String& error) const;
     juce::ValueTree readPreset(const juce::File& file, juce::String& error) const;
     bool materialiseSlotSample(int slotIndex, juce::String& error);
+    void updateThresholdWindow(int slotIndex);
     void markAudioStateDirty();
     void syncAudioStateFromSlots();
 

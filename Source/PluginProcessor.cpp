@@ -98,6 +98,19 @@ bool LSampler24AudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts
     return true;
 }
 
+void LSampler24AudioProcessor::updateThresholdWindow(int slotIndex)
+{
+    slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
+    auto& slot = slots[size_t(slotIndex)];
+    if (!slot.sample || slot.sample->audio.getNumSamples() < 2) {
+        slot.thresholdStartFrame = slot.thresholdEndFrame = 0;
+        return;
+    }
+    const auto w = lsampler::calculateThresholdWindow(slot.parameters, slot.sample.get());
+    slot.thresholdStartFrame = w.start;
+    slot.thresholdEndFrame = w.end;
+}
+
 void LSampler24AudioProcessor::markAudioStateDirty()
 {
     // This function is called only by control/state threads. No audio-thread lock,
@@ -110,7 +123,8 @@ void LSampler24AudioProcessor::markAudioStateDirty()
         if (target.owners[idx] && target.owners[idx] != slots[idx].sample)
             retiredSamples.push_back(target.owners[idx]);
         target.owners[idx] = slots[idx].sample;
-        target.states[idx] = prepareSlotAudioState(slots[idx].parameters, slots[idx].sample.get(), preparedSampleRate, ++nextRevision);
+        target.states[idx] = prepareSlotAudioState(slots[idx].parameters, slots[idx].sample.get(), preparedSampleRate, ++nextRevision,
+                                                slots[idx].thresholdStartFrame, slots[idx].thresholdEndFrame);
         target.states[idx].slice = prepareSliceAudio(slots[idx].slice,target.states[idx].length);
     }
     writerSnapshot = middleSnapshot.exchange(writerSnapshot | 4, std::memory_order_acq_rel) & 3;
@@ -563,6 +577,7 @@ bool LSampler24AudioProcessor::loadSample(const juce::File& file, juce::String& 
         s.slotName = file.getFileNameWithoutExtension();
         s.sampleAudioModified = false;
         s.status = "Loaded: " + file.getFileName();
+        updateThresholdWindow(currentSlot.load());
         markAudioStateDirty();
     }
     return true;
@@ -642,6 +657,7 @@ bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int sl
         slot.parameters[lsampler::P::sample_end] = 100.0;
         slot.parameters[lsampler::P::sample_play_start] = 0.0;
         slot.status = "Loaded: " + file.getFileName();
+        updateThresholdWindow(slotIndex);
         markAudioStateDirty();
     }
     return true;
@@ -704,6 +720,9 @@ void LSampler24AudioProcessor::setSlotParameter(int index,double value,int loop)
     p.set(e,juce::jlimit(0,9,loop),value);
     if (e.parameter == int(P::sample_start) || e.parameter == int(P::sample_end))
         p[P::sample_play_start] = juce::jlimit(p[P::sample_start], p[P::sample_end], p[P::sample_play_start]);
+    if (e.parameter == int(P::sample_start) || e.parameter == int(P::sample_end)
+        || e.parameter == int(P::start_threshold) || e.parameter == int(P::end_threshold))
+        updateThresholdWindow(currentSlot.load());
     for (int i=0;i<2;++i) {
         const P sync=i?P::lfo2_bpm_sync:P::lfo1_bpm_sync, rate=i?P::lfo2_rate:P::lfo1_rate;
         if (p[sync]!=0 && (e.parameter==int(sync)||e.parameter==int(rate)))
@@ -745,13 +764,30 @@ void LSampler24AudioProcessor::requestSampleBoundaryAudition(bool endBoundary)
             return;
 
         const auto& p = slot.parameters;
-        // Sample Start auditions from the new Start itself. Sample End is deliberately
-        // independent: it auditions from the current Sample Play Start, which the
-        // user positions with Ctrl+Left/Right, so tail editing is deterministic.
-        startPercent = endBoundary ? p[P::sample_play_start] : p[P::sample_start];
+        const int total = slot.sample->audio.getNumSamples();
+        if (!endBoundary) {
+            // Always latch Start audition to the newly edited Start. If Start Threshold
+            // moves the effective playback start later, the voice clamps to that frame.
+            startPercent = p[P::sample_start];
+        } else {
+            const int effectiveStart = juce::jlimit(0, total - 2, slot.thresholdStartFrame);
+            const int effectiveEnd = juce::jlimit(effectiveStart + 1, total, slot.thresholdEndFrame);
+            const double sourceRate = slot.sample->sourceSampleRate > 1.0 ? slot.sample->sourceSampleRate : preparedSampleRate;
+            const int choice = juce::jlimit(0, 12, juce::roundToInt(p[P::end_preview_length]));
+            static constexpr double fixedMs[] { 0, 50, 100, 200, 300, 500, 750, 1000, 1500, 2000, 3000, 4000, 5000 };
+            double previewMs = fixedMs[choice];
+            if (choice == 0) {
+                const double activeMs = 1000.0 * (effectiveEnd - effectiveStart) / juce::jmax(1.0, sourceRate);
+                previewMs = juce::jlimit(100.0, 2000.0, activeMs * 0.20);
+            }
+            const int tailFrames = juce::jmax(1, int(std::round(previewMs * .001 * sourceRate)));
+            const int previewStartFrame = juce::jmax(effectiveStart, effectiveEnd - tailFrames);
+            startPercent = 100.0 * previewStartFrame / juce::jmax(1, total);
+        }
     }
     requestPreviewAuditionFromPercent(startPercent);
 }
+
 void LSampler24AudioProcessor::applyZeroCrossing(bool loopWindow,int loopIndex) {
     // A native UI command: no audio-thread scan, bridge, pulse or request/result state.
     const juce::ScopedLock lock(stateLock);
@@ -814,6 +850,7 @@ void LSampler24AudioProcessor::applyZeroCrossing(bool loopWindow,int loopIndex) 
         p[P::sample_start] = 0.0;
         p[P::sample_end] = 100.0;
         p[P::sample_play_start] = 0.0;
+        updateThresholdWindow(currentSlot.load());
     }
     markAudioStateDirty();
 }
@@ -989,6 +1026,7 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
         slot.slotName = tree.getProperty("slotName").toString().trim();
         slot.sampleAudioModified = editedAudio.isValid()&&bool(slot.sample);
         slot.status = statusText;
+        updateThresholdWindow(slotIndex);
         markAudioStateDirty();
     }
 
@@ -1762,7 +1800,8 @@ void LSampler24AudioProcessor::setSliceState(int slot,const lsampler::SliceState
 lsampler::SliceAudioState LSampler24AudioProcessor::getSliceLayout(int slot,int& absoluteStart,double& rate) const {
     const juce::ScopedLock lock(stateLock);
     const auto& s=slots[size_t(juce::jlimit(0,slotCount-1,slot))];
-    const auto audio=prepareSlotAudioState(s.parameters,s.sample.get(),preparedSampleRate,0);
+    const auto audio=prepareSlotAudioState(s.parameters,s.sample.get(),preparedSampleRate,0,
+                                           s.thresholdStartFrame,s.thresholdEndFrame);
     absoluteStart=audio.start;rate=s.sample?s.sample->sourceSampleRate:preparedSampleRate;
     return prepareSliceAudio(s.slice,audio.length);
 }
@@ -1770,7 +1809,8 @@ bool LSampler24AudioProcessor::moveSliceBoundary(int slot,int boundary,int direc
     const juce::ScopedLock lock(stateLock);
     auto& s=slots[size_t(juce::jlimit(0,slotCount-1,slot))];
     if(!s.sample||direction==0)return false;
-    const auto audio=prepareSlotAudioState(s.parameters,s.sample.get(),preparedSampleRate,0);
+    const auto audio=prepareSlotAudioState(s.parameters,s.sample.get(),preparedSampleRate,0,
+                                           s.thresholdStartFrame,s.thresholdEndFrame);
     const auto layout=prepareSliceAudio(s.slice,audio.length);
     if(boundary<=0||boundary>=layout.count||layout.count!=s.slice.division())return false;
     const int lower=layout.boundaries[size_t(boundary-1)]+1,upper=layout.boundaries[size_t(boundary+1)]-1;

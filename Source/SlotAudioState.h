@@ -52,5 +52,8 @@ struct SlotAudioState {
     double crossfade = 0;
 };
 FilterCoefficients filterCoefficients(bool highPass, double hz, double resonance, double sampleRate) noexcept;
-SlotAudioState prepareSlotAudioState(const SlotParameters&, SharedSample*, double sampleRate, uint64_t revision);
+struct ThresholdWindow { int start = 0, end = 0; };
+ThresholdWindow calculateThresholdWindow(const SlotParameters&, SharedSample*) noexcept;
+SlotAudioState prepareSlotAudioState(const SlotParameters&, SharedSample*, double sampleRate, uint64_t revision,
+                                    int effectiveStart = -1, int effectiveEnd = -1);
 } // namespace lsampler

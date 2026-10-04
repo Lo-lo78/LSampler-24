@@ -17,7 +17,59 @@ FilterCoefficients filterCoefficients(bool hp,double hz,double resonance,double 
         c.a1=1/(1+g*(g+k)); c.a2=g*c.a1;c.a3=g*c.a2; }
     return c;
 }
-SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sample,double sr,uint64_t revision) {
+ThresholdWindow calculateThresholdWindow(const SlotParameters& p, SharedSample* sample) noexcept {
+    ThresholdWindow w;
+    if (!sample || sample->audio.getNumSamples() < 2) return w;
+
+    const auto& audio = sample->audio;
+    const int n = audio.getNumSamples();
+    const int visibleStart = std::clamp(int(std::floor(n * p[P::sample_start] * .01)), 0, n - 2);
+    const int visibleEnd = std::clamp(int(std::floor(n * p[P::sample_end] * .01)), visibleStart + 1, n);
+    int effectiveStart = visibleStart;
+    int effectiveEnd = visibleEnd;
+
+    const double startDb = p[P::start_threshold];
+    if (startDb > -119.9) {
+        const double threshold = std::pow(10.0, startDb / 20.0);
+        bool found = false;
+        for (int i = visibleStart; i < visibleEnd && !found; ++i) {
+            double level = 0.0;
+            for (int ch = 0; ch < std::min(2, audio.getNumChannels()); ++ch)
+                level = std::max(level, std::abs(double(audio.getSample(ch, i))));
+            if (level >= threshold) { effectiveStart = i; found = true; }
+        }
+    }
+
+    const double endDb = p[P::end_threshold];
+    if (endDb > -119.9 && visibleEnd > effectiveStart + 1) {
+        const double threshold = std::pow(10.0, endDb / 20.0);
+        const double sourceRate = sample->sourceSampleRate > 1.0 ? sample->sourceSampleRate : 44100.0;
+        int holdFrames = std::max(16, int(std::floor(0.065 * sourceRate)));
+        holdFrames = std::min(holdFrames, visibleEnd - effectiveStart);
+        bool seenHot = false;
+        int silentCount = 0;
+        int firstSilent = -1;
+        for (int i = effectiveStart; i < visibleEnd && effectiveEnd == visibleEnd; ++i) {
+            double level = 0.0;
+            for (int ch = 0; ch < std::min(2, audio.getNumChannels()); ++ch)
+                level = std::max(level, std::abs(double(audio.getSample(ch, i))));
+            if (level >= threshold) {
+                seenHot = true; silentCount = 0; firstSilent = -1;
+            } else if (seenHot) {
+                if (firstSilent < 0) firstSilent = i;
+                if (++silentCount >= holdFrames) effectiveEnd = firstSilent;
+            }
+        }
+    }
+
+    effectiveStart = std::clamp(effectiveStart, visibleStart, visibleEnd - 1);
+    effectiveEnd = std::clamp(effectiveEnd, effectiveStart + 1, visibleEnd);
+    w.start = effectiveStart; w.end = effectiveEnd;
+    return w;
+}
+
+SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sample,double sr,uint64_t revision,
+                                    int effectiveStart,int effectiveEnd) {
     SlotAudioState s; s.params=p;s.sample=sample;s.sampleRate=sr;s.revision=revision;
     auto v=[&](P key){return p[key];};
     auto ms=[&](P key){return v(key)*.001*sr;};
@@ -27,8 +79,13 @@ SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sampl
     s.sourceRatio=sourceRate/sr;
     if (sample && sample->audio.getNumSamples()>=2) {
         const int n=sample->audio.getNumSamples();
-        s.start=std::clamp(int(std::floor(n*v(P::sample_start)*.01)),0,n-2);
-        s.length=std::clamp(int(std::floor(n*v(P::sample_end)*.01)),s.start+1,n)-s.start;
+        if (effectiveStart < 0 || effectiveEnd <= effectiveStart) {
+            const auto threshold = calculateThresholdWindow(p, sample);
+            effectiveStart = threshold.start;
+            effectiveEnd = threshold.end;
+        }
+        s.start=std::clamp(effectiveStart,0,n-2);
+        s.length=std::clamp(effectiveEnd,s.start+1,n)-s.start;
     }
     s.level=v(P::input_gain)<=-119.9?0:db(v(P::input_gain));
     s.panL=1-std::max(0.0,v(P::pan)*.01);s.panR=1+std::min(0.0,v(P::pan)*.01);

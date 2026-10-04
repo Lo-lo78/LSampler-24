@@ -38,6 +38,9 @@ enum class P {
     sample_start,
     sample_end,
     sample_play_start,
+    start_threshold,
+    end_threshold,
+    end_preview_length,
     global_one_shot,
     start_end_fade,
     stereo_delay_left,
@@ -152,7 +155,7 @@ enum class P {
     count
 };
 enum class L { start, end, repeats, fade_in, fade_out, pitch_down, lp_down, hp_down, one_shot, count };
-inline constexpr int parameterCount = 139, loopParameterCount = 9, loopCount = 10;
+inline constexpr int parameterCount = 142, loopParameterCount = 9, loopCount = 10;
 inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"input_gain", "Level", "Slot", Kind::continuous, 0.0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""},
 {"polyphony", "Voice Mode", "Slot", Kind::enumeration, 1.0, 0.0, 1.0, 1.0, 1.0, "", 0, "Mono|Poly"},
@@ -182,6 +185,9 @@ inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"sample_start", "Sample Start", "Sample Window", Kind::continuous, 0.0, 0.0, 100.0, 0.01, 0.25, "%", 3, ""},
 {"sample_end", "Sample End", "Sample Window", Kind::continuous, 100.0, 0.0, 100.0, 0.01, 0.25, "%", 3, ""},
 {"sample_play_start", "Sample Play Start", "Sample Window", Kind::continuous, 0.0, 0.0, 100.0, 0.01, 0.25, "%", 3, ""},
+{"start_threshold", "Start Threshold", "Sample Window", Kind::continuous, -60.0, -120.0, 0.0, 0.1, 1.0, "dB", 1, ""},
+{"end_threshold", "End Threshold", "Sample Window", Kind::continuous, -120.0, -120.0, 0.0, 0.1, 1.0, "dB", 1, ""},
+{"end_preview_length", "End Preview Length", "Sample Window", Kind::enumeration, 0.0, 0.0, 12.0, 1.0, 1.0, "", 0, "Auto|50 ms|100 ms|200 ms|300 ms|500 ms|750 ms|1000 ms|1500 ms|2000 ms|3000 ms|4000 ms|5000 ms"},
 {"global_one_shot", "Global One Shot", "Sample Window", Kind::enumeration, 1, 0.0, 2.0, 1.0, 1.0, "", 0, "Off|On|On Release"},
 {"start_end_fade", "Start End Fade", "Sample Window", Kind::continuous, 0.0, 0.0, 100.0, 0.01, 0.1, "ms", 2, ""},
 {"stereo_delay_left", "Stereo Delay Left", "Sample Window", Kind::continuous, 0.0, 0.0, 50.0, 0.01, 0.1, "ms", 2, ""},
@@ -344,6 +350,9 @@ inline constexpr std::array<GridEntry, 157> grid {{
 {int(P::choke_mode), -1, Action::none, "Mapping"},
 {int(P::sample_start), -1, Action::none, "Sample Window"},
 {int(P::sample_end), -1, Action::none, "Sample Window"},
+{int(P::start_threshold), -1, Action::none, "Sample Window"},
+{int(P::end_threshold), -1, Action::none, "Sample Window"},
+{int(P::end_preview_length), -1, Action::none, "Sample Window"},
 {-1, -1, Action::sampleZero, "Sample Window"},
 {int(P::global_one_shot), -1, Action::none, "Sample Window"},
 {int(P::start_end_fade), -1, Action::none, "Sample Window"},

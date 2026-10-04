@@ -410,9 +410,10 @@ void LSampler24AudioProcessorEditor::setSelectedParameterValue(double value)
 {
     const auto parameter = selectedEntry().parameter;
     processor.setSlotParameter(selectedParameter, value, selectedLoop);
-    if (parameter == int(P::sample_start))
+    if (parameter == int(P::sample_start) || parameter == int(P::start_threshold))
         processor.requestSampleBoundaryAudition(false);
-    else if (parameter == int(P::sample_end))
+    else if (parameter == int(P::sample_end) || parameter == int(P::end_threshold)
+             || parameter == int(P::end_preview_length))
         processor.requestSampleBoundaryAudition(true);
 }
 juce::String LSampler24AudioProcessorEditor::formatParameter(int index,double value) const {
