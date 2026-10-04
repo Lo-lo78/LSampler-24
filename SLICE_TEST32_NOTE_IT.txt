@@ -1,0 +1,25 @@
+LSampler-24 TEST32 - Slice preview e tastiera
+
+Modifiche rispetto a TEST31:
+
+1. Preview Slice allineata al MIDI
+- Space nelle tre pagine Slice usa ora lo stesso percorso Slice di una normale nota MIDI (nota di preview 60).
+- Slice Mode viene quindi rispettato anche dall'anteprima.
+- La preview normale non forza piu' il Sequencer e non bypassa piu' lo Slice Engine.
+- Ctrl+Space in Boundaries riproduce il singolo slice fisico corrente.
+- Ctrl+Space in Globals/Sequencer riproduce il singolo step programmato corrente.
+
+2. Slice Mode e Slice Seq Random restano distinti
+- Slice Mode Random / Random No Repeat controlla il percorso random dei slice.
+- Slice Seq Random si applica al percorso Sequencer (Slice Mode = Sequencer).
+
+3. Modifica valori coerente con la griglia principale
+- Frecce normali, Home/End e Page Up/Down: navigazione.
+- Alt+Up/Down: modifica valore.
+- Alt+Page Up/Down: modifica grossolana.
+- Alt+Left/Right: cambia step 1 / 5 / 10 / 15 / 20.
+- Alt+Home: valore massimo.
+- Alt+End: valore minimo.
+- Lo schema vale per Boundaries, Global Slice Settings e Slice Sequencer.
+
+Nessuna compilazione eseguita. Sorgente soltanto, pronto per GitHub Actions.

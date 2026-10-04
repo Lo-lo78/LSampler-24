@@ -1,6 +1,10 @@
 #include "SliceEditor.h"
 #include "ScreenReaderAnnouncer.h"
 using namespace lsampler;
+namespace {
+constexpr std::array<int,5> sliceStepWidths {1,5,10,15,20};
+constexpr int slicePageStep = 40;
+}
 SliceEditor::SliceEditor(LSampler24AudioProcessor& p,int s,bool sequencer):processor(p),slot(s) {
     page=sequencer?Page::steps:Page::boundaries;
     setWantsKeyboardFocus(true);setFocusContainerType(FocusContainerType::keyboardFocusContainer);
@@ -55,7 +59,7 @@ void SliceEditor::paint(juce::Graphics& g) {
     g.drawText(pageName+" / Slot "+juce::String(slot+1),20,62,getWidth()-40,30,juce::Justification::centredLeft);
     g.drawFittedText(line,getLocalBounds().reduced(20).withTrimmedTop(100).withHeight(120),juce::Justification::centredLeft,4);
     g.setFont(14.0f);
-    g.drawFittedText("Tab: page | Up/Down: item | Left/Right: property (globals: value)\nPage Up/Down: value | Enter: type value | Ctrl+Space: slice | Space: sample/sequence\nF1: help | Escape: close",20,getHeight()-110,getWidth()-40,90,juce::Justification::centredLeft,4);
+    g.drawFittedText("Tab: page | Arrows/Home/End: navigate | Alt+Up/Down: value | Alt+PgUp/PgDn: coarse value\nAlt+Left/Right: value step | Alt+Home/End: max/min | Enter: type value | Ctrl+Space: slice/step\nSpace: normal MIDI-equivalent preview | F1: help | Escape: close",20,getHeight()-110,getWidth()-40,90,juce::Justification::centredLeft,4);
 }
 void SliceEditor::resized(){number.setBounds(20,getHeight()/2,getWidth()-40,40);}
 void SliceEditor::pushUndo() {
@@ -88,9 +92,11 @@ void SliceEditor::setValue(double value) {
     commit(s);
 }
 void SliceEditor::changeValue(int direction,bool coarse) {
+    const int width=sliceStepWidths[size_t(stepWidthIndex)];
     if(page==Page::boundaries) {
         const auto old=processor.getSliceState(slot);
-        if(processor.moveSliceBoundary(slot,item+boundarySide,direction,coarse?100:1)) {
+        const int amount=width*(coarse?slicePageStep:1);
+        if(processor.moveSliceBoundary(slot,item+boundarySide,direction,amount)) {
             undo.push_back(old);if(undo.size()>64)undo.pop_front();redo.clear();auditionEdit();speak();
         }
         return;
@@ -98,7 +104,33 @@ void SliceEditor::changeValue(int direction,bool coarse) {
     const auto s=processor.getSliceState(slot);
     const auto& d=page==Page::globals?sliceGlobals[size_t(global)]:sliceProperties[size_t(property)];
     const double value=page==Page::globals?s.globals[size_t(global)]:s.steps[size_t(item)].values[size_t(property)];
-    setValue(value+direction*(coarse?std::max(1.0,d.step*10):d.step));
+    const double multiplier=double(width)*(coarse?double(slicePageStep):1.0);
+    setValue(value+direction*d.step*multiplier);
+}
+void SliceEditor::changeStepWidth(int direction) {
+    const int next=juce::jlimit(0,int(sliceStepWidths.size())-1,stepWidthIndex+direction);
+    if(next==stepWidthIndex)return;
+    stepWidthIndex=next;
+    announceToActiveScreenReader(*this,"Step "+juce::String(sliceStepWidths[size_t(stepWidthIndex)]));
+    setDescription({});
+}
+void SliceEditor::setValueBoundary(bool maximum) {
+    if(page==Page::boundaries) {
+        int start=0;double rate=0;const auto layout=processor.getSliceLayout(slot,start,rate);
+        const int b=juce::jlimit(0,layout.count,item+boundarySide);
+        if(b<=0||b>=layout.count)return; // fixed Sample Start / End edges
+        const int current=layout.boundaries[size_t(b)];
+        const int target=maximum?layout.boundaries[size_t(b+1)]-1:layout.boundaries[size_t(b-1)]+1;
+        const int delta=target-current;
+        if(delta==0)return;
+        const auto old=processor.getSliceState(slot);
+        if(processor.moveSliceBoundary(slot,b,delta>0?1:-1,std::abs(delta))) {
+            undo.push_back(old);if(undo.size()>64)undo.pop_front();redo.clear();auditionEdit();speak();
+        }
+        return;
+    }
+    const auto& d=page==Page::globals?sliceGlobals[size_t(global)]:sliceProperties[size_t(property)];
+    setValue(maximum?d.max:d.min);
 }
 void SliceEditor::editNumber() {
     if(page==Page::boundaries){speak("Use Page Up and Page Down to move this boundary. ");return;}
@@ -158,7 +190,7 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
     const auto c=juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
     if(code==juce::KeyPress::escapeKey) {processor.stopSlicePreview();if(onClose)onClose();return true;}
     if(code==juce::KeyPress::F1Key) {
-        announceToActiveScreenReader(*this,"Slice Edit. Tab cycles Boundaries, Globals and Sequencer. Up Down selects items. Left Right selects Start End or a step property; in Globals changes value. Page Up Down changes value; Shift uses larger increments. Enter types a value. Z toggles boundary Zero Crossing. Space toggles sample in Boundaries, sequence on other pages. Alt Space always plays whole sample. Ctrl Space auditions current slice or step. Shift Up Down selects a step range. Shift Space toggles selection. Ctrl Delete clears selection. Ctrl C V copies and pastes steps. Ctrl Z Y undo and redo. Backspace resets current parameter. Escape closes and stops preview.");return true;
+        announceToActiveScreenReader(*this,"Slice Edit. Tab cycles Boundaries, Globals and Sequencer. Plain arrows, Home and End navigate. Alt Up and Alt Down change the current value. Alt Page Up and Alt Page Down change it coarsely. Alt Left and Alt Right select the value step. Alt Home sets maximum and Alt End sets minimum. Enter types a value. Z toggles boundary Zero Crossing. Space always plays the normal slot preview through the same Slice Mode path used by a MIDI note. Ctrl Space auditions the current physical slice in Boundaries or the current programmed step in Globals and Sequencer. Shift Up Down selects a step range. Shift Space toggles selection. Ctrl Delete clears selection. Ctrl C V copies and pastes steps. Ctrl Z Y undo and redo. Backspace resets current parameter. Escape closes and stops preview.");return true;
     }
     if(mods.isCtrlDown()&&!mods.isAltDown()) {
         if(c=='z'){restore(false);return true;}if(c=='y'){restore(true);return true;}
@@ -167,12 +199,22 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
         if(code==juce::KeyPress::spaceKey){preview(false,true);return true;}
         return true;
     }
-    if(code==juce::KeyPress::spaceKey&&mods.isAltDown()){preview(true,false);return true;}
-    if(mods.isAltDown())return true;
+    if(mods.isAltDown()&&!mods.isCtrlDown()&&!mods.isCommandDown()) {
+        if(code==juce::KeyPress::spaceKey){preview(true,false);return true;}
+        if(code==juce::KeyPress::upKey){changeValue(1,false);return true;}
+        if(code==juce::KeyPress::downKey){changeValue(-1,false);return true;}
+        if(code==juce::KeyPress::pageUpKey){changeValue(1,true);return true;}
+        if(code==juce::KeyPress::pageDownKey){changeValue(-1,true);return true;}
+        if(code==juce::KeyPress::leftKey){changeStepWidth(-1);return true;}
+        if(code==juce::KeyPress::rightKey){changeStepWidth(1);return true;}
+        if(code==juce::KeyPress::homeKey){setValueBoundary(true);return true;}
+        if(code==juce::KeyPress::endKey){setValueBoundary(false);return true;}
+        return true;
+    }
     if(code==juce::KeyPress::tabKey) {setPage(Page((int(page)+(mods.isShiftDown()?2:1))%3));return true;}
     if(code==juce::KeyPress::spaceKey) {
         if(mods.isShiftDown()&&page==Page::steps){selected.flip(size_t(item));anchor=item;speak();}
-        else if(!mods.isShiftDown())preview(false,false);
+        else if(!mods.isShiftDown())preview(true,false); // exactly the normal MIDI-note Slice path
         return true;
     }
     if(c=='z'&&page==Page::boundaries) {
@@ -189,12 +231,21 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
         return true;
     }
     if(code==juce::KeyPress::pageUpKey||code==juce::KeyPress::pageDownKey) {
-        changeValue(code==juce::KeyPress::pageUpKey?1:-1,mods.isShiftDown());return true;
+        // Plain Page Up/Down is navigation, never value editing. Jump several
+        // rows while keeping all editing behind Alt, like the main grid.
+        const int direction=code==juce::KeyPress::pageDownKey?1:-1;
+        if(page==Page::globals) {
+            const int next=juce::jlimit(0,12,global+direction*8);
+            if(next!=global){global=next;speak();}
+        } else moveItem(item+direction*8,mods.isShiftDown());
+        return true;
     }
     if(code==juce::KeyPress::leftKey||code==juce::KeyPress::rightKey) {
         const int direction=code==juce::KeyPress::rightKey?1:-1;
-        if(page==Page::globals)changeValue(direction,mods.isShiftDown());
-        else {
+        if(page==Page::globals) {
+            const int next=juce::jlimit(0,12,global+direction);
+            if(next!=global){global=next;speak();}
+        } else {
             int& target=page==Page::steps?property:boundarySide;
             const int next=juce::jlimit(0,page==Page::steps?16:1,target+direction);
             if(next!=target){target=next;speak();}

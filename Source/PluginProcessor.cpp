@@ -409,8 +409,11 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         const bool stopping=kind==0||(toggle&&slicePreviewKind.load()==kind&&slicePreviewSlot==slot&&(kind==1||kind==3||slicePreviewItem==item));
         voicePool.stopPreviewVoices();previewPlaying=false;previewPlayingSlot=-1;slicePreviewKind.store(0);
         if(!stopping&&slot<slotCount&&audio[size_t(slot)].sample) {
-            // 1 whole, 2 physical slice, 3 sequence, 4 programmed step.
-            const int request=kind==1?-2:kind==2?-1000-item:kind==3?-3:item;
+            // 1 normal slot preview (same Slice path as a MIDI note),
+            // 2 physical slice, 3 forced sequencer, 4 programmed step.
+            // Do not bypass Slice Mode for kind 1: preview must sound exactly
+            // like triggering the slot from MIDI at note 60.
+            const int request=kind==1?-1:kind==2?-1000-item:kind==3?-3:item;
             voicePool.noteOn(slot,60,1.0f,0,true,-1.0,request);
             slicePreviewSlot=slot;slicePreviewItem=item;slicePreviewKind.store(kind);
             previewPlaying=voicePool.hasPreviewVoices(slot);previewPlayingSlot=previewPlaying?slot:-1;

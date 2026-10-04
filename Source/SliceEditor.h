@@ -37,6 +37,7 @@ private:
     const int slot;
     Page page=Page::boundaries;
     int item=0,property=0,global=0,boundarySide=1,anchor=-1;
+    int stepWidthIndex=0;
     bool numeric=false;
     int lastPreviewItem=-1;
     std::bitset<128> selected;
@@ -49,6 +50,8 @@ private:
     void pushUndo();
     void commit(lsampler::SliceState&);
     void changeValue(int direction,bool coarse);
+    void changeStepWidth(int direction);
+    void setValueBoundary(bool maximum);
     void setValue(double value);
     void editNumber();
     void moveItem(int target,bool range);
