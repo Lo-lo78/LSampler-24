@@ -1,0 +1,36 @@
+LSampler-24 - GUI TEST48
+
+Modifica rispetto a TEST47
+- Source/RackGui.h, classe rackgui::Waveform: etichette dei marker con fondo
+  scuro opaco. Le etichette sono disegnate dopo tutte le linee dei marker,
+  per evitare che waveform e linee Slice attraversino il testo.
+- Nessun nuovo componente GUI; layout e controlli restano quelli di TEST47.
+
+Verifica delle schermate TEST47 fornite dall'utente
+- Griglia slot, Global Slice Settings e sequencer a 8 step leggibili.
+- immagine(10).png: divisione a 64 slice, viewport degli step 1-16 su due
+  righe. Numero, Source Slice, Repeat e Repeat Type visibili in ogni cella;
+  nessun taglio visibile delle celle o del testo del sequencer.
+- Rilevata sovrapposizione tra tracciato e testo Eff. Start: corretta nel
+  sorgente TEST48. Il rendering JUCE di questa correzione resta da verificare.
+
+Accessibilita e comportamento
+- Modificata esclusivamente la funzione paint del componente osservativo
+  Waveform, gia escluso da focus, mouse e albero di accessibilita.
+- Nessuna modifica a eventi, annunci NVDA, scorciatoie, ordine parametri,
+  browser, memoria griglia o gestione dei bordi silenziosi.
+- Nessuna modifica a processor, DSP, MIDI, preset, bank o routing.
+
+Controlli eseguiti
+- Confronto dei file con il progetto completo TEST47: il solo sorgente
+  modificato e Source/RackGui.h; aggiunta questa nota.
+- Controllo integrita archivio ZIP. Nessuna compilazione, esecuzione CMake,
+  attivazione GitHub Actions o creazione di binari.
+
+Dopo la compilazione effettuata dall'utente
+- Una schermata della waveform con Eff. Start consentira di verificare
+  lo sfondo scuro e la leggibilita del testo corretto.
+- Non ancora osservati in screenshot: viewport oltre lo step 16 e marker
+  di loop ravvicinati. Nessuna modifica alla loro navigazione o posizione.
+- Le schermate attestano solo gli stati visivi mostrati; non costituiscono
+  una prova runtime di NVDA o del comportamento audio.

@@ -99,6 +99,8 @@ public:
             for(int b=first;b<last;++b) {lo=std::min(lo,peaks[size_t(b)].first);hi=std::max(hi,peaks[size_t(b)].second);}
             g.drawVerticalLine(r.getX()+pixel, mid-juce::jlimit(-1.0f,1.0f,hi)*scale, mid-juce::jlimit(-1.0f,1.0f,lo)*scale);
         }
+        struct MarkerLabel { juce::Rectangle<int> bounds; juce::Colour colour; juce::String text; };
+        std::vector<MarkerLabel> markerLabels;
         auto marker = [&](double pos, juce::Colour colour, const juce::String& label, int lane=0) {
             const float px=x(pos);
             g.setColour(colour); g.drawLine(px,float(r.getY()),px,float(r.getBottom()),1.4f);
@@ -106,7 +108,7 @@ public:
                 const int width=label.length()>5?94:50;
                 const int left=juce::jlimit(r.getX(),std::max(r.getX(),r.getRight()-width),int(px)+3);
                 const int top=lane==0?r.getY()+2:lane==1?r.getBottom()-20:lane==2?r.getY()+22:r.getBottom()-40;
-                g.setFont(14.0f);g.drawText(label,left,top,width,18,juce::Justification::centredLeft);
+                markerLabels.push_back({juce::Rectangle<int>(left,top,width,18),colour,label});
             }
         };
         const auto layout = lsampler::prepareSliceAudio(state.slice, std::max(0, state.effectiveEnd-state.effectiveStart));
@@ -132,6 +134,13 @@ public:
         if(shiftedEnd)marker(effectiveEnd,green,"Eff. End",2);
         marker(p[lsampler::P::sample_start],amber,"Start");marker(p[lsampler::P::sample_end],amber,"End");
         marker(p[lsampler::P::sample_play_start],text,"Play",true);
+        // Paint labels last so waveform peaks and later marker lines cannot cross the text.
+        for (const auto& label : markerLabels) {
+            g.setColour(screen);
+            g.fillRect(label.bounds.expanded(2,0).getIntersection(r));
+            g.setColour(label.colour);g.setFont(14.0f);
+            g.drawText(label.text,label.bounds,juce::Justification::centredLeft);
+        }
         g.setColour(green);g.setFont(14.0f);
         g.drawText("Start "+juce::String(p[lsampler::P::sample_start],2)+"%    End "+juce::String(p[lsampler::P::sample_end],2)+"%    Play "+juce::String(p[lsampler::P::sample_play_start],2)+"%",footer.removeFromTop(22),juce::Justification::centredLeft,true);
         g.setColour(muted);
