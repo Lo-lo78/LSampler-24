@@ -3,7 +3,9 @@
 namespace lsampler {
 // Per-voice sample clock. Never allocates, locks, or accesses the UI.
 // Requests: -1 normal mode, -2 whole-sample bypass, -3 force sequencer,
-// >=0 audition/MIDI step; -1000-index auditions a physical slice directly.
+// -3000-index preserves Slice Mode and begins its timeline at that step;
+// -2000-index force sequencer beginning at that step; >=0 audition/MIDI step;
+// -1000-index auditions a physical slice directly.
 struct SlicePlayback {
     bool active=false, single=false, physical=false, pad=false, configured=false, finished=false;
     int request=-1, timeline=0, step=0, source=0, repeat=0, lastSource=-1, mode=0;

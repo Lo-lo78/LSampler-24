@@ -424,10 +424,10 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         voicePool.stopPreviewVoices();previewPlaying=false;previewPlayingSlot=-1;slicePreviewKind.store(0);
         if(!stopping&&slot<slotCount&&audio[size_t(slot)].sample) {
             // 1 normal slot preview (same Slice path as a MIDI note),
-            // 2 physical slice, 3 forced sequencer, 4 programmed step.
-            // Do not bypass Slice Mode for kind 1: preview must sound exactly
-            // like triggering the slot from MIDI at note 60.
-            const int request=kind==1?-1:kind==2?-1000-item:kind==3?-3:item;
+            // 2 physical slice, 3 forced sequencer, 4 programmed step,
+            // 5 normal Slice Mode preview starting from the selected timeline step.
+            // Kind 5 changes only the start head; it does not force Sequencer mode.
+            const int request=kind==1?-1:kind==2?-1000-item:kind==3?-2000-item:kind==5?-3000-item:item;
             voicePool.noteOn(slot,60,1.0f,0,true,-1.0,request);
             slicePreviewSlot=slot;slicePreviewItem=item;slicePreviewKind.store(kind);
             previewPlaying=voicePool.hasPreviewVoices(slot);previewPlayingSlot=previewPlaying?slot:-1;
@@ -1852,7 +1852,7 @@ bool LSampler24AudioProcessor::moveSliceBoundary(int slot,int boundary,int direc
     markAudioStateDirty();return true;
 }
 void LSampler24AudioProcessor::requestSlicePreview(int slot,int kind,int item,bool toggle) noexcept {
-    const int command=juce::jlimit(0,4,kind)|(juce::jlimit(0,slotCount-1,slot)<<3)
+    const int command=juce::jlimit(0,5,kind)|(juce::jlimit(0,slotCount-1,slot)<<3)
         |(juce::jlimit(0,127,item)<<8)|(toggle?(1<<15):0);
     slicePreviewCommand.store(command,std::memory_order_release);
 }

@@ -43,7 +43,11 @@ juce::String SliceEditor::currentLine() const {
 }
 void SliceEditor::speak(const juce::String& prefix) {
     line=currentLine();setTitle(line);setName({});setDescription({});repaint();
-    if(auto* h=getAccessibilityHandler())h->notifyAccessibilityEvent(juce::AccessibilityEvent::titleChanged);
+    // Boundaries and Globals were being spoken twice: once by the accessibility
+    // titleChanged event and immediately again by the explicit NVDA announcer.
+    // The Sequencer page already behaves correctly, so preserve its event path.
+    if(page==Page::steps)
+        if(auto* h=getAccessibilityHandler())h->notifyAccessibilityEvent(juce::AccessibilityEvent::titleChanged);
     announceToActiveScreenReader(*this,prefix+line);setDescription({});
 }
 void SliceEditor::announceEntry() {
@@ -155,14 +159,26 @@ void SliceEditor::moveItem(int target,bool range) {
         if(anchor<0)anchor=item;
         selected.reset();for(int i=std::min(anchor,target);i<=std::max(anchor,target);++i)selected.set(size_t(i));
     } else anchor=-1;
-    item=target;auditionEdit();speak();
+    item=target;
+    if(page==Page::steps) {
+        // Navigation only moves the preview head.  Never retrigger a running
+        // Space preview: the newly selected step becomes the start point only
+        // the next time preview is started after being stopped.
+        lastPreviewItem=item;
+        const int kind=processor.getSlicePreviewKind();
+        if(kind==0||kind==2||kind==4) auditionEdit();
+    } else auditionEdit();
+    speak();
 }
 void SliceEditor::preview(bool whole,bool slice,bool toggle) {
-    const int kind=whole?1:slice?(page==Page::boundaries?2:4):page==Page::boundaries?1:3;
-    const bool stopping=toggle&&processor.getSlicePreviewKind()==kind&&(kind==1||kind==3||lastPreviewItem==item);
+    // Page 3 keeps the normal Slice Mode semantics, but remembers the current
+    // step as the timeline start for the next Space preview.  Kind 5 is the
+    // normal MIDI-note Slice path with an explicit starting timeline position.
+    const int kind=whole?(page==Page::steps?5:1):slice?(page==Page::boundaries?2:4):page==Page::boundaries?1:3;
+    const bool stopping=toggle&&processor.getSlicePreviewKind()==kind&&(kind==1||kind==3||kind==5||lastPreviewItem==item);
     processor.requestSlicePreview(slot,kind,item,toggle);lastPreviewItem=item;
     if(toggle) {
-        const juce::String name=kind==1?"Sample preview":kind==3?"Sequence preview":kind==2?"Slice preview":"Step preview";
+        const juce::String name=(kind==1||kind==5)?"Sample preview":kind==3?"Sequence preview":kind==2?"Slice preview":"Step preview";
         announceToActiveScreenReader(*this,name+(stopping?" stopped":" started"));setDescription({});
     }
 }

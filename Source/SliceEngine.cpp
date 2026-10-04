@@ -15,11 +15,20 @@ int SlicePlayback::randomIndex(int n) noexcept {
 }
 void SlicePlayback::start(const SliceAudioState& a,int req,uint32_t seed,bool midiPad) noexcept {
     *this=SlicePlayback{};request=req;randomState=seed?seed:1;pad=midiPad;
-    mode=req==-3?7:int(a.state[SliceG::mode]);
-    single=req>=0||req<=-1000;physical=req<=-1000;
+    // -2000-index means: force sequencer playback, beginning from that step.
+    // -3000-index means: preserve the configured Slice Mode, but begin its
+    // timeline from that step.  This is the non-retriggering editor preview head.
+    // Keep physical-slice audition in its existing -1000-index range.
+    const bool sequencerFromStep=req<=-2000&&req>-3000;
+    const bool normalFromStep=req<=-3000&&req>-4000;
+    mode=(req==-3||sequencerFromStep)?7:int(a.state[SliceG::mode]);
+    physical=req<=-1000&&req>-2000;
+    single=req>=0||physical;
     active=a.count>0&&req!=-2&&(single||mode!=0);
     if(!active)return;
-    timeline=single?std::clamp(physical?-1000-req:req,0,a.count-1):0;
+    timeline=sequencerFromStep?std::clamp(-2000-req,0,a.count-1)
+        :normalFromStep?std::clamp(-3000-req,0,a.count-1)
+        :single?std::clamp(physical?-1000-req:req,0,a.count-1):0;
     chooseEvent(a);
 }
 void SlicePlayback::chooseEvent(const SliceAudioState& a) noexcept {

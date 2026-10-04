@@ -1,0 +1,8 @@
+LSampler-24 TEST38
+
+- Corretto il comportamento della testina preview nella pagina Slice Sequencer.
+- Cambiare step mentre Space preview sta suonando NON retriggera e NON riavvia l’audio.
+- Lo step selezionato viene solo memorizzato come nuovo punto di partenza.
+- Dopo Stop, il successivo Space parte dallo step corrente.
+- Il nuovo punto di partenza conserva Slice Mode: non forza Sequencer mode.
+- Nessuna build eseguita.
