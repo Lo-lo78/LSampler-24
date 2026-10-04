@@ -60,7 +60,7 @@ void SliceEditor::paint(juce::Graphics& g) {
     g.drawText(pageName+" / Slot "+juce::String(slot+1),20,62,getWidth()-40,30,juce::Justification::centredLeft);
     g.drawFittedText(line,getLocalBounds().reduced(20).withTrimmedTop(100).withHeight(120),juce::Justification::centredLeft,4);
     g.setFont(14.0f);
-    g.drawFittedText("1/2/3 or Tab: page | Arrows/Home/End: navigate | Alt+Up/Down: value | Alt+PgUp/PgDn: coarse value\nAlt+Left/Right: value step | Alt+Home/End: max/min | Enter: type value\nSpace: normal preview On/Off; when Off, slice/step navigation and edits auto-audition | F1: help | Escape: close",20,getHeight()-110,getWidth()-40,90,juce::Justification::centredLeft,4);
+    g.drawFittedText("1/2/3 or Tab: page | Arrows/Home/End: navigate (page 2: 8-row grid) | Alt+Up/Down: value | Alt+PgUp/PgDn: coarse value\nAlt+Left/Right: value step | Alt+Home/End: max/min | Enter: type value\nSpace: normal preview On/Off; when Off, slice/step navigation and edits auto-audition | F1: help | Escape: close",20,getHeight()-110,getWidth()-40,90,juce::Justification::centredLeft,4);
 }
 void SliceEditor::resized(){number.setBounds(20,getHeight()/2,getWidth()-40,40);}
 void SliceEditor::pushUndo() {
@@ -212,7 +212,7 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
     const auto c=juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
     if(code==juce::KeyPress::escapeKey) {processor.stopSlicePreview();if(onClose)onClose();return true;}
     if(code==juce::KeyPress::F1Key) {
-        announceToActiveScreenReader(*this,"Slice Edit. 1, 2 and 3 jump directly to Boundaries, Global Slice Settings and Slice Sequencer. Tab also cycles the pages. Plain arrows, Home and End navigate. On parameter pages a letter, number or punctuation character searches forward by parameter initial; Shift plus the same character searches backward. Alt Up and Alt Down change the current value. Alt Page Up and Alt Page Down change it coarsely. Alt Left and Alt Right select the value step. Alt Home sets maximum and Alt End sets minimum. Enter types a value. Z toggles boundary Zero Crossing. Space toggles the normal slot preview. While Space preview is off, moving between slices or steps and editing them automatically auditions the current slice or programmed step with its current parameters. Shift Up Down selects a step range. Shift Space toggles selection. Ctrl Delete clears selection. Ctrl C V copies and pastes steps. Ctrl Z Y undo and redo. Backspace resets current parameter. Escape closes and stops preview.");return true;
+        announceToActiveScreenReader(*this,"Slice Edit. 1, 2 and 3 jump directly to Boundaries, Global Slice Settings and Slice Sequencer. Tab also cycles the pages. Plain arrows, Home and End navigate. Global Slice Settings uses an 8-row grid: Up/Down moves within a column and Left/Right changes column. On parameter pages a letter, number or punctuation character searches forward by parameter initial; Shift plus the same character searches backward. Alt Up and Alt Down change the current value. Alt Page Up and Alt Page Down change it coarsely. Alt Left and Alt Right select the value step. Alt Home sets maximum and Alt End sets minimum. Enter types a value. Z toggles boundary Zero Crossing. Space toggles the normal slot preview. While Space preview is off, moving between slices or steps and editing them automatically auditions the current slice or programmed step with its current parameters. Shift Up Down selects a step range. Shift Space toggles selection. Ctrl Delete clears selection. Ctrl C V copies and pastes steps. Ctrl Z Y undo and redo. Backspace resets current parameter. Escape closes and stops preview.");return true;
     }
     if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isShiftDown()&&!mods.isCommandDown()) {
         if(c=='1'){setPage(Page::boundaries);return true;}
@@ -224,8 +224,13 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
     // as context, so search the meaningful parameter name after that prefix.
     if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isCommandDown()
        && (page==Page::globals||page==Page::steps)) {
-        const auto initial=juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
-        if(initial>=33&&initial<=126) {
+        // Use the actual typed character, not the virtual key code.  Arrow,
+        // Home/End and Page keys have numeric key codes that can fall inside
+        // the printable ASCII range, which previously caused type-ahead to
+        // swallow normal exploratory navigation on pages 2 and 3.
+        const auto typed=k.getTextCharacter();
+        const auto initial=juce::CharacterFunctions::toLowerCase(typed);
+        if(typed>=33&&typed!=127) {
             const bool backwards=mods.isShiftDown();
             const int direction=backwards?-1:1;
             const int total=page==Page::globals?int(sliceGlobals.size()):int(sliceProperties.size());
@@ -282,33 +287,50 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
         return true;
     }
     if(code==juce::KeyPress::pageUpKey||code==juce::KeyPress::pageDownKey) {
-        // Plain Page Up/Down is navigation, never value editing. Jump several
-        // rows while keeping all editing behind Alt, like the main grid.
+        // Page 2 is a compact 8-row grid.  Page Up/Down changes column while
+        // preserving the row when that cell exists.
         const int direction=code==juce::KeyPress::pageDownKey?1:-1;
         if(page==Page::globals) {
-            const int next=juce::jlimit(0,12,global+direction*8);
-            if(next!=global){global=next;speak();}
+            constexpr int rows=8;
+            const int total=int(sliceGlobals.size());
+            const int next=global+direction*rows;
+            if(next>=0&&next<total){global=next;speak();}
         } else moveItem(item+direction*8,mods.isShiftDown());
         return true;
     }
     if(code==juce::KeyPress::leftKey||code==juce::KeyPress::rightKey) {
         const int direction=code==juce::KeyPress::rightKey?1:-1;
         if(page==Page::globals) {
-            const int next=juce::jlimit(0,12,global+direction);
-            if(next!=global){global=next;speak();}
+            // 8 rows per column, same exploratory grid logic as the main grid.
+            constexpr int rows=8;
+            const int total=int(sliceGlobals.size());
+            const int next=global+direction*rows;
+            if(next>=0&&next<total){global=next;speak();}
         } else {
             int& target=page==Page::steps?property:boundarySide;
-            const int next=juce::jlimit(0,page==Page::steps?16:1,target+direction);
+            const int next=juce::jlimit(0,page==Page::steps?int(sliceProperties.size())-1:1,target+direction);
             if(next!=target){target=next;speak();}
         }
         return true;
     }
     if(code==juce::KeyPress::upKey||code==juce::KeyPress::downKey||code==juce::KeyPress::homeKey||code==juce::KeyPress::endKey) {
-        const int old=page==Page::globals?global:item;
-        const int max=page==Page::globals?12:count()-1;
-        const int target=code==juce::KeyPress::homeKey?0:code==juce::KeyPress::endKey?max:old+(code==juce::KeyPress::downKey?1:-1);
-        if(page==Page::globals) {const int next=juce::jlimit(0,max,target);if(next!=global){global=next;speak();}}
-        else moveItem(target,mods.isShiftDown());
+        if(page==Page::globals) {
+            constexpr int rows=8;
+            const int total=int(sliceGlobals.size());
+            const int column=global/rows;
+            const int columnStart=column*rows;
+            const int columnEnd=std::min(total-1,columnStart+rows-1);
+            int next=global;
+            if(code==juce::KeyPress::homeKey) next=columnStart;
+            else if(code==juce::KeyPress::endKey) next=columnEnd;
+            else next=global+(code==juce::KeyPress::downKey?1:-1);
+            if(next>=columnStart&&next<=columnEnd&&next!=global){global=next;speak();}
+        } else {
+            const int target=code==juce::KeyPress::homeKey?0:
+                             code==juce::KeyPress::endKey?count()-1:
+                             item+(code==juce::KeyPress::downKey?1:-1);
+            moveItem(target,mods.isShiftDown());
+        }
         return true;
     }
     return true;

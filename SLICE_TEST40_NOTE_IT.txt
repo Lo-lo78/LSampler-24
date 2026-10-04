@@ -1,0 +1,10 @@
+TEST40
+- Correzione regressione TEST39: la ricerca per iniziale usa ora getTextCharacter(), quindi non intercetta frecce/Home/End/Page Up/Page Down.
+- Alt+E pagina 2 Global Slice Settings: mini-griglia da 8 righe per colonna.
+  Su/Giu = riga precedente/successiva nella stessa colonna.
+  Sinistra/Destra = colonna precedente/successiva mantenendo la riga quando esiste.
+  Home/End = prima/ultima riga della colonna.
+  Page Up/Page Down = colonna precedente/successiva.
+- Alt+E pagina 3: ripristinata navigazione esplorativa: Su/Giu cambiano step; Sinistra/Destra cambiano parametro.
+- Ricerca per lettera/numero/punteggiatura e Shift+carattere inverso conservata.
+- Nessuna modifica DSP. Nessuna build eseguita.
