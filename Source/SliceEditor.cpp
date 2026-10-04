@@ -43,11 +43,8 @@ juce::String SliceEditor::currentLine() const {
 }
 void SliceEditor::speak(const juce::String& prefix) {
     line=currentLine();setTitle(line);setName({});setDescription({});repaint();
-    // Boundaries and Globals were being spoken twice: once by the accessibility
-    // titleChanged event and immediately again by the explicit NVDA announcer.
-    // The Sequencer page already behaves correctly, so preserve its event path.
-    if(page==Page::steps)
-        if(auto* h=getAccessibilityHandler())h->notifyAccessibilityEvent(juce::AccessibilityEvent::titleChanged);
+    // One speech path only.  Mixing titleChanged with the explicit NVDA
+    // announcer caused consecutive overlapping messages on some Slice pages.
     announceToActiveScreenReader(*this,prefix+line);setDescription({});
 }
 void SliceEditor::announceEntry() {
@@ -215,12 +212,36 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
     const auto c=juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
     if(code==juce::KeyPress::escapeKey) {processor.stopSlicePreview();if(onClose)onClose();return true;}
     if(code==juce::KeyPress::F1Key) {
-        announceToActiveScreenReader(*this,"Slice Edit. 1, 2 and 3 jump directly to Boundaries, Global Slice Settings and Slice Sequencer. Tab also cycles the pages. Plain arrows, Home and End navigate. Alt Up and Alt Down change the current value. Alt Page Up and Alt Page Down change it coarsely. Alt Left and Alt Right select the value step. Alt Home sets maximum and Alt End sets minimum. Enter types a value. Z toggles boundary Zero Crossing. Space toggles the normal slot preview. While Space preview is off, moving between slices or steps and editing them automatically auditions the current slice or programmed step with its current parameters. Shift Up Down selects a step range. Shift Space toggles selection. Ctrl Delete clears selection. Ctrl C V copies and pastes steps. Ctrl Z Y undo and redo. Backspace resets current parameter. Escape closes and stops preview.");return true;
+        announceToActiveScreenReader(*this,"Slice Edit. 1, 2 and 3 jump directly to Boundaries, Global Slice Settings and Slice Sequencer. Tab also cycles the pages. Plain arrows, Home and End navigate. On parameter pages a letter, number or punctuation character searches forward by parameter initial; Shift plus the same character searches backward. Alt Up and Alt Down change the current value. Alt Page Up and Alt Page Down change it coarsely. Alt Left and Alt Right select the value step. Alt Home sets maximum and Alt End sets minimum. Enter types a value. Z toggles boundary Zero Crossing. Space toggles the normal slot preview. While Space preview is off, moving between slices or steps and editing them automatically auditions the current slice or programmed step with its current parameters. Shift Up Down selects a step range. Shift Space toggles selection. Ctrl Delete clears selection. Ctrl C V copies and pastes steps. Ctrl Z Y undo and redo. Backspace resets current parameter. Escape closes and stops preview.");return true;
     }
     if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isShiftDown()&&!mods.isCommandDown()) {
         if(c=='1'){setPage(Page::boundaries);return true;}
         if(c=='2'){setPage(Page::globals);return true;}
         if(c=='3'){setPage(Page::steps);return true;}
+    }
+    // Parameter type-ahead on the parameter pages. Plain character cycles
+    // forward; Shift+character cycles backward. Global names use "Slice" only
+    // as context, so search the meaningful parameter name after that prefix.
+    if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isCommandDown()
+       && (page==Page::globals||page==Page::steps)) {
+        const auto initial=juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
+        if(initial>=33&&initial<=126) {
+            const bool backwards=mods.isShiftDown();
+            const int direction=backwards?-1:1;
+            const int total=page==Page::globals?int(sliceGlobals.size()):int(sliceProperties.size());
+            int& cursor=page==Page::globals?global:property;
+            for(int distance=1;distance<=total;++distance) {
+                int next=(cursor+direction*distance)%total;
+                if(next<0)next+=total;
+                juce::String name=page==Page::globals?juce::String(sliceGlobals[size_t(next)].name)
+                                                     :juce::String(sliceProperties[size_t(next)].name);
+                if(page==Page::globals&&name.startsWithIgnoreCase("Slice "))name=name.substring(6);
+                if(name.isNotEmpty()&&juce::CharacterFunctions::toLowerCase(name[0])==initial) {
+                    cursor=next;speak();break;
+                }
+            }
+            return true;
+        }
     }
     if(mods.isCtrlDown()&&!mods.isAltDown()) {
         if(c=='z'){restore(false);return true;}if(c=='y'){restore(true);return true;}

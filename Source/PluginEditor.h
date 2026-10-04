@@ -212,7 +212,7 @@ private:
     void leaveImportBrowser(bool announceSlot, bool resetPreviewPosition = false);
     void refreshImportEntries();
     void selectImportEntry(int index, bool announce);
-    void cycleImportEntryByInitial(juce::juce_wchar initial);
+    void cycleImportEntryByInitial(juce::juce_wchar initial, int direction = 1);
     void moveImportDestinationSlot(int direction);
     void shiftSelectImportEntry(int direction);
     void moveToImportFileWithSlice(int direction);
@@ -251,7 +251,7 @@ private:
     void leaveSlotLibraryBrowser(bool announceSlot);
     void refreshSlotLibraryEntries();
     void selectSlotLibraryEntry(int index, bool announce);
-    void cycleSlotLibraryEntryByInitial(juce::juce_wchar initial);
+    void cycleSlotLibraryEntryByInitial(juce::juce_wchar initial, int direction = 1);
     void announceSlotLibraryEntry();
     void updateSlotLibraryPreviewForSelection();
     void toggleSlotLibrarySelection();

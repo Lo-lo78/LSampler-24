@@ -1,0 +1,12 @@
+LSampler-24 TEST39
+
+Modifiche rispetto a TEST38:
+- Griglia principale: ricerca per iniziale avanti con carattere, indietro con Shift+carattere.
+- La logica accetta lettere, numeri e punteggiatura stampabile.
+- Alt+O browser e Slot Browser: stessa logica avanti/indietro per iniziale.
+- Slice Edit, pagine parametri (Global Slice Settings e Slice Sequencer): ricerca per iniziale avanti; Shift+iniziale indietro.
+- Nei Global Slice Settings il prefisso contestuale "Slice " viene ignorato per la ricerca: per esempio F cicla Fade In / Fade Out, M cerca Mode/MIDI Map, ecc.
+- Slice Sequencer: stessa ricerca sul vero nome del parametro (Source Slice, Repeat, Fit, Pitch...).
+- Annunci Slice Edit: eliminato il doppio canale di annuncio; tutti i parametri vengono annunciati una sola volta.
+- Nessuna modifica DSP.
+- Nessuna compilazione eseguita.

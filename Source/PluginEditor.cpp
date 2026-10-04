@@ -851,10 +851,14 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             }
             commitSlotLibrarySelection(); return true;
         }
-        if (!mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown() && !mods.isShiftDown())
+        if (!mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown())
         {
-            auto typed = key.getTextCharacter();
-            if (typed >= 33 && typed != 127) { cycleSlotLibraryEntryByInitial(typed); return true; }
+            const auto typed = juce::juce_wchar(code);
+            if (typed >= 33 && typed <= 126)
+            {
+                cycleSlotLibraryEntryByInitial(typed, mods.isShiftDown() ? -1 : 1);
+                return true;
+            }
         }
         return true;
     }
@@ -1058,10 +1062,14 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             else commitImportPlan();
             return true;
         }
-        if (!mods.isCtrlDown() && !mods.isAltDown() && ch >= 32 && ch != ' ')
+        if (!mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown())
         {
-            cycleImportEntryByInitial(ch);
-            return true;
+            const auto typed = juce::juce_wchar(code);
+            if (typed >= 33 && typed <= 126)
+            {
+                cycleImportEntryByInitial(typed, mods.isShiftDown() ? -1 : 1);
+                return true;
+            }
         }
         return true;
     }
@@ -1350,17 +1358,26 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 moveParameterPage(code == juce::KeyPress::leftKey ? -1 : 1);
                 return true;
             }
-            if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isCommandDown()&&juce::CharacterFunctions::isLetterOrDigit(ch)) {
-                const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
-                const int first = globalOpen ? normalGridSize : 0;
-                const int count = globalOpen ? lsampler::globalParameterCount : normalGridSize;
-                const int local = selectedParameter - first;
-                for(int distance=1;distance<=count;++distance) {
-                    const int next=first + ((local+distance)%count);
-                    const auto name=juce::String(descriptor(lsampler::grid[size_t(next)]).name);
-                    if(juce::CharacterFunctions::toLowerCase(name[0])==ch){selectParameter(next,true);break;}
+            // Type-ahead navigation: plain character searches forward, Shift+character
+            // searches backward.  Use the key code so Shift does not turn e.g. 1 into !;
+            // letters, digits and punctuation can all be used as initials.
+            if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isCommandDown()) {
+                const auto initial=juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
+                if(initial>=33&&initial<=126) {
+                    const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
+                    const int first = globalOpen ? normalGridSize : 0;
+                    const int count = globalOpen ? lsampler::globalParameterCount : normalGridSize;
+                    const int local = selectedParameter - first;
+                    const int direction = mods.isShiftDown() ? -1 : 1;
+                    for(int distance=1;distance<=count;++distance) {
+                        int relative=(local+direction*distance)%count;
+                        if(relative<0)relative+=count;
+                        const int next=first+relative;
+                        const auto name=juce::String(descriptor(lsampler::grid[size_t(next)]).name);
+                        if(name.isNotEmpty()&&juce::CharacterFunctions::toLowerCase(name[0])==initial){selectParameter(next,true);break;}
+                    }
+                    return true;
                 }
-                return true;
             }
         }
         return true; // The parameter surface owns unmatched host shortcuts, including Ctrl keys.
@@ -1668,15 +1685,17 @@ void LSampler24AudioProcessorEditor::selectImportEntry(int index, bool announce)
     if (!importRecentPathsMode) saveImportSettings();
 }
 
-void LSampler24AudioProcessorEditor::cycleImportEntryByInitial(juce::juce_wchar initial)
+void LSampler24AudioProcessorEditor::cycleImportEntryByInitial(juce::juce_wchar initial, int direction)
 {
     if (importEntries.empty()) return;
     const auto target = juce::CharacterFunctions::toLowerCase(initial);
     importLastInitial = target;
     const int count = static_cast<int>(importEntries.size());
+    direction = direction < 0 ? -1 : 1;
     for (int offset = 1; offset <= count; ++offset)
     {
-        const int index = (importEntryIndex + offset) % count;
+        int index = (importEntryIndex + direction * offset) % count;
+        if (index < 0) index += count;
         auto name = importEntries[static_cast<size_t>(index)].file.getFileName();
         if (name.isEmpty()) name = importEntries[static_cast<size_t>(index)].file.getFullPathName();
         if (name.isNotEmpty() && juce::CharacterFunctions::toLowerCase(name[0]) == target)
@@ -2664,15 +2683,17 @@ void LSampler24AudioProcessorEditor::announceSlotLibraryEntry()
     slotLibraryCell.setDescription({});
 }
 
-void LSampler24AudioProcessorEditor::cycleSlotLibraryEntryByInitial(juce::juce_wchar initial)
+void LSampler24AudioProcessorEditor::cycleSlotLibraryEntryByInitial(juce::juce_wchar initial, int direction)
 {
     if (slotLibraryEntries.empty()) return;
     const auto target = juce::CharacterFunctions::toLowerCase(initial);
     slotLibraryLastInitial = target;
     const int count = int(slotLibraryEntries.size());
+    direction = direction < 0 ? -1 : 1;
     for (int offset = 1; offset <= count; ++offset)
     {
-        const int index = (slotLibraryEntryIndex + offset) % count;
+        int index = (slotLibraryEntryIndex + direction * offset) % count;
+        if (index < 0) index += count;
         auto name = slotLibraryEntries[size_t(index)].directory ? slotLibraryEntries[size_t(index)].file.getFileName()
                                                                   : cleanLibrarySlotName(slotLibraryEntries[size_t(index)].file);
         if (name.isNotEmpty() && juce::CharacterFunctions::toLowerCase(name[0]) == target)
