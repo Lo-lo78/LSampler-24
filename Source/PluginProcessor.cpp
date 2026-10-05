@@ -996,20 +996,29 @@ juce::String LSampler24AudioProcessor::getCurrentSamplePropertiesText() const
     const double rate = sample.sourceSampleRate > 0.0 ? sample.sourceSampleRate : preparedSampleRate;
     const double seconds = frames / juce::jmax(1.0, rate);
     const double peakDb = juce::Decibels::gainToDecibels(juce::jmax(1.0e-12, sample.peak), -120.0);
+    const double startPercent = slot.parameters[lsampler::P::sample_start];
+    const double endPercent = slot.parameters[lsampler::P::sample_end];
+    const double effectiveStartMs = 1000.0 * slot.thresholdStartFrame / juce::jmax(1.0, rate);
+    const double effectiveEndMs = 1000.0 * slot.thresholdEndFrame / juce::jmax(1.0, rate);
 
     juce::String out;
     out << "Name: " << (slot.slotName.isNotEmpty() ? slot.slotName : file.getFileNameWithoutExtension()) << "\n";
     out << "Audio file: " << (file.existsAsFile() ? file.getFileName() : juce::String("RAM only")) << "\n";
-    out << "Path: " << (file.existsAsFile() ? file.getFullPathName() : juce::String("Not available")) << "\n";
     out << "Format: " << (file.existsAsFile() ? file.getFileExtension().trimCharactersAtStart(".").toUpperCase() : juce::String("RAM")) << "\n";
     out << "Sample rate: " << juce::String(rate, 0) << " Hz\n";
-    out << "Channels: " << channels << "\n";
+    out << "Channels: " << channels << (channels == 1 ? " Mono" : channels == 2 ? " Stereo" : "") << "\n";
     out << "Frames: " << frames << "\n";
-    out << "Duration: " << juce::String(seconds, 3) << " s\n";
-    if (file.existsAsFile()) out << "File size: " << juce::String(file.getSize()) << " bytes\n";
+    out << "Duration: " << juce::String(seconds, 3) << " seconds\n";
+    if (file.existsAsFile()) out << "File size: " << juce::File::descriptionOfSizeInBytes(file.getSize()) << "\n";
     out << "Peak: " << juce::String(peakDb, 2) << " dBFS\n";
-    out << "Effective frames: " << slot.thresholdStartFrame << " - " << slot.thresholdEndFrame << "\n";
-    out << "RAM audio modified: " << (slot.sampleAudioModified ? "Yes" : "No");
+    out << "DC left: " << juce::String(sample.dc[0], 6) << "\n";
+    if (channels > 1) out << "DC right: " << juce::String(sample.dc[1], 6) << "\n";
+    out << "Sample Start: " << juce::String(startPercent, 3) << " percent\n";
+    out << "Sample End: " << juce::String(endPercent, 3) << " percent\n";
+    out << "Effective Start: frame " << slot.thresholdStartFrame << ", " << juce::String(effectiveStartMs, 3) << " ms\n";
+    out << "Effective End: frame " << slot.thresholdEndFrame << ", " << juce::String(effectiveEndMs, 3) << " ms\n";
+    out << "RAM audio modified: " << (slot.sampleAudioModified ? "Yes" : "No") << "\n";
+    out << "Path: " << (file.existsAsFile() ? file.getFullPathName() : juce::String("Not available"));
     return out;
 }
 
@@ -1019,16 +1028,46 @@ juce::String LSampler24AudioProcessor::getCurrentSlotPropertiesText() const
     const int slotIndex = juce::jlimit(0, slotCount - 1, currentSlot.load());
     const auto& slot = slots[size_t(slotIndex)];
     const auto preset = slot.presetFile;
+    const int low = juce::roundToInt(slot.parameters[lsampler::P::low]);
+    const int high = juce::roundToInt(slot.parameters[lsampler::P::high]);
+    const int root = juce::roundToInt(slot.parameters[lsampler::P::root]);
+    const int velLow = juce::roundToInt(slot.parameters[lsampler::P::velocity_low]);
+    const int velHigh = juce::roundToInt(slot.parameters[lsampler::P::velocity_high]);
+    const bool poly = slot.parameters[lsampler::P::polyphony] >= 0.5;
+    const bool replace = slot.parameters[lsampler::P::same_note_replace] >= 0.5;
+    const int route = juce::roundToInt(slot.parameters[lsampler::P::output_route]);
+    const auto midiName = [](int note)
+    {
+        return juce::String(note) + " " + juce::MidiMessage::getMidiNoteName(note, true, true, 4);
+    };
+    const auto routeText = [route]()
+    {
+        if (route <= 0) return juce::String("Main 1/2");
+        const int first = 1 + route * 2;
+        return juce::String("Out ") + juce::String(first) + "/" + juce::String(first + 1);
+    };
+
     juce::String out;
     out << "Slot: " << (slotIndex + 1) << "\n";
     out << "Slot name: " << (slot.slotName.isNotEmpty() ? slot.slotName : juce::String("Empty")) << "\n";
-    out << "Configuration: " << (preset.existsAsFile() ? preset.getFileName() : juce::String("Unsaved / direct sample")) << "\n";
-    out << "Path: " << (preset.existsAsFile() ? preset.getFullPathName() : juce::String("No .lsampler-24-s file associated")) << "\n";
-    out << "Format: LSampler-24 Slot (.lsampler-24-s)\n";
+    out << "Voice mode: " << (poly ? "Poly" : "Mono") << "\n";
+    out << "Same Note Replace: " << (replace ? "On" : "Off") << "\n";
+    out << "Key range: " << midiName(low) << " to " << midiName(high) << "\n";
+    out << "Original Pitch: " << midiName(root) << "\n";
+    out << "Velocity range: " << velLow << " to " << velHigh << "\n";
+    out << "Output: " << routeText() << "\n";
+    out << "Slice division: " << slot.slice.division() << "\n";
+    out << "Configuration file: " << (preset.existsAsFile() ? preset.getFileName() : juce::String("Unsaved / direct sample")) << "\n";
+    out << "Configuration format: LSampler-24 Slot (.lsampler-24-s)\n";
     if (preset.existsAsFile())
     {
-        out << "File size: " << juce::String(preset.getSize()) << " bytes\n";
-        out << "Modified: " << preset.getLastModificationTime().toString(true, true, true, true) << "\n";
+        out << "Configuration size: " << juce::File::descriptionOfSizeInBytes(preset.getSize()) << "\n";
+        out << "Configuration modified: " << preset.getLastModificationTime().toString(true, true, true, true) << "\n";
+        out << "Configuration path: " << preset.getFullPathName() << "\n";
+    }
+    else
+    {
+        out << "Configuration path: No .lsampler-24-s file associated\n";
     }
     const auto sampleFile = slot.sampleFile;
     out << "Sample reference: " << (sampleFile.existsAsFile() ? library.makeSampleReference(sampleFile) : juce::String("None"));

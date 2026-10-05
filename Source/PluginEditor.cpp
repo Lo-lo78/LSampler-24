@@ -384,21 +384,25 @@ void LSampler24AudioProcessorEditor::openProperties()
         return;
     propertiesReturnFocus = juce::Component::getCurrentlyFocusedComponent();
     propertiesPanel.setInfo(processor.getCurrentSamplePropertiesText(), processor.getCurrentSlotPropertiesText());
+    propertiesConfigColumn = false;
+    propertiesSampleRow = 0;
+    propertiesConfigRow = 0;
     propertiesOpen = true;
     propertiesPanel.setVisible(true);
     propertiesPanel.toFront(false);
     resized();
     propertiesPanel.sampleInfo.grabKeyboardFocus();
-    // Give the read-only text editor real accessibility focus.  Its accessible
-    // name identifies the first column and NVDA can then read/navigate the actual
-    // property text with the normal cursor keys without an overlapping synthetic
-    // announcement.
+    propertiesPanel.highlightLine(false, propertiesSampleRow);
     juce::Timer::callAfterDelay(1,
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
         {
             if (safeThis == nullptr || !safeThis->propertiesOpen) return;
             if (auto* handler = safeThis->propertiesPanel.sampleInfo.getAccessibilityHandler())
                 handler->grabFocus();
+            const auto line = safeThis->propertiesPanel.lineText(false, safeThis->propertiesSampleRow);
+            if (line.isNotEmpty())
+                lsampler::announceToActiveScreenReader(safeThis->propertiesPanel.sampleInfo,
+                    "Properties. Audio File. " + line);
         });
 }
 
@@ -771,7 +775,18 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (propertiesOpen)
     {
+        auto announceProperty = [this]()
+        {
+            auto& column = propertiesConfigColumn ? propertiesPanel.configInfo : propertiesPanel.sampleInfo;
+            const int row = propertiesConfigColumn ? propertiesConfigRow : propertiesSampleRow;
+            propertiesPanel.highlightLine(propertiesConfigColumn, row);
+            const auto line = propertiesPanel.lineText(propertiesConfigColumn, row);
+            if (line.isNotEmpty())
+                lsampler::announceToActiveScreenReader(column, line);
+        };
+
         if (code == juce::KeyPress::escapeKey) { closeProperties(); return true; }
+
         if (mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown() && !mods.isCommandDown()
             && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
         {
@@ -794,13 +809,16 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 processor.setCurrentSlot(found);
                 refreshSlotCells();
                 propertiesPanel.setInfo(processor.getCurrentSamplePropertiesText(), processor.getCurrentSlotPropertiesText());
-                auto* currentColumn = juce::Component::getCurrentlyFocusedComponent();
-                const bool configColumn = currentColumn == &propertiesPanel.configInfo || propertiesPanel.configInfo.isParentOf(currentColumn);
-                auto& targetColumn = configColumn ? propertiesPanel.configInfo : propertiesPanel.sampleInfo;
+                propertiesSampleRow = juce::jlimit(0, juce::jmax(0, propertiesPanel.lineCount(false) - 1), propertiesSampleRow);
+                propertiesConfigRow = juce::jlimit(0, juce::jmax(0, propertiesPanel.lineCount(true) - 1), propertiesConfigRow);
+                auto& targetColumn = propertiesConfigColumn ? propertiesPanel.configInfo : propertiesPanel.sampleInfo;
                 targetColumn.grabKeyboardFocus();
-                const auto details = configColumn ? processor.getCurrentSlotPropertiesText() : processor.getCurrentSamplePropertiesText();
+                propertiesPanel.highlightLine(propertiesConfigColumn,
+                    propertiesConfigColumn ? propertiesConfigRow : propertiesSampleRow);
+                const auto line = propertiesPanel.lineText(propertiesConfigColumn,
+                    propertiesConfigColumn ? propertiesConfigRow : propertiesSampleRow);
                 lsampler::announceToActiveScreenReader(targetColumn,
-                    processor.getSlotLabel(found) + ". " + details.replace("\n", ". "));
+                    processor.getSlotLabel(found) + (line.isNotEmpty() ? juce::String(". ") + line : juce::String()));
                 refreshVisuals();
             }
             else
@@ -809,28 +827,64 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 for (int slot = 0; slot < LSampler24AudioProcessor::slotCount; ++slot)
                     if (processor.slotHasSample(slot))
                         ++loadedCount;
-
-                // Keep Properties boundaries silent when multiple loaded slots exist,
-                // matching the main-grid navigation model.  Only announce the
-                // special case where this is the sole loaded slot so the user knows
-                // there is nowhere else to navigate.
                 if (loadedCount <= 1)
                 {
-                    auto* announceSource = juce::Component::getCurrentlyFocusedComponent();
-                    if (announceSource == nullptr) announceSource = &propertiesPanel.sampleInfo;
-                    lsampler::announceToActiveScreenReader(*announceSource, "Only one loaded slot");
+                    auto& targetColumn = propertiesConfigColumn ? propertiesPanel.configInfo : propertiesPanel.sampleInfo;
+                    lsampler::announceToActiveScreenReader(targetColumn, "Only one loaded slot");
                 }
             }
             return true;
         }
+
+        if (!mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown())
+        {
+            if (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey)
+            {
+                int& row = propertiesConfigColumn ? propertiesConfigRow : propertiesSampleRow;
+                const int count = propertiesPanel.lineCount(propertiesConfigColumn);
+                if (count > 0)
+                {
+                    const int next = row + (code == juce::KeyPress::upKey ? -1 : 1);
+                    if (next >= 0 && next < count)
+                    {
+                        row = next;
+                        announceProperty();
+                    }
+                }
+                return true;
+            }
+            if (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey)
+            {
+                const bool targetConfig = code == juce::KeyPress::rightKey;
+                if (targetConfig != propertiesConfigColumn)
+                {
+                    propertiesConfigColumn = targetConfig;
+                    auto& target = propertiesConfigColumn ? propertiesPanel.configInfo : propertiesPanel.sampleInfo;
+                    target.grabKeyboardFocus();
+                    int& row = propertiesConfigColumn ? propertiesConfigRow : propertiesSampleRow;
+                    row = juce::jlimit(0, juce::jmax(0, propertiesPanel.lineCount(propertiesConfigColumn) - 1), row);
+                    announceProperty();
+                }
+                return true;
+            }
+        }
+
         if (code == juce::KeyPress::tabKey)
         {
-            auto* current = juce::Component::getCurrentlyFocusedComponent();
-            const bool sampleColumn = current == &propertiesPanel.sampleInfo || propertiesPanel.sampleInfo.isParentOf(current);
-            (sampleColumn ? propertiesPanel.configInfo : propertiesPanel.sampleInfo).grabKeyboardFocus();
+            propertiesConfigColumn = !propertiesConfigColumn;
+            auto& target = propertiesConfigColumn ? propertiesPanel.configInfo : propertiesPanel.sampleInfo;
+            target.grabKeyboardFocus();
+            int& row = propertiesConfigColumn ? propertiesConfigRow : propertiesSampleRow;
+            row = juce::jlimit(0, juce::jmax(0, propertiesPanel.lineCount(propertiesConfigColumn) - 1), row);
+            announceProperty();
             return true;
         }
-        return false; // Keep normal read-only TextEditor navigation within the active column.
+
+        // Properties is modal: never let plain navigation keys escape to REAPER.
+        if (code == juce::KeyPress::homeKey || code == juce::KeyPress::endKey
+            || code == juce::KeyPress::pageUpKey || code == juce::KeyPress::pageDownKey)
+            return true;
+        return true;
     }
 
     const int sourceSlot = slotCellIndex(source);

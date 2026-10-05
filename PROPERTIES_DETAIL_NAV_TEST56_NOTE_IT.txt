@@ -1,0 +1,20 @@
+LSampler-24 TEST56 - Properties dettagliate e navigabili
+
+- Alt+Invio apre Properties sullo slot corrente.
+- Due colonne verticali: Audio File e Slot Configuration.
+- Su/Giu navigano una proprieta per volta nella colonna corrente.
+- Sinistra/Destra cambiano colonna mantenendo la riga quando possibile.
+- Tab cambia colonna.
+- Ctrl+Su/Giu cambia slot caricato, saltando i vuoti e senza wrap.
+- Esc torna allo slot con il messaggio normale.
+- I bordi delle liste proprieta sono silenziosi.
+- Le Properties sono modali: i tasti di navigazione non possono uscire verso REAPER.
+
+Audio File include: nome, file, formato, sample rate, mono/stereo, frame, durata,
+dimensione file, peak, DC, Sample Start/End, Effective Start/End, stato RAM, percorso.
+
+Slot Configuration include: slot, nome, mono/poly, Same Note Replace, key range,
+Original Pitch, velocity range, output, Slice Division, file .lsampler-24-s,
+dimensione/data/percorso configurazione e sample reference.
+
+Nessuna modifica DSP. Non compilato localmente.
