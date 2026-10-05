@@ -67,7 +67,7 @@ void SliceEditor::refreshVisuals() {
 void SliceEditor::paint(juce::Graphics& g) {
     g.fillAll(rackgui::chassis);rackgui::caption(g,{20,14,getWidth()-40,32},"LSampler-24 / SLICE EDIT");
     g.setColour(rackgui::muted);g.setFont(14.0f);
-    g.drawFittedText("F1/F2/F3 or Tab: page | Arrows/Home/End: navigate (page 1: 8-row grid) | Alt+Up/Down: value | Alt+PgUp/PgDn: coarse value\nAlt+Left/Right: value step | Alt+Home/End: max/min | Enter: type value\nSpace: normal preview On/Off; when Off, slice/step navigation and edits auto-audition | F4: help | Escape: close",20,getHeight()-76,getWidth()-40,64,juce::Justification::centredLeft,4);
+    g.drawFittedText("F1: Global | F2/F3: Sequencer/Boundaries when Slice Mode = Sequencer | Tab: available pages | Arrows/Home/End: navigate (page 1: 8-row grid) | Alt+Up/Down: value | Alt+PgUp/PgDn: coarse value\nAlt+Left/Right: value step | Alt+Home/End: max/min | Enter: type value\nSpace: normal preview On/Off; when Off, slice/step navigation and edits auto-audition | F4: help | Escape: close",20,getHeight()-76,getWidth()-40,64,juce::Justification::centredLeft,4);
 }
 void SliceEditor::resized(){
     waveform.setBounds(20,58,getWidth()-40,260);
@@ -106,6 +106,7 @@ void SliceEditor::setValue(double value) {
         for(int i=0;i<count();++i)if(selected.any()?selected[size_t(i)]:i==item)s.steps[size_t(i)].values[size_t(property)]=value;
     }
     commit(s);
+    if(page!=Page::globals&&!sequencerEnabled())page=Page::globals;
 }
 void SliceEditor::changeValue(int direction,bool coarse) {
     const int width=sliceStepWidths[size_t(stepWidthIndex)];
@@ -191,7 +192,16 @@ void SliceEditor::preview(bool whole,bool slice,bool toggle) {
         announceToActiveScreenReader(*this,name+(stopping?" stopped":" started"));setDescription({});
     }
 }
+bool SliceEditor::sequencerEnabled() const {
+    const auto state=processor.getSliceState(slot);
+    return int(std::lround(state.globals[size_t(SliceG::mode)]))==7;
+}
 void SliceEditor::setPage(Page next) {
+    if(next!=Page::globals&&!sequencerEnabled()) {
+        announceToActiveScreenReader(*this,"Slice Sequencer inactive");
+        setDescription({});
+        return;
+    }
     page=next;item=std::min(item,std::max(0,count()-1));
     speak(page==Page::boundaries?"Boundaries. ":page==Page::globals?"Global Slice Settings. ":"Slice Sequencer. ");
 }
@@ -224,7 +234,7 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
     const auto c=juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
     if(code==juce::KeyPress::escapeKey) {processor.stopSlicePreview();if(onClose)onClose();return true;}
     if(code==juce::KeyPress::F4Key) {
-        announceToActiveScreenReader(*this,"Slice Edit. F1, F2 and F3 jump directly to Global Slice Settings, Slice Sequencer and Boundaries. Tab also cycles the pages. Plain arrows, Home and End navigate. Global Slice Settings uses an 8-row grid: Up/Down moves within a column and Left/Right changes column. On parameter pages a letter, number or punctuation character searches forward by parameter initial; Shift plus the same character searches backward. Alt Up and Alt Down change the current value. Alt Page Up and Alt Page Down change it coarsely. Alt Left and Alt Right select the value step. Alt Home sets maximum and Alt End sets minimum. Enter types a value. Z toggles boundary Zero Crossing. Space toggles the normal slot preview. While Space preview is off, moving between slices or steps and editing them automatically auditions the current slice or programmed step with its current parameters. Shift Up Down selects a step range. Shift Space toggles selection. Ctrl Delete clears selection. Ctrl C V copies and pastes steps. Ctrl Z Y undo and redo. Backspace resets current parameter. Escape closes and stops preview.");return true;
+        announceToActiveScreenReader(*this,"Slice Edit. F1 opens Global Slice Settings. F2 and F3 open Slice Sequencer and Boundaries only when Slice Mode is Sequencer. Tab cycles the available pages. Plain arrows, Home and End navigate. Global Slice Settings uses an 8-row grid: Up/Down moves within a column and Left/Right changes column. On parameter pages a letter, number or punctuation character searches forward by parameter initial; Shift plus the same character searches backward. Alt Up and Alt Down change the current value. Alt Page Up and Alt Page Down change it coarsely. Alt Left and Alt Right select the value step. Alt Home sets maximum and Alt End sets minimum. Enter types a value. Z toggles boundary Zero Crossing. Space toggles the normal slot preview. While Space preview is off, moving between slices or steps and editing them automatically auditions the current slice or programmed step with its current parameters. Shift Up Down selects a step range. Shift Space toggles selection. Ctrl Delete clears selection. Ctrl C V copies and pastes steps. Ctrl Z Y undo and redo. Backspace resets current parameter. Escape closes and stops preview.");return true;
     }
     if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isShiftDown()&&!mods.isCommandDown()) {
         if(code==juce::KeyPress::F1Key){setPage(Page::globals);return true;}
@@ -279,7 +289,13 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
         if(code==juce::KeyPress::endKey){setValueBoundary(false);return true;}
         return true;
     }
-    if(code==juce::KeyPress::tabKey) {setPage(Page((int(page)+(mods.isShiftDown()?2:1))%3));return true;}
+    if(code==juce::KeyPress::tabKey) {
+        if(!sequencerEnabled()) {
+            if(page!=Page::globals)setPage(Page::globals);
+            return true;
+        }
+        setPage(Page((int(page)+(mods.isShiftDown()?2:1))%3));return true;
+    }
     if(code==juce::KeyPress::spaceKey) {
         if(mods.isShiftDown()&&page==Page::steps){selected.flip(size_t(item));anchor=item;speak();}
         else if(!mods.isShiftDown())preview(true,false); // exactly the normal MIDI-note Slice path

@@ -63,6 +63,7 @@ private:
     void preview(bool whole,bool slice,bool toggle=true);
     void auditionEdit();
     void setPage(Page);
+    bool sequencerEnabled() const;
     void copy();
     void paste();
     void restore(bool forward);

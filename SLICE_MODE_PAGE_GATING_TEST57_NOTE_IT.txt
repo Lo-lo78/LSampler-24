@@ -1,0 +1,12 @@
+LSampler-24 TEST57 — Slice Mode page gating
+
+Modifica mirata rispetto a TEST56.
+
+- Dentro Alt+E, F1 / Global Slice Settings è sempre disponibile.
+- F2 / Slice Sequencer e F3 / Boundaries sono accessibili solo quando Slice Mode = Sequencer.
+- Se Slice Mode non è Sequencer, F2/F3 non cambiano pagina e annunciano "Slice Sequencer inactive".
+- Tab/Shift+Tab non escono dalla pagina Global finché Slice Mode non è Sequencer.
+- Quando Slice Mode = Sequencer, F2/F3 e Tab tornano a funzionare normalmente.
+- Help F4 e testo visivo aggiornati per descrivere la regola.
+
+Nessuna modifica DSP. Nessuna compilazione eseguita.
