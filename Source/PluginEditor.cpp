@@ -2103,7 +2103,7 @@ void LSampler24AudioProcessorEditor::changeSampleSetValue(int direction, bool co
     else if (sampleSetField == 3)
     {
         const int current = processor.getVariationMode(slot);
-        processor.setVariationMode(slot, juce::jlimit(LSampler24AudioProcessor::variationOff,
+        processor.setVariationMode(slot, juce::jlimit<int>(LSampler24AudioProcessor::variationOff,
             LSampler24AudioProcessor::variationRandomNoRepeat, current + (direction < 0 ? -1 : 1)));
     }
     refreshSampleSetCell(true);

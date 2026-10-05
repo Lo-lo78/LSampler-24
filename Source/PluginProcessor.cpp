@@ -174,7 +174,7 @@ void LSampler24AudioProcessor::markAudioStateDirty()
             state.sampleVelocityLow[size_t(sampleIndex)] = static_cast<uint8_t>(juce::jlimit(1, 127, slot.sampleVelocityLow[size_t(sampleIndex)]));
             state.sampleVelocityHigh[size_t(sampleIndex)] = static_cast<uint8_t>(juce::jlimit(1, 127, slot.sampleVelocityHigh[size_t(sampleIndex)]));
         }
-        state.variationMode = juce::jlimit(variationOff, variationRandomNoRepeat, slot.variationMode);
+        state.variationMode = juce::jlimit<int>(variationOff, variationRandomNoRepeat, slot.variationMode);
         state.slice = prepareSliceAudio(slot.slice,state.length);
     }
     writerSnapshot = middleSnapshot.exchange(writerSnapshot | 4, std::memory_order_acq_rel) & 3;
@@ -731,7 +731,7 @@ bool LSampler24AudioProcessor::loadSampleToSlot(const juce::File& file, int slot
 
 juce::String LSampler24AudioProcessor::variationModeName(int mode)
 {
-    switch (juce::jlimit(variationOff, variationRandomNoRepeat, mode))
+    switch (juce::jlimit<int>(variationOff, variationRandomNoRepeat, mode))
     {
         case variationRoundRobin: return "Round Robin";
         case variationRandom: return "Random";
@@ -852,7 +852,7 @@ int LSampler24AudioProcessor::getVariationMode(int slotIndex) const
 void LSampler24AudioProcessor::setVariationMode(int slotIndex, int mode)
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
-    mode = juce::jlimit(variationOff, variationRandomNoRepeat, mode);
+    mode = juce::jlimit<int>(variationOff, variationRandomNoRepeat, mode);
     const juce::ScopedLock lock(stateLock);
     auto& slot = slots[size_t(slotIndex)];
     slot.variationMode = mode;
@@ -1460,7 +1460,7 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
         }
         slot.slice = SliceState::fromTree(tree.getChildWithName("Slice"));
         if(sampleSetTree.isValid()) {
-            slot.variationMode=juce::jlimit(variationOff,variationRandomNoRepeat,int(sampleSetTree.getProperty("variationMode",variationOff)));
+            slot.variationMode=juce::jlimit<int>(variationOff,variationRandomNoRepeat,int(sampleSetTree.getProperty("variationMode",variationOff)));
             for(int i=0;i<sampleSetTree.getNumChildren();++i) {
                 const auto entry=sampleSetTree.getChild(i);
                 const int sampleIndex=juce::jlimit(0,sampleSetSize-1,int(entry.getProperty("index",i)));
