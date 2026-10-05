@@ -335,6 +335,14 @@ private:
     juce::Component::SafePointer<juce::Component> fileReturnFocus;
     std::vector<std::pair<juce::Component::SafePointer<juce::Component>, bool>> fileDisabledComponents;
     void chooseSample();
+    void enterSampleSetEditor();
+    void leaveSampleSetEditor();
+    void refreshSampleSetCell(bool announce = false);
+    void moveSampleSetEntry(int direction);
+    void moveSampleSetField(int direction);
+    void changeSampleSetValue(int direction, bool coarse = false);
+    void previewSampleSetEntry();
+    void enterSampleSetBrowser();
     void enterImportBrowser();
     void leaveImportBrowser(bool announceSlot, bool resetPreviewPosition = false);
     void refreshImportEntries();
@@ -442,6 +450,16 @@ private:
     std::unique_ptr<juce::LookAndFeel_V4> valueLookAndFeel;
 
     std::unique_ptr<juce::FileChooser> chooser;
+
+    LSamplerImportBrowserCell sampleSetCell;
+    bool sampleSetActive = false;
+    bool sampleSetReturnWasParameterPage = false;
+    int sampleSetIndex = 0;
+    int sampleSetField = 0; // Sample, Velocity Low, Velocity High, Variation Mode
+    juce::Component::SafePointer<juce::Component> sampleSetReturnFocus;
+    bool importForSampleSet = false;
+    int importSampleSetSlot = 0;
+    int importSampleSetIndex = 0;
 
     struct ImportEntry { juce::File file; bool directory = false; };
     struct ImportPlanItem { juce::File file; int slot = -1; bool slice = false; double start = 0.0, end = 0.0; };

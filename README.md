@@ -29,3 +29,9 @@ Il workflow di build è invariato; i test Slice sono nel target opzionale.
 
 TEST52
 - Properties Ctrl+Up/Down now uses silent physical boundaries: skips empty slots only in the requested direction and never wraps from 24 to 1 or 1 to 24.
+
+## TEST62: Sample Set / Velocity / Round Robin
+
+Ogni Slot puo' ora contenere fino a 16 campioni. Alt+M apre il Sample Set Editor dello Slot corrente; al suo interno Alt+S riusa il browser campioni esistente per caricare il file nella posizione selezionata. Ogni posizione ha Velocity Low/High e lo Slot offre Variation Mode: Off, Round Robin, Random e Random No Repeat.
+
+Il DSP resta condiviso dallo Slot e per ogni Note On viene scelta una sola sorgente. I vecchi Slot a campione singolo restano compatibili come Sample 1 con Variation Mode Off. Slice Engine/Edit/Sequencer restano legati a Sample 1 in questa prova. Vedere `SAMPLE_SET_TEST62_NOTE_IT.txt`.

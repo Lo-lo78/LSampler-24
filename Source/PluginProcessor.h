@@ -11,6 +11,15 @@ class LSampler24AudioProcessor : public juce::AudioProcessor
 {
 public:
     static constexpr int slotCount = 24;
+    static constexpr int sampleSetSize = lsampler::SlotAudioState::sampleSetSize;
+    enum VariationMode { variationOff = 0, variationRoundRobin = 1, variationRandom = 2, variationRandomNoRepeat = 3 };
+    struct SampleSetEntryInfo
+    {
+        bool loaded = false;
+        juce::File file;
+        juce::String name;
+        int velocityLow = 1, velocityHigh = 127;
+    };
 
     explicit LSampler24AudioProcessor(const juce::File& libraryRootOverride = {});
     ~LSampler24AudioProcessor() override;
@@ -48,6 +57,14 @@ public:
 
     bool loadSample(const juce::File& file, juce::String& error);
     bool loadSampleToSlot(const juce::File& file, int slot, juce::String& error);
+    bool loadSampleSetEntryToSlot(const juce::File& file, int slot, int sampleIndex, juce::String& error);
+    void clearSampleSetEntry(int slot, int sampleIndex);
+    SampleSetEntryInfo getSampleSetEntry(int slot, int sampleIndex) const;
+    juce::File getSampleSetEntryFile(int slot, int sampleIndex) const;
+    void setSampleSetVelocityRange(int slot, int sampleIndex, int low, int high);
+    int getVariationMode(int slot) const;
+    void setVariationMode(int slot, int mode);
+    static juce::String variationModeName(int mode);
     bool importSampleToSlot(const juce::File& file, int slotIndex, double startSeconds, double endSeconds, juce::String& error);
     bool isSlotOccupied(int slotIndex) const;
     bool prepareImportPreview(const juce::File& file, juce::String& error);
@@ -175,6 +192,11 @@ private:
     {
         std::shared_ptr<SharedSample> sample;
         juce::File sampleFile;
+        std::array<std::shared_ptr<SharedSample>, sampleSetSize - 1> alternateSamples {};
+        std::array<juce::File, sampleSetSize - 1> alternateSampleFiles {};
+        std::array<int, sampleSetSize> sampleVelocityLow = [] { std::array<int, sampleSetSize> v {}; v.fill(1); return v; }();
+        std::array<int, sampleSetSize> sampleVelocityHigh = [] { std::array<int, sampleSetSize> v {}; v.fill(127); return v; }();
+        int variationMode = variationOff;
         juce::String slotName;
         juce::File presetFile; // Runtime-only origin/save location for Alt+Enter properties.
         bool sampleAudioModified = false;
@@ -190,6 +212,7 @@ private:
     bool writePreset(const juce::File& file, const juce::ValueTree& tree, juce::String& error) const;
     juce::ValueTree readPreset(const juce::File& file, juce::String& error) const;
     bool materialiseSlotSample(int slotIndex, juce::String& error);
+    bool materialiseSampleSetExtras(int slotIndex, juce::String& error);
     void updateThresholdWindow(int slotIndex);
     void markAudioStateDirty();
     void syncAudioStateFromSlots();
@@ -245,7 +268,7 @@ private:
 
     struct AudioSnapshot {
         std::array<lsampler::SlotAudioState, slotCount> states;
-        std::array<std::shared_ptr<SharedSample>, slotCount> owners;
+        std::array<std::array<std::shared_ptr<SharedSample>, sampleSetSize>, slotCount> owners;
     };
     // Single writer (stateLock), single audio reader. Only the writer touches owners.
     // Dirty flag and buffer index travel in the same lock-free atomic exchange.

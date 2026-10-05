@@ -68,6 +68,63 @@ ThresholdWindow calculateThresholdWindow(const SlotParameters& p, SharedSample* 
     return w;
 }
 
+SamplePlaybackState prepareSamplePlaybackState(const SlotParameters& p, SharedSample* sample, double sr,
+                                                    int effectiveStart, int effectiveEnd) {
+    SamplePlaybackState g;
+    g.sample = sample;
+    if (!sample || sample->audio.getNumSamples() < 2) return g;
+    auto v=[&](P key){return p[key];};
+    const double sourceRate=sample->sourceSampleRate>0.0?sample->sourceSampleRate:sr;
+    const double sourceMs=sourceRate*.001;
+    g.sourceRatio=sourceRate/sr;
+    const int n=sample->audio.getNumSamples();
+    if (effectiveStart < 0 || effectiveEnd <= effectiveStart) {
+        const auto threshold=calculateThresholdWindow(p,sample);
+        effectiveStart=threshold.start;effectiveEnd=threshold.end;
+    }
+    g.start=std::clamp(effectiveStart,0,n-2);
+    g.length=std::clamp(effectiveEnd,g.start+1,n)-g.start;
+    if (v(P::normalize_on)) g.normalize=std::min(24.0,db(v(P::normalize_target))/std::max(1e-9,sample->peak));
+    const double frames=sample->audio.getNumSamples();
+    g.fadeIn=std::min(frames,std::floor(v(P::ram_fade_in)*sourceMs));
+    g.fadeOut=std::min(frames,std::floor(v(P::ram_fade_out)*sourceMs));
+    g.edgeFade=std::min(g.length*.5,v(P::start_end_fade)*sourceMs);
+    g.delayL=v(P::stereo_delay_left)*sourceMs;g.delayR=v(P::stereo_delay_right)*sourceMs;
+    g.grain=std::clamp(std::floor(sourceRate/v(P::stretch_frequency)+.5),16.0,8192.0);
+    const int ds=int(v(P::ram_downsample));
+    if (ds) {
+        constexpr double rates[]{0,32000,22050,22050,12000,12000,11025,11025,8000,8000,8000};
+        constexpr int bits[]{0,16,12,8,8,4,12,8,12,8,4};
+        g.downsampleHold=std::max(1,int(std::floor(sourceRate/rates[ds]+.5)));
+        g.downsampleScale=std::pow(2.0,bits[ds]-1)-1;
+    }
+    bool any=false;
+    for(int i=0;i<loopCount;++i) for(int k=0;k<loopParameterCount;++k)
+        any|=p.loops[size_t(i)][size_t(k)]!=loopParameters[size_t(k)].initial;
+    if(any && g.length>0) {
+        for(int i=0;i<loopCount;++i) {
+            bool active=i==0;
+            for(int k=0;k<loopParameterCount;++k) active|=p.loops[size_t(i)][size_t(k)]!=loopParameters[size_t(k)].initial;
+            if(!active)continue;
+            auto& l=g.stages[size_t(g.stageCount++)];l.memory=i;
+            l.start=std::min(double(g.length-1),std::floor(g.length*p.loop(i,L::start)*.01));
+            l.end=std::clamp(std::floor(g.length*p.loop(i,L::end)*.01),l.start+1,double(g.length));
+            l.repeats=int(p.loop(i,L::repeats));l.fadeIn=p.loop(i,L::fade_in)*sourceMs;l.fadeOut=p.loop(i,L::fade_out)*sourceMs;
+            l.pitch=p.loop(i,L::pitch_down);l.lp=p.loop(i,L::lp_down);l.hp=p.loop(i,L::hp_down);l.oneShot=p.loop(i,L::one_shot)!=0;
+        }
+        std::sort(g.stages.begin(),g.stages.begin()+g.stageCount,[](const auto& a,const auto& b){return a.start<b.start||(a.start==b.start&&a.memory<b.memory);});
+        for(int i=0;i+1<g.stageCount;++i) if(g.stages[size_t(i+1)].start>g.stages[size_t(i)].start)
+            g.stages[size_t(i)].end=std::min(g.stages[size_t(i)].end,g.stages[size_t(i+1)].start);
+        for(int i=0;i<g.stageCount;++i) {
+            auto& loop=g.stages[size_t(i)];
+            loop.fadeIn=std::min(loop.fadeIn,(loop.end-loop.start)*.5);
+            loop.fadeOut=std::min(loop.fadeOut,(loop.end-loop.start)*.5);
+        }
+    }
+    g.crossfade=v(P::loop_crossfade)*sourceMs;
+    return g;
+}
+
 SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sample,double sr,uint64_t revision,
                                     int effectiveStart,int effectiveEnd) {
     SlotAudioState s; s.params=p;s.sample=sample;s.sampleRate=sr;s.revision=revision;
@@ -76,33 +133,17 @@ SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sampl
     auto coeff=[&](P key){return std::exp(-1/std::max(1.0,ms(key)));};
     const double sourceRate=sample?sample->sourceSampleRate:sr;
     const double sourceMs=sourceRate*.001;
-    s.sourceRatio=sourceRate/sr;
-    if (sample && sample->audio.getNumSamples()>=2) {
-        const int n=sample->audio.getNumSamples();
-        if (effectiveStart < 0 || effectiveEnd <= effectiveStart) {
-            const auto threshold = calculateThresholdWindow(p, sample);
-            effectiveStart = threshold.start;
-            effectiveEnd = threshold.end;
-        }
-        s.start=std::clamp(effectiveStart,0,n-2);
-        s.length=std::clamp(effectiveEnd,s.start+1,n)-s.start;
-    }
+    const auto primary=prepareSamplePlaybackState(p,sample,sr,effectiveStart,effectiveEnd);
+    s.playback[0]=primary;s.sampleSet[0]=sample;s.sampleVelocityLow.fill(1);s.sampleVelocityHigh.fill(127);
+    s.sourceRatio=primary.sourceRatio;s.start=primary.start;s.length=primary.length;
     s.level=v(P::input_gain)<=-119.9?0:db(v(P::input_gain));
     s.panL=1-std::max(0.0,v(P::pan)*.01);s.panR=1+std::min(0.0,v(P::pan)*.01);
-    if (v(P::normalize_on) && sample) s.normalize=std::min(24.0,db(v(P::normalize_target))/std::max(1e-9,sample->peak));
-    const double frames=sample?sample->audio.getNumSamples():0;
-    s.fadeIn=std::min(frames,std::floor(v(P::ram_fade_in)*sourceMs));s.fadeOut=std::min(frames,std::floor(v(P::ram_fade_out)*sourceMs));
-    s.edgeFade=std::min(s.length*.5,v(P::start_end_fade)*sourceMs);
-    s.delayL=v(P::stereo_delay_left)*sourceMs;s.delayR=v(P::stereo_delay_right)*sourceMs;
+    s.normalize=primary.normalize;
+    s.fadeIn=primary.fadeIn;s.fadeOut=primary.fadeOut;s.edgeFade=primary.edgeFade;
+    s.delayL=primary.delayL;s.delayR=primary.delayR;
     s.stretchFactor=v(P::stretch_amount)>=0?1+v(P::stretch_amount):1/(1-v(P::stretch_amount));
-    s.grain=std::clamp(std::floor(sourceRate/v(P::stretch_frequency)+.5),16.0,8192.0);
-    const int ds=int(v(P::ram_downsample));
-    if (ds) {
-        constexpr double rates[]{0,32000,22050,22050,12000,12000,11025,11025,8000,8000,8000};
-        constexpr int bits[]{0,16,12,8,8,4,12,8,12,8,4};
-        s.downsampleHold=std::max(1,int(std::floor(sourceRate/rates[ds]+.5)));
-        s.downsampleScale=std::pow(2.0,bits[ds]-1)-1;
-    }
+    s.grain=primary.grain;
+    s.downsampleHold=primary.downsampleHold;s.downsampleScale=primary.downsampleScale;
     s.portamento=1/std::max(1.0,ms(P::portamento));s.smooth=1/std::max(1.0,ms(P::retrigger_smooth));
     s.amp=envelope(v(P::attack),v(P::decay),v(P::sustain),v(P::release),sr,false);
     s.lp=v(P::lp_on)!=0;s.hp=v(P::hp_on)!=0;
@@ -149,31 +190,7 @@ SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sampl
         s.characterScale=std::pow(2.0,std::floor(16-s.character[1]*13+.5)-1);s.characterSlew=1-std::min(.995,s.character[1]*.72);
         s.characterAir=.0015+s.character[4]*.025;s.characterRelease=std::exp(-1/(.180*sr));
     }
-    // Sort stage boundaries once per publication, never scan ten memories per audio sample.
-    bool any=false;
-    for(int i=0;i<loopCount;++i) for(int k=0;k<loopParameterCount;++k)
-        any|=p.loops[size_t(i)][size_t(k)]!=loopParameters[size_t(k)].initial;
-    if(any && s.length>0) {
-        for(int i=0;i<loopCount;++i) {
-            bool active=i==0;
-            for(int k=0;k<loopParameterCount;++k) active|=p.loops[size_t(i)][size_t(k)]!=loopParameters[size_t(k)].initial;
-            if(!active)continue;
-            auto& l=s.stages[size_t(s.stageCount++)];l.memory=i;
-            l.start=std::min(double(s.length-1),std::floor(s.length*p.loop(i,L::start)*.01));
-            l.end=std::clamp(std::floor(s.length*p.loop(i,L::end)*.01),l.start+1,double(s.length));
-            l.repeats=int(p.loop(i,L::repeats));l.fadeIn=p.loop(i,L::fade_in)*sourceMs;l.fadeOut=p.loop(i,L::fade_out)*sourceMs;
-            l.pitch=p.loop(i,L::pitch_down);l.lp=p.loop(i,L::lp_down);l.hp=p.loop(i,L::hp_down);l.oneShot=p.loop(i,L::one_shot)!=0;
-        }
-        std::sort(s.stages.begin(),s.stages.begin()+s.stageCount,[](const auto& a,const auto& b){return a.start<b.start||(a.start==b.start&&a.memory<b.memory);});
-        for(int i=0;i+1<s.stageCount;++i) if(s.stages[size_t(i+1)].start>s.stages[size_t(i)].start)
-            s.stages[size_t(i)].end=std::min(s.stages[size_t(i)].end,s.stages[size_t(i+1)].start);
-        for(int i=0;i<s.stageCount;++i) {
-            auto& loop=s.stages[size_t(i)];
-            loop.fadeIn=std::min(loop.fadeIn,(loop.end-loop.start)*.5);
-            loop.fadeOut=std::min(loop.fadeOut,(loop.end-loop.start)*.5);
-        }
-    }
-    s.crossfade=v(P::loop_crossfade)*sourceMs;
+    s.stages=primary.stages;s.stageCount=primary.stageCount;s.crossfade=primary.crossfade;
     s.effectsNeeded = v(P::ram_swap_lr)!=0 || v(P::ram_stereo_width)!=100 || v(P::normalize_on)!=0
         || s.transient || s.drive || s.comp || s.gate || s.degrade || s.ring;
     // Selection is prepared off the audio thread. Dynamic Slice/LFO/wheel state

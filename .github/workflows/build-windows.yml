@@ -22,7 +22,7 @@ jobs:
           python Tools/verify-test59-reference.py
           if ($LASTEXITCODE -ne 0) { throw "Frozen TEST59 reference verification failed." }
 
-      - name: Build TEST61, compare audio and measure performance
+      - name: Build TEST62, compare audio and measure performance
         id: compare
         shell: powershell
         run: powershell -ExecutionPolicy Bypass -File Tools/build-windows.ps1
@@ -31,44 +31,45 @@ jobs:
         if: always()
         shell: powershell
         run: |
-          $reportPath = "build\make-release\filter-reports\FILTER_TEST61_REPORT.txt"
+          $reportPath = "build\make-release\filter-reports\FILTER_TEST62_REPORT.txt"
           if (Test-Path -LiteralPath $reportPath) {
             '```text' | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
             Get-Content -LiteralPath $reportPath | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
             '```' | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
           } else {
-            "TEST61 did not reach audio comparison. Read the failed build step." | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+            "TEST62 did not reach audio comparison. Read the failed build step." | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
           }
 
       - name: Upload audio comparison reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: LSampler-24-TEST61-Reports
+          name: LSampler-24-TEST62-Reports
           path: |
             build/make-release/filter-reports/
             build/make-release/Testing/Temporary/
           if-no-files-found: warn
 
-      - name: Package TEST61 VST3 after audio comparison passes
+      - name: Package TEST62 VST3 after audio comparison passes
         if: success() && steps.compare.outcome == 'success'
         shell: powershell
         run: |
           $vst3 = "build\make-release\LSampler24_artefacts\Release\VST3\LSampler-24.vst3"
           if (-not (Test-Path -LiteralPath $vst3)) { throw "VST3 bundle not found: $vst3" }
           @(
-            "LSampler-24 TEST61 - specialised filters and LFO renderer.",
-            "The TEST60 coefficient cache is removed. TEST61 is active in this build.",
+            "LSampler-24 TEST62 - 16-sample Sample Set per slot.",
+            "Velocity layers and Off / Round Robin / Random / Random No Repeat selection.",
+            "TEST61 filter/LFO optimisations are retained; TEST62 adds the multisample engine and accessible Alt+M editor.",
             "Commit: $env:GITHUB_SHA",
             "Audio parity with TEST59 passed for the automated test scenarios.",
-            "Performance measurements are in LSampler-24-TEST61-Reports."
-          ) | Set-Content -LiteralPath "BUILD_TEST61.txt" -Encoding UTF8
-          Compress-Archive -Path $vst3, "BUILD_TEST61.txt" -DestinationPath "LSampler-24-Windows-VST3-TEST61.zip" -Force
+            "Performance measurements are in LSampler-24-TEST62-Reports."
+          ) | Set-Content -LiteralPath "BUILD_TEST62.txt" -Encoding UTF8
+          Compress-Archive -Path $vst3, "BUILD_TEST62.txt" -DestinationPath "LSampler-24-Windows-VST3-TEST62.zip" -Force
 
-      - name: Upload TEST61 VST3
+      - name: Upload TEST62 VST3
         if: success() && steps.compare.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: LSampler-24-Windows-VST3-TEST61
-          path: LSampler-24-Windows-VST3-TEST61.zip
+          name: LSampler-24-Windows-VST3-TEST62
+          path: LSampler-24-Windows-VST3-TEST62.zip
           if-no-files-found: error

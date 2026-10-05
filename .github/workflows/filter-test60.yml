@@ -7,4 +7,4 @@ jobs:
   retired:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "TEST61 tests and packaging are in Build LSampler-24 VST3."
+      - run: echo "TEST62 tests and packaging are in Build LSampler-24 VST3."

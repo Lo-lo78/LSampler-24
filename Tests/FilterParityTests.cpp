@@ -258,11 +258,11 @@ void benchmark(const Case& c,std::ofstream& csv,std::ofstream& report) {
 int main(int argc,char** argv) {
     const auto directory=argc>1?juce::File(juce::String::fromUTF8(argv[1])):juce::File::getCurrentWorkingDirectory().getChildFile("filter-reports");
     directory.createDirectory();
-    std::ofstream report(directory.getChildFile("FILTER_TEST61_REPORT.txt").getFullPathName().toStdString());
-    std::ofstream csv(directory.getChildFile("FILTER_TEST61_BENCHMARK.csv").getFullPathName().toStdString());
+    std::ofstream report(directory.getChildFile("FILTER_TEST62_REPORT.txt").getFullPathName().toStdString());
+    std::ofstream csv(directory.getChildFile("FILTER_TEST62_BENCHMARK.csv").getFullPathName().toStdString());
     try {
         check(report.good()&&csv.good(),"Cannot create report files");
-        report<<"LSampler TEST61 vs frozen TEST59: specialised filters/LFO renderer\n"
+        report<<"LSampler TEST62 vs frozen TEST59: Sample Set candidate, single-sample parity gate\n"
               <<"Exact sample comparison, all 50 channels; no error tolerance.\n"
               <<"Timings cover voice rendering, not REAPER GUI, driver or plugin output stage.\n"
               <<"Warm-up, five trials, alternating order; median; CI CPU is variable.\n\n";
@@ -309,11 +309,11 @@ int main(int argc,char** argv) {
         varied.name="LP_HP_varied_modulation";benchmark(varied,csv,report);
         Case noFilters;noFilters.filters=0;noFilters.voices=96;noFilters.blockSize=256;noFilters.events=false;
         noFilters.name="clean_TEST59_fast_path";benchmark(noFilters,csv,report);
-        report<<"\nPASS: TEST61 audio gate passed. Performance is reported, not asserted.\n";
-        std::cout<<"PASS: audio bit-identical in "<<cases<<" cases. Read FILTER_TEST61_REPORT.txt for timings.\n";
+        report<<"\nPASS: TEST62 audio gate passed. Performance is reported, not asserted.\n";
+        std::cout<<"PASS: audio bit-identical in "<<cases<<" cases. Read FILTER_TEST62_REPORT.txt for timings.\n";
         return 0;
     } catch(const std::exception& e) {
-        audioGuard=false;report<<"\nFAIL: "<<e.what()<<"\nNo TEST61 VST3 should be published.\n";
+        audioGuard=false;report<<"\nFAIL: "<<e.what()<<"\nNo TEST62 VST3 should be published.\n";
         std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;
     }
 }

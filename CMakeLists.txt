@@ -87,7 +87,7 @@ if(LSAMPLER_BUILD_TESTS)
     add_test(NAME sampler-regression COMMAND LSampler24Tests)
 endif()
 
-# TEST61 compares the normal plugin renderer with the frozen TEST59 renderer.
+# TEST62 keeps the TEST59 audio-parity gate while adding the Sample Set engine.
 option(LSAMPLER_BUILD_FILTER_TESTS "Build TEST59/candidate audio comparison and benchmark" OFF)
 if(LSAMPLER_BUILD_FILTER_TESTS)
     enable_testing()

@@ -42,7 +42,7 @@ private:
     struct Voice {
         lsampler::SlicePlayback slice;
         bool active=false,preview=false,keyDown=true,sustained=false,loopsReleased=false;
-        int slotIndex=-1,note=-1,channel=0,stage=-1,repeat=0,skipStage=-1;
+        int slotIndex=-1,note=-1,channel=0,stage=-1,repeat=0,skipStage=-1,sampleIndex=0;
         uint64_t age=0,revision=0;
         SharedSample* sample=nullptr;
         double position=0,effectiveNote=60,velocity=1,velocityGain=1,velocitySmooth=1,drift=0;
@@ -67,6 +67,7 @@ private:
     void stop(Voice&) noexcept;
     void release(Voice&) noexcept;
     Voice& chooseVoice(int slot,int cap);
+    int chooseSampleIndex(int slot,const lsampler::SlotAudioState&,int velocity,bool preview) noexcept;
     void updateVoice(Voice&,const lsampler::SlotAudioState&) noexcept;
     void retarget(Voice&,int note,double velocity,const lsampler::SlotAudioState&,bool retrigger);
     double random(Voice&) noexcept;
@@ -84,6 +85,9 @@ private:
     std::array<double,16> bend {},wheel {};
     std::array<std::array<double,2>,slotCount> freePhase {};
     std::array<int,slotCount> activePerSlot {};
+    std::array<std::array<uint32_t, lsampler::SlotAudioState::sampleSetSize>, slotCount> roundRobinCounters {};
+    std::array<std::array<int, lsampler::SlotAudioState::sampleSetSize>, slotCount> lastRandomChoice {};
+    std::array<uint32_t,slotCount> variationRandomState {};
     int activeTotal = 0, previewTotal = 0;
     std::array<int,25> outputRoutes {};
     const std::array<lsampler::SlotAudioState,slotCount>* states=nullptr;

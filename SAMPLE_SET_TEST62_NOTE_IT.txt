@@ -1,0 +1,63 @@
+LSampler-24 - SAMPLE SET TEST62
+==============================
+
+Questa versione aggiunge una prima implementazione sperimentale del Sample Set per Slot.
+Non e' stata compilata localmente: il progetto e' sorgente pronto per GitHub Actions.
+
+FUNZIONE
+--------
+Ogni Slot puo' contenere fino a 16 campioni.
+A ogni Note On viene scelto un solo campione; il DSP dello Slot resta comune.
+La Voice conserva il campione scelto fino alla propria fine/release.
+
+La Velocity MIDI del singolo campione usa 1..127 (velocity 0 in MIDI e' Note Off).
+Il Velocity Low/High gia' presente nello Slot rimane la zona esterna dello Slot.
+Il Velocity Low/High del Sample Set filtra invece i campioni candidati all'interno dello Slot.
+
+VARIATION MODE
+--------------
+Off               = usa il primo campione candidato.
+Round Robin       = ruota in ordine tra i campioni candidati.
+Random            = scelta casuale; puo' ripetere lo stesso campione.
+Random No Repeat  = scelta casuale senza ripetizione immediata dello stesso campione.
+
+Esempio classico con 16 campioni:
+Sample 1-4   Velocity 1-31
+Sample 5-8   Velocity 32-63
+Sample 9-12  Velocity 64-95
+Sample 13-16 Velocity 96-127
+Con Round Robin o Random No Repeat la variazione avviene solo tra i campioni del gruppo compatibile con la velocity ricevuta.
+
+EDITOR SAMPLE SET
+-----------------
+Alt+M             = apre/chiude Sample Set Editor dello Slot corrente.
+Freccia Su/Giu    = Sample precedente/successivo, 1..16, senza wrap.
+Tab/Shift+Tab     = cambia campo: Sample, Velocity Low, Velocity High, Variation Mode.
+Freccia Sin/Des   = cambia il valore del campo selezionato.
+Page Up/Down      = +/-10 sui campi Velocity.
+Home/End          = minimo/massimo appropriato del campo.
+Delete            = svuota la posizione Sample corrente.
+Spazio            = ascolta direttamente il singolo file della posizione corrente.
+Esc               = torna alla pagina da cui si e' entrati.
+
+CARICAMENTO CAMPIONI
+--------------------
+Dentro Sample Set Editor:
+Alt+S             = apre il browser audio gia' esistente, nel contesto della posizione Sample corrente.
+Enter su un file  = carica quel file nella posizione Sample corrente e torna al Sample Set Editor.
+Esc               = annulla e torna al Sample Set Editor.
+Il browser conserva navigazione, ricerca per iniziale e preview gia' presenti, ma nel contesto Sample Set non espone le operazioni di import multiplo/slicing/destinazione Slot.
+
+COMPATIBILITA'
+--------------
+Il vecchio campione dello Slot resta fisicamente Sample 1.
+I vecchi preset senza SampleSet continuano a caricare come prima: Sample 1 + Variation Mode Off.
+Il nuovo formato Slot/Bank/Plugin State e' versione 5.
+Save Slot e Save Bank materializzano anche Sample 2..16 nella Library.
+Export/Import Library include anche i riferimenti dei campioni aggiuntivi.
+Il normale caricamento singolo di un nuovo campione nello Slot (workflow precedente) azzera il Sample Set aggiuntivo e torna a Variation Mode Off, preservando il comportamento legacy.
+
+LIMITAZIONE VOLUTA DI TEST62
+----------------------------
+Il Slice Engine / Slice Sequencer continua volutamente a usare Sample 1 soltanto.
+Il Sample Set viene provato prima sul normale playback dello Slot, senza cambiare contemporaneamente la semantica Slice.

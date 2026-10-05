@@ -2,6 +2,7 @@
 #include "Parameters.h"
 #include "SamplePool.h"
 #include "SliceState.h"
+#include <cstdint>
 
 namespace lsampler {
 struct EnvelopeSettings {
@@ -24,10 +25,26 @@ struct LoopAudioState {
     double pitch = 0, lp = 0, hp = 0;
     bool oneShot = false;
 };
+struct SamplePlaybackState {
+    SharedSample* sample = nullptr;
+    double sourceRatio = 1, normalize = 1;
+    int start = 0, length = 0, downsampleHold = 1;
+    double downsampleScale = 1, fadeIn = 0, fadeOut = 0, edgeFade = 0, delayL = 0, delayR = 0;
+    double grain = 16, crossfade = 0;
+    std::array<LoopAudioState, loopCount> stages {};
+    int stageCount = 0;
+};
+
 struct SlotAudioState {
     SlotParameters params;
     SliceAudioState slice;
     SharedSample* sample = nullptr; // ownership lives exclusively in snapshot owners/retirement list
+    static constexpr int sampleSetSize = 16;
+    std::array<SharedSample*, sampleSetSize> sampleSet {};
+    std::array<uint8_t, sampleSetSize> sampleVelocityLow {};
+    std::array<uint8_t, sampleSetSize> sampleVelocityHigh {};
+    std::array<SamplePlaybackState, sampleSetSize> playback {};
+    int variationMode = 0; // 0 Off, 1 Round Robin, 2 Random, 3 Random No Repeat
     uint64_t revision = 0;
     double sampleRate = 44100, sourceRatio = 1;
     int start = 0, length = 0, downsampleHold = 1;
@@ -56,6 +73,7 @@ struct SlotAudioState {
 FilterCoefficients filterCoefficients(bool highPass, double hz, double resonance, double sampleRate) noexcept;
 struct ThresholdWindow { int start = 0, end = 0; };
 ThresholdWindow calculateThresholdWindow(const SlotParameters&, SharedSample*) noexcept;
+SamplePlaybackState prepareSamplePlaybackState(const SlotParameters&, SharedSample*, double sampleRate, int effectiveStart = -1, int effectiveEnd = -1);
 SlotAudioState prepareSlotAudioState(const SlotParameters&, SharedSample*, double sampleRate, uint64_t revision,
                                     int effectiveStart = -1, int effectiveEnd = -1);
 } // namespace lsampler
