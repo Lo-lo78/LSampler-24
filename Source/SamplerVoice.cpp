@@ -1,7 +1,6 @@
 #include "SamplerVoice.h"
 #include <cmath>
 #include <algorithm>
-#include <cstring>
 using namespace lsampler;
 namespace {
 constexpr double pi=3.14159265358979323846, offAmplitude=.00003162277660168379;
@@ -448,46 +447,49 @@ void GlobalVoicePool::advanceSlice(Voice& v,const SlotAudioState& s,double incre
         if(s.params[P::global_one_shot]==2&&!v.loopsReleased)release(v);
     }
 }
- #if LSAMPLER_ENABLE_FILTER_CACHE
-lsampler::FilterCoefficients GlobalVoicePool::cachedModulatedFilter(bool highPass,double baseHz,double modulation,double resonance) noexcept {
-    // Exact keys: no quantisation, tolerance, coefficient interpolation or
-    // control-rate reduction. A collision can only cause a cache miss.
-    auto bits=[](double x) noexcept { uint64_t b; std::memcpy(&b,&x,sizeof(b)); return b; };
-    const std::array<uint64_t,5> key {bits(baseHz),bits(modulation),bits(resonance),bits(hostSampleRate),highPass?1u:0u};
-    uint64_t hash=key[1] ^ (key[0]*0x9e3779b97f4a7c15ULL) ^ (key[2]*0xbf58476d1ce4e5b9ULL)
-        ^ (key[3]*0x94d049bb133111ebULL) ^ key[4];
-    hash^=hash>>30;hash*=0xbf58476d1ce4e5b9ULL;hash^=hash>>27;
-    auto& entry=(*filterCache)[size_t(hash)&(filterCacheSize-1)];
-    if(entry.valid && entry.key==key) {++diagnostics.filterCacheHits;return entry.coefficients;}
-    ++diagnostics.filterCacheMisses;
-    const auto result=filterCoefficients(highPass,baseHz*std::pow(2.0,modulation/12),resonance,hostSampleRate);
-    entry.key=key;entry.coefficients=result;entry.valid=true;
-    return result;
-}
-
- #endif
-
-template<bool Simple, bool Optimised>
+template<bool Simple, bool Optimised, int FilterMask>
 void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBuffer<float>& output,
                                   int start,int count,float* outL,float* outR,double mirror) {
+    static constexpr bool Filtered = FilterMask >= 0;
+    static constexpr bool BasicRead = Simple || Filtered;
     const auto& p=s.params;
     // These cannot change within a render span. MIDI changes start a new span.
     const double wheelValue=wheel[size_t(v.channel)];
     const double velocitySmoothing=std::min(1.0,1/(.002*hostSampleRate));
+    // Match filterCoefficients() operation-for-operation. These terms depend
+    // only on the span's immutable state; no reciprocal sample-rate shortcut.
+    const double cutoffLimit=Filtered?std::min(10000.0,hostSampleRate*.45):0;
+    const double lpDamping=Filtered && (FilterMask&1)?1/(.707+std::min(.99,p[P::lp_resonance])*9.293):0;
+    const double hpDamping=Filtered && (FilterMask&2)?2-std::min(.99,p[P::hp_resonance])*1.9:0;
+    auto modulatedCoefficients=[&]<bool HighPass>(double base,double mod,double resonance) {
+        const double hz=base*std::pow(2.0,mod/12);
+        if constexpr(Filtered) {
+            FilterCoefficients c;
+            const double limited=std::clamp(hz,20.0,cutoffLimit);
+            if constexpr(HighPass) {
+                c.f=std::clamp(2*std::sin(pi*limited/hostSampleRate),.000001,1.99);
+                c.q=hpDamping;
+            } else {
+                const double g=std::clamp(std::tan(pi*limited/hostSampleRate),.000001,20.0);
+                c.a1=1/(1+g*(g+lpDamping));c.a2=g*c.a1;c.a3=g*c.a2;
+            }
+            return c;
+        } else return filterCoefficients(HighPass,hz,resonance,hostSampleRate);
+    };
     const bool sharedRead=Optimised && s.delayL==s.delayR
         && std::signbit(s.delayL)==std::signbit(s.delayR)
         && (p[P::mode]==0 || v.sample->audio.getNumChannels()==1);
     if(sharedRead) ++diagnostics.sharedReadSpans;
     const float* dataL=nullptr;
     const float* dataR=nullptr;
-    if constexpr(Simple) {
+    if constexpr(BasicRead) {
         dataL=v.sample->audio.getReadPointer(0)+s.start;
         const int rightChannel=p[P::mode]==0?0:std::min(1,v.sample->audio.getNumChannels()-1);
         dataR=v.sample->audio.getReadPointer(rightChannel)+s.start;
     }
     for(int frame=start;frame<start+count && v.active;++frame) {
         if(v.amp.phase==0){stop(v);break;}
-        if(!Simple && v.slice.active) {
+        if(!BasicRead && v.slice.active) {
             if(s.slice.count<=0){stop(v);break;}
             if(!v.slice.configured)v.slice.configure(s.slice,s.length,s.sample->sourceSampleRate,p[P::ram_reverse]!=0,int(p[P::ram_downsample]));
         }
@@ -500,34 +502,34 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             v.amp.tick(s.amp);
             const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+v.drift;
             if(pitch!=v.pitchCached){v.increment=std::pow(2.0,pitch/12)*s.sourceRatio;v.pitchCached=pitch;}
-            if(!Simple&&v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);continue;
+            if(!BasicRead&&v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);continue;
         }
         const double l1=Simple?0:lfoTick(v,0,s.lfo[0],wheelValue),l2=Simple?0:lfoTick(v,1,s.lfo[1],wheelValue);
-        const LoopAudioState* loop=!v.slice.active&&v.stage>=0?&s.stages[size_t(v.stage)]:nullptr;
+        const LoopAudioState* loop=(BasicRead||!v.slice.active)&&v.stage>=0?&s.stages[size_t(v.stage)]:nullptr;
         const double repeats=loop&&loop->repeats>2?std::min(v.repeat,loop->repeats):0;
         const double repeatPitch=loop?-repeats*loop->pitch:0;
         const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+v.drift
             +v.amp.value*p[P::pitch_env]+l1*s.lfo[0].pitch+l2*(s.lfo[1].pitch+wheelValue*s.lfo[1].wheel)+repeatPitch;
         if(pitch!=v.pitchCached) {v.increment=std::pow(2.0,pitch/12)*s.sourceRatio;v.pitchCached=pitch;}
-        if(!Simple&&(s.ring||s.fm)&&effective!=v.followCached) {
+        if(!BasicRead&&(s.ring||s.fm)&&effective!=v.followCached) {
             const double follow=std::pow(2.0,(effective-69)/12);
             if(s.ring)v.ringIncrement=clamp(p[P::ring_freq]*(p[P::ring_mode]==2?follow:1),.1,20000)/hostSampleRate;
             if(s.fm)v.fmIncrement=clamp(440*follow*p[P::fm_ratio],.1,20000)/hostSampleRate;
             v.followCached=effective;
         }
         bool sliceSilent=false;
-        double pos=(!Simple&&v.slice.active)?v.slice.position(sliceSilent):v.position;
-        if(!Simple&&!v.slice.active&&p[P::stretch_amount]>0)pos=std::floor(pos/(s.grain*s.stretchFactor))*s.grain+wrap(pos,s.grain);
-        else if(!Simple&&!v.slice.active&&p[P::stretch_amount]<0)pos=std::floor(pos/s.grain)*(s.grain/s.stretchFactor)+wrap(pos,s.grain);
+        double pos=(!BasicRead&&v.slice.active)?v.slice.position(sliceSilent):v.position;
+        if(!BasicRead&&!v.slice.active&&p[P::stretch_amount]>0)pos=std::floor(pos/(s.grain*s.stretchFactor))*s.grain+wrap(pos,s.grain);
+        else if(!BasicRead&&!v.slice.active&&p[P::stretch_amount]<0)pos=std::floor(pos/s.grain)*(s.grain/s.stretchFactor)+wrap(pos,s.grain);
         pos=clamp(pos,0,double(s.length-1));
         if(!Simple&&(s.lfo[0].move!=0||s.lfo[1].move!=0))pos=clamp(pos+(l1*s.lfo[0].move+l2*s.lfo[1].move)*.01*s.length,0,double(s.length-1));
-        if(!Simple&&s.fm) {
+        if(!BasicRead&&s.fm) {
             ++diagnostics.fm;v.fmPhase=wrap(v.fmPhase+v.fmIncrement,1);
             v.fmFeedback=oscillator(v,v.fmPhase+v.fmFeedback*p[P::fm_feedback]*.0095,int(p[P::fm_wave]));
             pos=clamp(pos+v.fmFeedback*p[P::fm_amount]*.01*std::min(2048.0,std::max(1.0,s.length*.025)),0,double(s.length-1));
         }
         double left, right;
-        if constexpr (Simple) {
+        if constexpr (BasicRead) {
             // Same double-precision linear interpolation and endpoint clamp
             // as read(). Eligibility excludes RAM transforms and delays.
             const double readPos=pos-s.delayL;
@@ -541,13 +543,13 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             left=read(v,s,pos-s.delayL,0);
             right=sharedRead?left:read(v,s,pos-s.delayR,1);
         }
-        if(!Simple && v.slice.active) {
+        if(!BasicRead && v.slice.active) {
             const auto& q=v.slice;
             const double fade=q.fade(pos-q.begin)*(sliceSilent?0:q.gain);
             left*=fade*(1-std::max(0.0,q.pan))*(1-std::max(0.0,q.repeatPan));
             right*=fade*(1+std::min(0.0,q.pan))*(1+std::min(0.0,q.repeatPan));
         }
-        if(!Simple&&!v.slice.active&&s.crossfade>1) {
+        if(!BasicRead&&!v.slice.active&&s.crossfade>1) {
             const double ls=loop?loop->start:0,le=loop?loop->end:s.length;
             const bool one=loop?loop->oneShot:p[P::global_one_shot]!=0;
             const double fade=std::min(s.crossfade,(le-ls)*.5);
@@ -560,8 +562,8 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
                 left=cross(pos-s.delayL,0,left);right=sharedRead?left:cross(pos-s.delayR,1,right);
             }
         }
-        if(!Simple&&s.edgeFade>0) {left*=edgeGain(pos-s.delayL,s.length,s.edgeFade,s.edgeFade);right*=edgeGain(pos-s.delayR,s.length,s.edgeFade,s.edgeFade);}
-        if(!Simple&&loop&&(loop->fadeIn>0||loop->fadeOut>0)) {
+        if(!BasicRead&&s.edgeFade>0) {left*=edgeGain(pos-s.delayL,s.length,s.edgeFade,s.edgeFade);right*=edgeGain(pos-s.delayR,s.length,s.edgeFade,s.edgeFade);}
+        if(!BasicRead&&loop&&(loop->fadeIn>0||loop->fadeOut>0)) {
             auto loopFade=[&](double x) {
                 if(x<loop->start||x>=loop->end)return 1.0;
                 const double gain=edgeGain(x-loop->start,loop->end-loop->start,loop->fadeIn,loop->fadeOut);
@@ -569,8 +571,8 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             };
             left*=loopFade(pos-s.delayL);right*=loopFade(pos-s.delayR);
         }
-        if(!Simple && (!Optimised || s.effectsNeeded)) processEffects(v,s,left,right);
-        if(!Simple&&v.slice.active&&v.slice.globalPanDepth>0) {
+        if(!BasicRead && (!Optimised || s.effectsNeeded)) processEffects(v,s,left,right);
+        if(!BasicRead&&v.slice.active&&v.slice.globalPanDepth>0) {
             const auto& q=v.slice;const double mid=(left+right)*.70710678,phase=(q.globalPan+1)*pi*.25;
             left=left*(1-q.globalPanDepth)+mid*std::cos(phase)*q.globalPanDepth;
             right=right*(1-q.globalPanDepth)+mid*std::sin(phase)*q.globalPanDepth;
@@ -581,20 +583,13 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             left=left*(1-depth)+mono*std::cos(phase)*depth;right=right*(1-depth)+mono*std::sin(phase)*depth;
         }
         const double amp=v.amp.tick(s.amp);
-        if(!Simple&&(s.lp||(v.slice.active&&v.slice.lp!=0))) {
+        if(!Simple && (Filtered ? ((FilterMask&1)!=0) : (s.lp||(v.slice.active&&v.slice.lp!=0)))) {
             ++diagnostics.lp;
             const double env=p[P::lp_env_amount]!=0?v.lpEnvelope.tick(s.lpEnv):0;
             const double mod=env*p[P::lp_env_amount]+(v.note-p[P::root])*p[P::lp_key_follow]
-                +l1*s.lfo[0].lp+l2*s.lfo[1].lp-(loop?repeats*loop->lp:0)+(v.slice.active?v.slice.lp:0);
+                +l1*s.lfo[0].lp+l2*s.lfo[1].lp-(loop?repeats*loop->lp:0)+(!BasicRead&&v.slice.active?v.slice.lp:0);
             if(mod!=v.lpModCached) {
-                if(mod==0&&p[P::lp_vel_amount]==0) v.lpCoefficients=s.lpStatic;
-                else {
-                   #if LSAMPLER_ENABLE_FILTER_CACHE
-                    if constexpr(Optimised) v.lpCoefficients=cachedModulatedFilter(false,v.lpBase,mod,p[P::lp_resonance]);
-                    else
-                   #endif
-                        v.lpCoefficients=filterCoefficients(false,v.lpBase*std::pow(2.0,mod/12),p[P::lp_resonance],hostSampleRate);
-                }
+                v.lpCoefficients=mod==0&&p[P::lp_vel_amount]==0?s.lpStatic:modulatedCoefficients.template operator()<false>(v.lpBase,mod,p[P::lp_resonance]);
                 v.lpModCached=mod;
             }
             auto filter=[&](double x,int ch) {
@@ -604,7 +599,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
                 return v.lp.low[ch]; // preserve the legacy integrator output
             };left=filter(left,0);right=filter(right,1);
         }
-        const bool hpProcessing=!Simple&&(s.hp||(v.slice.active&&v.slice.hp!=0));
+        const bool hpProcessing=!Simple && (Filtered ? ((FilterMask&2)!=0) : (s.hp||(v.slice.active&&v.slice.hp!=0)));
         if(hpProcessing) {
             // Do not revive stale integrator memory when HP is enabled again
             // (including temporary Slice/Loop activation while slot HP is Off).
@@ -612,16 +607,9 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             v.hpProcessingLast=true;
             ++diagnostics.hp;
             const double env=p[P::hp_env_amount]!=0?v.hpEnvelope.tick(s.hpEnv):0;
-            const double mod=env*p[P::hp_env_amount]+l1*s.lfo[0].hp+l2*s.lfo[1].hp-(loop?repeats*loop->hp:0)+(v.slice.active?v.slice.hp:0);
+            const double mod=env*p[P::hp_env_amount]+l1*s.lfo[0].hp+l2*s.lfo[1].hp-(loop?repeats*loop->hp:0)+(!BasicRead&&v.slice.active?v.slice.hp:0);
             if(mod!=v.hpModCached) {
-                if(mod==0&&p[P::hp_vel_amount]==0) v.hpCoefficients=s.hpStatic;
-                else {
-                   #if LSAMPLER_ENABLE_FILTER_CACHE
-                    if constexpr(Optimised) v.hpCoefficients=cachedModulatedFilter(true,v.hpBase,mod,p[P::hp_resonance]);
-                    else
-                   #endif
-                        v.hpCoefficients=filterCoefficients(true,v.hpBase*std::pow(2.0,mod/12),p[P::hp_resonance],hostSampleRate);
-                }
+                v.hpCoefficients=mod==0&&p[P::hp_vel_amount]==0?s.hpStatic:modulatedCoefficients.template operator()<true>(v.hpBase,mod,p[P::hp_resonance]);
                 v.hpModCached=mod;
             }
             auto filter=[&](double x,int ch) {
@@ -645,13 +633,13 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         }
         v.velocitySmooth+=(v.velocityGain-v.velocitySmooth)*velocitySmoothing;
         const double rawAmp=amp*v.velocitySmooth;
-        if(!Simple&&p[P::retrigger_smooth]>0)v.ampSmooth+=(rawAmp-v.ampSmooth)*s.smooth;else v.ampSmooth=rawAmp;
+        if(!BasicRead&&p[P::retrigger_smooth]>0)v.ampSmooth+=(rawAmp-v.ampSmooth)*s.smooth;else v.ampSmooth=rawAmp;
         const double gain=v.ampSmooth*s.level*clamp(1+l1*s.lfo[0].volume+l2*s.lfo[1].volume,0,2);
         double panL=s.panL,panR=s.panR;
-        if(!Simple&&p[P::pan_env]!=0){const double pan=clamp((p[P::pan]+amp*p[P::pan_env]*mirror)*.01,-1,1);panL=1-std::max(0.0,pan);panR=1+std::min(0.0,pan);}
+        if(!BasicRead&&p[P::pan_env]!=0){const double pan=clamp((p[P::pan]+amp*p[P::pan_env]*mirror)*.01,-1,1);panL=1-std::max(0.0,pan);panR=1+std::min(0.0,pan);}
         left*=gain*panL;right*=gain*panR;
-        if(!Simple&&s.machine)applyMachine(v,s,left,right);
-        if(!Simple&&v.slice.active&&v.slice.output>0) {
+        if(!BasicRead&&s.machine)applyMachine(v,s,left,right);
+        if(!BasicRead&&v.slice.active&&v.slice.output>0) {
             const int route=outputRoutes[size_t(v.slice.output)];
             if(route>=0&&route+1<output.getNumChannels()) {
                 output.addSample(route,frame,float(left));output.addSample(route+1,frame,float(right));
@@ -660,7 +648,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             if(outL)* (outL+frame)+=float(left);
             if(outR)* (outR+frame)+=float(right);
         }
-        if(!Simple&&v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);
+        if(!BasicRead&&v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);
     }
 }
 
@@ -674,6 +662,7 @@ void GlobalVoicePool::renderReferenceForTesting(juce::AudioBuffer<float>& output
 template<bool Optimised>
 void GlobalVoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,int count) {
     if(!states||count<=0||activeVoiceCount()==0)return;
+    std::array<int8_t,slotCount> filterEligibility {};
     for(auto& v:voices) {
         if(!v.active)continue;
         const auto& s=(*states)[size_t(v.slotIndex)];const auto& p=s.params;
@@ -690,7 +679,34 @@ void GlobalVoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,
                 renderVoice<true,true>(v,s,output,start,count,outL,outR,mirror);
                 continue;
             }
+            if(!v.slice.active) {
+                auto& eligible=filterEligibility[size_t(v.slotIndex)];
+                if(eligible==0) {
+                    bool allowed=!s.effectsNeeded && !s.fm && !s.machine
+                        && p[P::ram_reverse]==0 && p[P::ram_downsample]==0 && p[P::dc_remove]==0
+                        && s.fadeIn<=1 && s.fadeOut<=1 && s.delayL==0 && s.delayR==0
+                        && !std::signbit(s.delayL) && !std::signbit(s.delayR)
+                        && p[P::stretch_amount]==0 && s.crossfade<=1 && s.edgeFade<=0
+                        && p[P::pan_env]==0 && p[P::retrigger_smooth]==0;
+                    for(int i=0;i<s.stageCount && allowed;++i)
+                        if(s.stages[size_t(i)].fadeIn>0 || s.stages[size_t(i)].fadeOut>0)allowed=false;
+                    eligible=allowed?1:-1;
+                }
+                if(eligible>0) {
+                    ++diagnostics.filterSpans;
+                    // Filter state is fixed for this MIDI-separated render span.
+                    // LFO/envelope/key-follow/loop modulation still runs per sample.
+                    switch((s.lp?1:0)|(s.hp?2:0)) {
+                        case 0:renderVoice<false,true,0>(v,s,output,start,count,outL,outR,mirror);break;
+                        case 1:renderVoice<false,true,1>(v,s,output,start,count,outL,outR,mirror);break;
+                        case 2:renderVoice<false,true,2>(v,s,output,start,count,outL,outR,mirror);break;
+                        default:renderVoice<false,true,3>(v,s,output,start,count,outL,outR,mirror);break;
+                    }
+                    continue;
+                }
+            }
         }
+        ++diagnostics.generalSpans;
         renderVoice<false,Optimised>(v,s,output,start,count,outL,outR,mirror);
     }
     // Free-running phase is slot-shared and advanced analytically once per render span.

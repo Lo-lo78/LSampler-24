@@ -87,14 +87,9 @@ if(LSAMPLER_BUILD_TESTS)
     add_test(NAME sampler-regression COMMAND LSampler24Tests)
 endif()
 
-# Experimental TEST60 is opt-in; the regular VST3 build keeps TEST59 behaviour.
-option(LSAMPLER_ENABLE_FILTER_CACHE "Enable experimental exact filter memoisation" OFF)
-target_compile_definitions(LSampler24 PUBLIC LSAMPLER_ENABLE_FILTER_CACHE=$<BOOL:${LSAMPLER_ENABLE_FILTER_CACHE}>)
-option(LSAMPLER_BUILD_FILTER_TESTS "Build TEST59/candidate filter comparison and benchmark" OFF)
+# TEST61 compares the normal plugin renderer with the frozen TEST59 renderer.
+option(LSAMPLER_BUILD_FILTER_TESTS "Build TEST59/candidate audio comparison and benchmark" OFF)
 if(LSAMPLER_BUILD_FILTER_TESTS)
-    if(NOT LSAMPLER_ENABLE_FILTER_CACHE)
-        message(FATAL_ERROR "Filter comparison requires LSAMPLER_ENABLE_FILTER_CACHE=ON")
-    endif()
     enable_testing()
     juce_add_console_app(LSampler24FilterTests PRODUCT_NAME "LSampler Filter Comparison")
     target_sources(LSampler24FilterTests PRIVATE Tests/FilterParityTests.cpp Tests/ReferenceTEST59/SamplerVoice.cpp)

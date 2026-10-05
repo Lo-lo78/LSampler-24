@@ -1,0 +1,65 @@
+LSampler-24 TEST61 - percorso rapido per filtri e LFO
+
+COME COMPILARE E PROVARE
+Copiare nel repository tutto il contenuto di questo progetto, compresa .github.
+Fare commit e push come al solito. Usare la sola Action:
+Build LSampler-24 VST3
+
+Scaricare l'artifact:
+LSampler-24-Windows-VST3-TEST61
+Contiene il VST3 e BUILD_TEST61.txt con versione e commit della build.
+L'ottimizzazione TEST61 e' gia' attiva: non ci sono due VST3 tra cui scegliere.
+La precedente Action TEST60 non parte piu' su push e non ha avvio manuale.
+Il suo file e' mantenuto per disattivarla anche copiando lo ZIP sopra TEST60.
+
+Nella stessa Action viene pubblicato:
+LSampler-24-TEST61-Reports
+Contiene FILTER_TEST61_REPORT.txt e FILTER_TEST61_BENCHMARK.csv.
+Il rapporto indica la parita' audio, i percorsi effettivamente usati e i tempi.
+Se il confronto audio fallisce, la Action non pubblica il VST3.
+
+MODIFICA
+Il motore riparte dalla TEST59. La cache a hash della TEST60 e' stata rimossa.
+Per voci senza Slice attivo e senza le ulteriori elaborazioni escluse dal
+percorso rapido, la lettura diretta del campione ora funziona anche con
+filtri e LFO. La scelta LP, HP, entrambi o nessuno avviene una volta per
+porzione di buffer delimitata dagli eventi MIDI, invece che per campione.
+
+I termini dei coefficienti che dipendono solo da risonanza e sample rate
+vengono calcolati prima del ciclo audio. Le operazioni matematiche mantengono
+la formula originale, compresa la divisione per il sample rate: nessuna
+approssimazione, tabella o interpolazione dei coefficienti e' stata introdotta.
+LFO e modulazioni continuano ad avanzare campione per campione.
+Stati dei filtri, inviluppi e LFO restano indipendenti per voce.
+Non cambia l'ordine con cui le voci vengono sommate.
+
+Se si abilita una funzione non ammessa dal percorso rapido, la voce torna
+al percorso generale. La scelta viene aggiornata a ogni porzione di buffer,
+quindi segue anche le modifiche durante una nota. La polifonia resta 96
+voci complessive, la durata del release e la lettura audio restano invariate.
+Non e' ancora un'implementazione multicore.
+
+CONTROLLI PREPARATI PER GITHUB ACTIONS
+50 scenari confrontano esattamente i bit dei campioni su tutti i 50 canali
+con il renderer TEST59 congelato. Includono filtri singoli e combinati,
+sei forme LFO, tutte le destinazioni LFO, velocity, inviluppi, key follow,
+loop/slice, sample rate e cambi live. 26 casi verificano separatamente
+l'attivazione e disattivazione di funzioni che richiedono il percorso
+generale, tra cui RAM transforms, fade, delay, effetti e smoothing.
+Controllati anche conteggi voci/operazioni DSP, preview e new/delete nel render.
+Il benchmark misura due slot con release lungo e filtri/LFO a 16, 48 e
+96 voci, piu' modulazioni variabili e voci senza filtri. Usa cinque prove
+con ordine alternato e riporta le mediane.
+
+STATO REALE DELLA CONSEGNA
+Qui non sono stati eseguiti compilazione, CMake, binari o GitHub Actions.
+I controlli statici del codice, degli enum, del workflow e del riferimento
+TEST59 sono passati. Un controllo numerico indipendente Python su 100000
+combinazioni dei coefficienti ha dato bit identici per lo spostamento dei
+termini invarianti; non sostituisce il confronto C++ della Action.
+
+Il guadagno CPU resta da misurare e potrebbe essere limitato: pow, tan e sin
+necessari alle modulazioni restano presenti. Il rapporto non nasconde eventuali
+rallentamenti. Un confronto superato dimostra parita' nei casi provati, non
+in tutti i preset possibili. La misura CI riguarda il motore voci; la prova
+finale in REAPER deve usare lo stesso preset, MIDI e buffer della TEST59.

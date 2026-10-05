@@ -33,8 +33,8 @@ void check(bool condition,const std::string& message) {if(!condition)throw std::
 struct Case {
     std::string name;
     double sampleRate=48000;
-    int blockSize=128,voices=48,filters=1,wave=0;
-    bool varied=false,slice=false,mono=false,events=true;
+    int blockSize=128,voices=48,filters=1,wave=0,feature=0;
+    bool varied=false,slice=false,mono=false,events=true,allLfoDestinations=false;
 };
 struct Scene {
     // Owners outlive both pools: pools are local to the comparison functions.
@@ -71,9 +71,16 @@ struct Scene {
                 p[P::hp_env_attack]=.07;p[P::hp_env_decay]=.2;
                 p[P::lfo1_mode]=0;p[P::lfo2_mode]=0;
                 p[P::lfo1_smoothing]=.17;p[P::lfo2_smoothing]=.37;
-                p[P::ram_reverse]=1;p[P::start_end_fade]=.8;
                 p.loops[0][size_t(L::end)]=60;p.loops[0][size_t(L::repeats)]=5;
                 p.loops[0][size_t(L::lp_down)]=.4;p.loops[1][size_t(L::start)]=60;
+            }
+            if(c.allLfoDestinations) {
+                p[P::lfo1_volume_depth]=.3;p[P::lfo2_pan_depth]=.6;
+                p[P::lfo1_pitch_depth]=3;p[P::lfo2_mod_pitch_depth]=5;
+                p[P::lfo1_sample_depth]=2;p[P::lfo2_sample_depth]=-1;
+                p[P::lfo1_delay]=.03;p[P::lfo2_one_shot]=1;
+                p[P::sample_start]=11;p[P::sample_end]=79;p[P::sample_play_start]=35;
+                p[P::output_route]=slot+1;
             }
         }
         publish(c);
@@ -122,7 +129,44 @@ template<class Pool> void midiEvents(Pool& pool,int block,bool second) {
         if(block==21)pool.noteOff(71,0);
     }
 }
+void setExtraFeature(SlotParameters& p,int feature,bool enabled) {
+    const SlotParameters defaults;
+    auto set=[&](P key,double value){p[key]=enabled?value:defaults[key];};
+    switch(feature) {
+        case 1:set(P::ram_reverse,1);break;
+        case 2:set(P::ram_downsample,4);break;
+        case 3:set(P::dc_remove,1);break;
+        case 4:set(P::ram_fade_in,18);break;
+        case 5:set(P::ram_fade_out,18);break;
+        case 6:set(P::stereo_delay_left,2);break;
+        case 7:set(P::stereo_delay_right,3);break;
+        case 8:set(P::stretch_amount,.4);break;
+        case 9:set(P::stretch_amount,-.4);break;
+        case 10:set(P::loop_crossfade,2);break;
+        case 11:set(P::start_end_fade,2);break;
+        case 12:set(P::pan_env,35);break;
+        case 13:set(P::retrigger_smooth,4);break;
+        case 14:p.loops[0][size_t(L::fade_in)]=enabled?2:0;break;
+        case 15:set(P::drive_type,1);set(P::drive_amount,30);break;
+        case 16:set(P::fm_amount,2);break;
+        case 17:set(P::machine_character,2);set(P::character_depth,40);break;
+        case 18:set(P::ram_swap_lr,1);break;
+        case 19:set(P::ram_stereo_width,70);break;
+        case 20:set(P::normalize_on,1);break;
+        case 21:set(P::comp_on,1);set(P::comp_mix,65);break;
+        case 22:set(P::gate_on,1);set(P::gate_depth,30);set(P::gate_mix,75);break;
+        case 23:set(P::transient_shape,25);set(P::transient_mix,70);break;
+        case 24:set(P::degrade_amount,20);break;
+        case 25:set(P::ring_mode,1);set(P::ring_amount,20);break;
+        case 26:p.loops[0][size_t(L::fade_out)]=enabled?2:0;break;
+        default:break;
+    }
+}
 void stateEvents(Scene& scene,const Case& c,int block) {
+    if(c.feature!=0 && (block==16||block==18)) {
+        for(auto& p:scene.params)setExtraFeature(p,c.feature,block==16);
+        scene.publish(c);
+    }
     if(block==10) {
         for(auto& p:scene.params){p[P::lp_cutoff]=.31;p[P::hp_cutoff]=.26;p[P::lp_resonance]=.71;p[P::hp_resonance]=.37;}
         scene.publish(c);
@@ -134,7 +178,7 @@ void stateEvents(Scene& scene,const Case& c,int block) {
         scene.publish(c);
     }
 }
-struct Metrics {uint64_t samples=0,hits=0,misses=0;};
+struct Metrics {uint64_t samples=0,specialised=0,general=0,plain=0;};
 Metrics compare(const Case& c,std::ofstream& report) {
     Scene scene(c);
     auto baseline=std::make_unique<Test59VoicePool>();auto candidate=std::make_unique<GlobalVoicePool>();
@@ -148,9 +192,9 @@ Metrics compare(const Case& c,std::ofstream& report) {
             midiEvents(*baseline,block,false);midiEvents(*candidate,block,false);
         }
         if(c.events && block==36) {
-            // Reuse the same candidate cache after a sample-rate change.
+            // Check re-preparation and path selection after a sample-rate change.
             Case changed=c;changed.sampleRate=c.sampleRate==96000?44100:96000;
-            result.hits+=candidate->diagnostics.filterCacheHits;result.misses+=candidate->diagnostics.filterCacheMisses;
+            result.specialised+=candidate->diagnostics.filterSpans;result.general+=candidate->diagnostics.generalSpans;result.plain+=candidate->diagnostics.simpleSpans;
             scene.rate=changed.sampleRate;scene.publish(changed);
             setup(*baseline,scene,changed);setup(*candidate,scene,changed);
         }
@@ -168,14 +212,17 @@ Metrics compare(const Case& c,std::ofstream& report) {
         }
         check(baseline->activeVoiceCount()==candidate->activeVoiceCount(),"Voice retirement: "+c.name);
         check(baseline->hasPreviewVoices()==candidate->hasPreviewVoices(),"Preview state: "+c.name);
+        const auto& x=baseline->diagnostics;const auto& y=candidate->diagnostics;
+        check(x.lp==y.lp&&x.hp==y.hp&&x.lfo==y.lfo&&x.ring==y.ring&&x.fm==y.fm
+              &&x.drive==y.drive&&x.comp==y.comp&&x.gate==y.gate&&x.transient==y.transient
+              &&x.degrade==y.degrade&&x.machine==y.machine,"DSP operation counts: "+c.name);
     }
-    const auto& x=baseline->diagnostics;const auto& y=candidate->diagnostics;
-    check(x.lp==y.lp&&x.hp==y.hp&&x.lfo==y.lfo&&x.ring==y.ring&&x.fm==y.fm
-          &&x.drive==y.drive&&x.comp==y.comp&&x.gate==y.gate&&x.transient==y.transient
-          &&x.degrade==y.degrade&&x.machine==y.machine,"DSP operation counts: "+c.name);
-    result.hits+=y.filterCacheHits;result.misses+=y.filterCacheMisses;
-    report<<"PASS "<<c.name<<" | exact float bits: "<<result.samples<<" samples | cache hits="
-          <<result.hits<<", misses="<<result.misses<<"\n";report.flush();return result;
+    const auto& y=candidate->diagnostics;
+    result.specialised+=y.filterSpans;result.general+=y.generalSpans;result.plain+=y.simpleSpans;
+    if(c.feature!=0)check(result.specialised>0&&result.general>0,"Fast/general transition not exercised: "+c.name);
+    if(c.allLfoDestinations)check(result.specialised>0,"LFO destinations must exercise specialised path: "+c.name);
+    report<<"PASS "<<c.name<<" | exact float bits: "<<result.samples<<" samples | specialised spans="
+          <<result.specialised<<", general="<<result.general<<", plain="<<result.plain<<"\n";report.flush();return result;
 }
 // Keep timing separate from parity: no comparing/reporting/allocating in timed spans.
 volatile double benchmarkSink=0;
@@ -211,52 +258,62 @@ void benchmark(const Case& c,std::ofstream& csv,std::ofstream& report) {
 int main(int argc,char** argv) {
     const auto directory=argc>1?juce::File(juce::String::fromUTF8(argv[1])):juce::File::getCurrentWorkingDirectory().getChildFile("filter-reports");
     directory.createDirectory();
-    std::ofstream report(directory.getChildFile("FILTER_TEST60_REPORT.txt").getFullPathName().toStdString());
-    std::ofstream csv(directory.getChildFile("FILTER_TEST60_BENCHMARK.csv").getFullPathName().toStdString());
+    std::ofstream report(directory.getChildFile("FILTER_TEST61_REPORT.txt").getFullPathName().toStdString());
+    std::ofstream csv(directory.getChildFile("FILTER_TEST61_BENCHMARK.csv").getFullPathName().toStdString());
     try {
         check(report.good()&&csv.good(),"Cannot create report files");
-        report<<"LSampler TEST60 vs frozen TEST59: filter memoisation experiment\n"
+        report<<"LSampler TEST61 vs frozen TEST59: specialised filters/LFO renderer\n"
               <<"Exact sample comparison, all 50 channels; no error tolerance.\n"
               <<"Timings cover voice rendering, not REAPER GUI, driver or plugin output stage.\n"
               <<"Warm-up, five trials, alternating order; median; CI CPU is variable.\n\n";
         csv<<"scenario,sample_rate,block_size,voices,trial,test59_ms,candidate_ms\n";
-        uint64_t comparisons=0,hits=0,misses=0;int cases=0;
+        uint64_t comparisons=0,specialised=0,general=0,plain=0;int cases=0;
         for(double rate:{44100.,48000.,96000.})for(int filters:{1,2,3}) {
             Case c;c.sampleRate=rate;c.filters=filters;c.voices=96;
             c.blockSize=filters==1?64:filters==2?127:512;
             c.name="rate"+std::to_string(int(rate))+"_filters"+std::to_string(filters)+"_96voices";
-            auto m=compare(c,report);comparisons+=m.samples;hits+=m.hits;misses+=m.misses;++cases;
+            auto m=compare(c,report);comparisons+=m.samples;specialised+=m.specialised;general+=m.general;plain+=m.plain;++cases;
         }
         for(int wave=0;wave<6;++wave) {
             Case c;c.wave=wave;c.filters=3;c.varied=true;c.mono=wave%2==0;c.blockSize=191;c.voices=24;
             c.name="varied_velocity_envelope_wave"+std::to_string(wave);
-            auto m=compare(c,report);comparisons+=m.samples;hits+=m.hits;misses+=m.misses;++cases;
+            auto m=compare(c,report);comparisons+=m.samples;specialised+=m.specialised;general+=m.general;plain+=m.plain;++cases;
         }
         for(int voices:{2,16,48,96}) {
             Case c;c.voices=voices;c.filters=3;c.blockSize=256;c.slice=true;
             c.name="slice_filters_voices"+std::to_string(voices);
-            auto m=compare(c,report);comparisons+=m.samples;hits+=m.hits;misses+=m.misses;++cases;
+            auto m=compare(c,report);comparisons+=m.samples;specialised+=m.specialised;general+=m.general;plain+=m.plain;++cases;
+        }
+        for(int feature=1;feature<=26;++feature) {
+            Case c;c.filters=3;c.voices=16;c.feature=feature;c.blockSize=128;
+            c.name="live_fast_general_transition_"+std::to_string(feature);
+            auto m=compare(c,report);comparisons+=m.samples;specialised+=m.specialised;general+=m.general;plain+=m.plain;++cases;
+        }
+        for(int filters:{0,1,2,3}) {
+            Case c;c.filters=filters;c.voices=24;c.allLfoDestinations=true;c.mono=filters%2==0;
+            c.name="all_LFO_destinations_filters_"+std::to_string(filters);
+            auto m=compare(c,report);comparisons+=m.samples;specialised+=m.specialised;general+=m.general;plain+=m.plain;++cases;
         }
         Case clean;clean.filters=0;clean.voices=96;clean.name="clean_TEST59_fast_path";
-        auto m=compare(clean,report);comparisons+=m.samples;++cases;
-        check(hits>0&&misses>0,"Both cache hits and misses must be exercised");
+        auto m=compare(clean,report);comparisons+=m.samples;specialised+=m.specialised;general+=m.general;plain+=m.plain;++cases;
+        check(specialised>0&&general>0&&plain>0,"Specialised, general and TEST59 plain paths must all be exercised");
         check(audioAllocations==0&&audioDeletes==0,"Heap allocation/deletion in audio render");
         report<<"\nAUDIO PARITY PASS: "<<cases<<" cases, "<<comparisons<<" float samples bit-identical.\n"
               <<"Guarded render allocations="<<audioAllocations<<", deletes="<<audioDeletes<<".\n"
-              <<"Cache hits="<<hits<<", misses="<<misses<<".\n\n";
+              <<"Specialised spans="<<specialised<<", general="<<general<<", plain="<<plain<<".\n\n";
         for(int voices:{16,48,96}) {
             Case c;c.voices=voices;c.blockSize=256;c.events=false;
             c.name="LP_two_LFO_"+std::to_string(voices)+"voices";benchmark(c,csv,report);
         }
         Case varied;varied.voices=96;varied.filters=3;varied.varied=true;varied.blockSize=256;varied.events=false;
-        varied.name="LP_HP_varied_low_cache_reuse";benchmark(varied,csv,report);
+        varied.name="LP_HP_varied_modulation";benchmark(varied,csv,report);
         Case noFilters;noFilters.filters=0;noFilters.voices=96;noFilters.blockSize=256;noFilters.events=false;
         noFilters.name="clean_TEST59_fast_path";benchmark(noFilters,csv,report);
-        report<<"\nPASS: candidate is eligible for experimental packaging. Performance is reported, not asserted.\n";
-        std::cout<<"PASS: audio bit-identical in "<<cases<<" cases. Read FILTER_TEST60_REPORT.txt for timings.\n";
+        report<<"\nPASS: TEST61 audio gate passed. Performance is reported, not asserted.\n";
+        std::cout<<"PASS: audio bit-identical in "<<cases<<" cases. Read FILTER_TEST61_REPORT.txt for timings.\n";
         return 0;
     } catch(const std::exception& e) {
-        audioGuard=false;report<<"\nFAIL: "<<e.what()<<"\nNo experimental VST3 should be published.\n";
+        audioGuard=false;report<<"\nFAIL: "<<e.what()<<"\nNo TEST61 VST3 should be published.\n";
         std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;
     }
 }

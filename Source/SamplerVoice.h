@@ -3,7 +3,7 @@
 #include "SlotAudioState.h"
 #include "SliceEngine.h"
 #include <array>
-#include <memory>
+#include <cstdint>
 
 class GlobalVoicePool
 {
@@ -30,7 +30,7 @@ public:
     // Not a plugin parameter, not a user-visible quality setting.
     void renderReferenceForTesting(juce::AudioBuffer<float>& output,int start,int count);
     // Counters count actual optional module calls; useful for bypass regression tests.
-    struct Diagnostics { uint64_t lp=0,hp=0,lfo=0,ring=0,fm=0,drive=0,comp=0,gate=0,transient=0,degrade=0,machine=0,simpleSpans=0,sharedReadSpans=0,filterCacheHits=0,filterCacheMisses=0; } diagnostics;
+    struct Diagnostics { uint64_t lp=0,hp=0,lfo=0,ring=0,fm=0,drive=0,comp=0,gate=0,transient=0,degrade=0,machine=0,simpleSpans=0,sharedReadSpans=0,filterSpans=0,generalSpans=0; } diagnostics;
 private:
     struct Envelope {
         double value=0; int phase=1;
@@ -61,20 +61,8 @@ private:
         uint32_t randomState=1;
     };
     template<bool Optimised> void renderInternal(juce::AudioBuffer<float>&,int start,int count);
-    template<bool Simple, bool Optimised> void renderVoice(Voice&,const lsampler::SlotAudioState&,
+    template<bool Simple, bool Optimised, int FilterMask=-1> void renderVoice(Voice&,const lsampler::SlotAudioState&,
         juce::AudioBuffer<float>&,int start,int count,float* outL,float* outR,double mirror);
-   #if LSAMPLER_ENABLE_FILTER_CACHE
-    struct FilterCacheEntry {
-        std::array<uint64_t,5> key {};
-        lsampler::FilterCoefficients coefficients;
-        bool valid=false;
-    };
-    static constexpr size_t filterCacheSize=2048;
-    // Allocated at construction, never in render. Each pool is audio-thread-owned.
-    std::unique_ptr<std::array<FilterCacheEntry,filterCacheSize>> filterCache=
-        std::make_unique<std::array<FilterCacheEntry,filterCacheSize>>();
-    lsampler::FilterCoefficients cachedModulatedFilter(bool highPass,double baseHz,double modulation,double resonance) noexcept;
-   #endif
     struct HeldNote { uint64_t order=0; float velocity=0; };
     void stop(Voice&) noexcept;
     void release(Voice&) noexcept;

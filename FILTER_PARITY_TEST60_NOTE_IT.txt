@@ -1,3 +1,5 @@
+NOTA STORICA TEST60: superata dalla TEST61. Per compilare e provare leggere FILTER_LFO_TEST61_NOTE_IT.txt.
+
 LSampler-24 TEST60 - esperimento filtri con confronto audio TEST59
 
 OBIETTIVO
