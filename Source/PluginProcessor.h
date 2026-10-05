@@ -83,6 +83,9 @@ public:
     void setSlotName(int slotIndex, const juce::String& name);
 
     juce::File getCurrentSampleFile() const;
+    juce::File getCurrentSlotPresetFile() const;
+    juce::String getCurrentSamplePropertiesText() const;
+    juce::String getCurrentSlotPropertiesText() const;
     juce::String getSampleStatus() const;
     int getLowKey() const noexcept;
     void setLowKey(int note);
@@ -98,6 +101,14 @@ public:
         previewToggleRequested.store(true);
     }
     void requestPreviewStop() noexcept { previewStopRequested.store(true); }
+    // Start the current slot preview unconditionally. Unlike Toggle, this always
+    // replaces any previous preview voice and is used by the main-slot
+    // Alt+P audition mode when selection moves between slots.
+    void requestPreviewStart() noexcept
+    {
+        previewTargetSlot.store(currentSlot.load(std::memory_order_relaxed));
+        previewStartRequested.store(true, std::memory_order_release);
+    }
     void requestPreviewRestartIfPlaying() noexcept
     {
         previewTargetSlot.store(currentSlot.load(std::memory_order_relaxed));
@@ -154,6 +165,7 @@ private:
         std::shared_ptr<SharedSample> sample;
         juce::File sampleFile;
         juce::String slotName;
+        juce::File presetFile; // Runtime-only origin/save location for Alt+Enter properties.
         bool sampleAudioModified = false;
         int thresholdStartFrame = 0;
         int thresholdEndFrame = 0;
@@ -178,6 +190,7 @@ private:
     // UI working memory only. Deliberately excluded from plugin/project/preset state.
     std::array<std::atomic<int>, slotCount> slotGridPositions {};
     std::atomic<bool> previewToggleRequested { false };
+    std::atomic<bool> previewStartRequested { false };
     std::atomic<bool> previewStopRequested { false };
     std::atomic<bool> previewRestartRequested { false };
     std::atomic<bool> previewAuditionRequested { false };

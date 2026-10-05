@@ -1,0 +1,8 @@
+LSampler-24 TEST53 - Properties navigation boundaries
+
+- Ctrl+Up/Down in Properties still skips empty slots in the requested direction.
+- No wrap-around.
+- When multiple loaded slots exist and the requested direction reaches a boundary, the edge is silent.
+- When only one loaded slot exists in the whole bank, Ctrl+Up/Down announces "Only one loaded slot".
+- Successful moves continue to announce the reached slot using the existing Properties announcement.
+- No DSP or persistent-state changes.

@@ -120,6 +120,9 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     setLookAndFeel(&rackTheme);
     for (auto* display : std::array<juce::Component*,5>{ &waveform, &slotOverview, &currentEdit, &sliceOverview, &masterOutput })
         addAndMakeVisible(*display);
+    addChildComponent(propertiesPanel);
+    propertiesPanel.sampleInfo.addKeyListener(this);
+    propertiesPanel.configInfo.addKeyListener(this);
     setSize(1120, 800);
 
     for (int i = 0; i < static_cast<int>(slotCells.size()); ++i)
@@ -145,6 +148,13 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     addButton(saveSlot, 4);
     addButton(loadBank, 5);
     addButton(saveBank, 6);
+    // Show keyboard equivalents directly on the mouse buttons so sighted users
+    // discover the accessible workflow while exploring the interface.
+    loadSample.setButtonText("Load Sample  Alt+O");
+    loadSlot.setButtonText("Load Slot  Alt+S");
+    saveSlot.setButtonText("Save Slot  Alt+Shift+S");
+    loadBank.setButtonText("Load Bank  Alt+B");
+    saveBank.setButtonText("Save Bank  Alt+Shift+B");
 
     status.setText(processor.getSampleStatus(), juce::dontSendNotification);
     status.setAccessible(false);
@@ -273,6 +283,11 @@ void LSampler24AudioProcessorEditor::paint(juce::Graphics& g)
 void LSampler24AudioProcessorEditor::resized()
 {
     if(sliceEditor)sliceEditor->setBounds(getLocalBounds());
+    if (propertiesOpen)
+    {
+        propertiesPanel.setBounds(getLocalBounds().reduced(20).withTrimmedTop(42).withTrimmedBottom(18));
+        return;
+    }
     repaint(); // Refresh the painted help line when switching editor modes.
     const bool browser=importBrowserActive||slotLibraryActive;
     for(auto* display:std::array<juce::Component*,4>{ &waveform,&currentEdit,&sliceOverview,&masterOutput })display->setVisible(!browser);
@@ -333,6 +348,13 @@ void LSampler24AudioProcessorEditor::selectSlot(int slotIndex, bool moveKeyboard
     status.setText(processor.getSampleStatus(), juce::dontSendNotification);
     if (moveKeyboardFocus)
         slotCells[static_cast<size_t>(slotIndex)].grabKeyboardFocus();
+
+    // Alt+P slot audition is deliberately selection-following. Always issue a
+    // start, not a toggle: moving to a new slot replaces the old preview and
+    // plays this slot through the same configured preview path. Empty slots
+    // simply stop the previous preview.
+    if (slotPreviewMode && !parameterPage && !propertiesOpen)
+        processor.requestPreviewStart();
 }
 
 
@@ -356,6 +378,33 @@ void LSampler24AudioProcessorEditor::returnToCurrentSlotAndAnnounce()
                     lsampler::announceToActiveScreenReader(currentCell, safeThis->processor.getSlotLabel(slot));
                 });
         });
+}
+
+void LSampler24AudioProcessorEditor::openProperties()
+{
+    if (propertiesOpen || sliceEditor != nullptr || importBrowserActive || slotLibraryActive)
+        return;
+    propertiesReturnFocus = juce::Component::getCurrentlyFocusedComponent();
+    propertiesPanel.setInfo(processor.getCurrentSamplePropertiesText(), processor.getCurrentSlotPropertiesText());
+    propertiesOpen = true;
+    propertiesPanel.setVisible(true);
+    propertiesPanel.toFront(false);
+    resized();
+    propertiesPanel.sampleInfo.grabKeyboardFocus();
+    lsampler::announceToActiveScreenReader(propertiesPanel.sampleInfo,
+        "Properties. Audio file information. " + processor.getCurrentSamplePropertiesText().replace("\n", ". "));
+}
+
+void LSampler24AudioProcessorEditor::closeProperties()
+{
+    if (!propertiesOpen) return;
+    propertiesOpen = false;
+    propertiesPanel.setVisible(false);
+    propertiesReturnFocus = nullptr;
+    resized();
+    // Properties is opened from the current slot. Escape always returns to that
+    // slot and reuses the normal existing slot announcement.
+    returnToCurrentSlotAndAnnounce();
 }
 
 void LSampler24AudioProcessorEditor::refreshSlotCells()
@@ -491,6 +540,10 @@ void LSampler24AudioProcessorEditor::openValueEditor() {
 
 void LSampler24AudioProcessorEditor::enterSlotParameters()
 {
+    // The main grid intentionally defaults to configured-slot audition. The
+    // slot page defaults to DAW Space; each surface can therefore be learned
+    // consistently with Alt+P as the explicit hand-off toggle.
+    gridPreviewMode = true;
     parameterPage = true;
     for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
     loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
@@ -708,6 +761,70 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     const auto mods = key.getModifiers();
     const auto code = key.getKeyCode();
     const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
+
+    if (propertiesOpen)
+    {
+        if (code == juce::KeyPress::escapeKey) { closeProperties(); return true; }
+        if (mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown() && !mods.isCommandDown()
+            && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
+        {
+            const int direction = code == juce::KeyPress::upKey ? -1 : 1;
+            const int current = processor.getCurrentSlot();
+            int found = -1;
+            for (int candidate = current + direction;
+                 candidate >= 0 && candidate < LSampler24AudioProcessor::slotCount;
+                 candidate += direction)
+            {
+                if (processor.slotHasSample(candidate))
+                {
+                    found = candidate;
+                    break;
+                }
+            }
+
+            if (found >= 0)
+            {
+                processor.setCurrentSlot(found);
+                refreshSlotCells();
+                propertiesPanel.setInfo(processor.getCurrentSamplePropertiesText(), processor.getCurrentSlotPropertiesText());
+                auto* currentColumn = juce::Component::getCurrentlyFocusedComponent();
+                const bool configColumn = currentColumn == &propertiesPanel.configInfo || propertiesPanel.configInfo.isParentOf(currentColumn);
+                auto& targetColumn = configColumn ? propertiesPanel.configInfo : propertiesPanel.sampleInfo;
+                targetColumn.grabKeyboardFocus();
+                const auto details = configColumn ? processor.getCurrentSlotPropertiesText() : processor.getCurrentSamplePropertiesText();
+                lsampler::announceToActiveScreenReader(targetColumn,
+                    processor.getSlotLabel(found) + ". " + details.replace("\n", ". "));
+                refreshVisuals();
+            }
+            else
+            {
+                int loadedCount = 0;
+                for (int slot = 0; slot < LSampler24AudioProcessor::slotCount; ++slot)
+                    if (processor.slotHasSample(slot))
+                        ++loadedCount;
+
+                // Keep Properties boundaries silent when multiple loaded slots exist,
+                // matching the main-grid navigation model.  Only announce the
+                // special case where this is the sole loaded slot so the user knows
+                // there is nowhere else to navigate.
+                if (loadedCount <= 1)
+                {
+                    auto* announceSource = juce::Component::getCurrentlyFocusedComponent();
+                    if (announceSource == nullptr) announceSource = &propertiesPanel.sampleInfo;
+                    lsampler::announceToActiveScreenReader(*announceSource, "Only one loaded slot");
+                }
+            }
+            return true;
+        }
+        if (code == juce::KeyPress::tabKey)
+        {
+            auto* current = juce::Component::getCurrentlyFocusedComponent();
+            const bool sampleColumn = current == &propertiesPanel.sampleInfo || propertiesPanel.sampleInfo.isParentOf(current);
+            (sampleColumn ? propertiesPanel.configInfo : propertiesPanel.sampleInfo).grabKeyboardFocus();
+            return true;
+        }
+        return false; // Keep normal read-only TextEditor navigation within the active column.
+    }
 
     const int sourceSlot = slotCellIndex(source);
     const bool sourceIsSlot = sourceSlot >= 0;
@@ -1083,6 +1200,47 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         return true;
     }
 
+    if (!mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown()
+        && mods.isAltDown() && ch == 'p')
+    {
+        auto* announceSource = source != nullptr ? source : static_cast<juce::Component*>(&status);
+
+        if (parameterPage && !globalOpen)
+        {
+            // Inside the main parameter grid the default is the opposite of the
+            // slot page: Space auditions the configured slot. Alt+P temporarily
+            // hands Space back to the DAW, and toggles back to audition mode.
+            gridPreviewMode = !gridPreviewMode;
+            if (gridPreviewMode)
+            {
+                processor.requestPreviewStart();
+                lsampler::announceToActiveScreenReader(*announceSource, "Grid preview On");
+            }
+            else
+            {
+                processor.requestPreviewStop();
+                lsampler::announceToActiveScreenReader(*announceSource, "DAW space On");
+            }
+        }
+        else
+        {
+            // On the slot page the default is DAW Space. Alt+P enables the
+            // selection-following configured-slot audition mode.
+            slotPreviewMode = !slotPreviewMode;
+            if (slotPreviewMode)
+            {
+                processor.requestPreviewStart();
+                lsampler::announceToActiveScreenReader(*announceSource, "Slot preview On");
+            }
+            else
+            {
+                processor.requestPreviewStop();
+                lsampler::announceToActiveScreenReader(*announceSource, "DAW space On");
+            }
+        }
+        return true;
+    }
+
     if(!mods.isCtrlDown()&&!mods.isShiftDown()&&!mods.isCommandDown()
        && mods.isAltDown()&&(ch=='e'||code=='E')) {
         openSliceEditor(false);return true;
@@ -1128,7 +1286,15 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (code == juce::KeyPress::spaceKey && parameterPage)
     {
-        if (!globalOpen) processor.requestPreviewToggle();
+        if (!globalOpen)
+        {
+            if (gridPreviewMode)
+            {
+                processor.requestPreviewToggle();
+                return true;
+            }
+            return false; // Alt+P selected DAW Space while the main grid is open.
+        }
         return true;
     }
 
@@ -1142,23 +1308,48 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         return true;
     }
 
-    // Ctrl+Up/Down changes the current slot while keeping the parameter grid open.
+    // Ctrl+Up/Down changes the current loaded slot while keeping the parameter grid open.
+    // Empty slots are skipped, there is no wrap, and boundaries stay silent when
+    // more than one loaded slot exists.  If this is the only loaded slot, announce
+    // that fact so the user knows there is nowhere else to navigate.
     if (parameterPage && !globalOpen && !sourceIsValueEditor && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
         && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
     {
         const int current = processor.getCurrentSlot();
-        const int next = current + (code == juce::KeyPress::upKey ? -1 : 1);
-        if (next >= 0 && next < LSampler24AudioProcessor::slotCount)
+        const int direction = code == juce::KeyPress::upKey ? -1 : 1;
+        int found = -1;
+        for (int candidate = current + direction;
+             candidate >= 0 && candidate < LSampler24AudioProcessor::slotCount;
+             candidate += direction)
+        {
+            if (processor.slotHasSample(candidate))
+            {
+                found = candidate;
+                break;
+            }
+        }
+
+        if (found >= 0)
         {
             processor.setSlotGridPosition(current, selectedParameter);
-            processor.setCurrentSlot(next);
+            processor.setCurrentSlot(found);
             const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
-            selectedParameter = juce::jlimit(0, normalGridSize - 1, processor.getSlotGridPosition(next));
+            selectedParameter = juce::jlimit(0, normalGridSize - 1, processor.getSlotGridPosition(found));
             parameterSelector.setSelectedItemIndex(selectedParameter, juce::dontSendNotification);
             refreshSlotCells();
             refreshParameterGrid();
             configureValueForSelectedParameter();
-            lsampler::announceToActiveScreenReader(parameterSelector, processor.getSlotLabel(next) + ". " + parameterCellText(selectedParameter));
+            lsampler::announceToActiveScreenReader(parameterSelector, processor.getSlotLabel(found) + ". " + parameterCellText(selectedParameter));
+        }
+        else
+        {
+            int loadedCount = 0;
+            for (int slot = 0; slot < LSampler24AudioProcessor::slotCount; ++slot)
+                if (processor.slotHasSample(slot))
+                    ++loadedCount;
+
+            if (loadedCount <= 1)
+                lsampler::announceToActiveScreenReader(parameterSelector, "Only one loaded slot");
         }
         return true;
     }
@@ -1398,6 +1589,11 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (isActionButton(source))
     {
+        if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown() && ch == 'l')
+        {
+            returnToCurrentSlotAndAnnounce();
+            return true;
+        }
         if (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey
             || code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
             || code == juce::KeyPress::homeKey || code == juce::KeyPress::endKey
@@ -1407,6 +1603,28 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     }
 
     if (!sourceIsSlot) return false;
+
+    // Properties belongs to the current slot, not to arbitrary editor surfaces.
+    if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown()
+        && code == juce::KeyPress::returnKey)
+    {
+        openProperties();
+        return true;
+    }
+
+    // With Alt+P audition mode enabled, Space owns slot preview. With the mode
+    // disabled it intentionally falls through to the host so REAPER keeps its
+    // normal Play/Stop shortcut.
+    if (code == juce::KeyPress::spaceKey && !mods.isAltDown() && !mods.isCtrlDown()
+        && !mods.isShiftDown() && !mods.isCommandDown())
+    {
+        if (slotPreviewMode)
+        {
+            processor.requestPreviewToggle();
+            return true;
+        }
+        return false;
+    }
 
     const int currentSlot = processor.getCurrentSlot();
     auto announceCurrentSlot = [this, currentSlot]()

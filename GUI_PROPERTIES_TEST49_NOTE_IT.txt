@@ -1,0 +1,12 @@
+LSampler-24 TEST49 — pulsanti/shortcut e Properties
+
+Modifiche sorgente, senza compilazione:
+- I cinque pulsanti principali mostrano anche lo shortcut: Load Sample Alt+O, Load Slot Alt+S, Save Slot Alt+Shift+S, Load Bank Alt+B, Save Bank Alt+Shift+B.
+- Quando il focus è su uno di questi pulsanti, Alt+L torna sempre alla griglia dei 24 slot e annuncia lo slot corrente.
+- Alt+Enter apre Properties per lo slot corrente.
+- Properties è una pagina a due colonne: SAMPLE e SLOT CONFIGURATION.
+- Colonna Sample: nome, file/percorso, formato, sample rate, canali, frames, durata, dimensione, peak, finestra effettiva e stato audio RAM modificato.
+- Colonna Slot Configuration: slot/nome, eventuale file .lsampler-24-s associato, percorso, dimensione/data e sample reference.
+- Tab passa tra le due colonne; Esc chiude e torna al focus precedente.
+- Il percorso del preset slot è runtime-only: viene ricordato quando si carica o salva un .lsampler-24-s, ma non viene serializzato nel progetto.
+- Caricando direttamente un sample/Alt+O, la configurazione viene indicata come non ancora associata a un file .lsampler-24-s.

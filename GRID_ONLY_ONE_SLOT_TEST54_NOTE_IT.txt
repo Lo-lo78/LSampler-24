@@ -1,0 +1,8 @@
+LSampler-24 TEST54 - Grid loaded-slot navigation
+
+- Ctrl+Su/Giu nella griglia principale salta gli slot vuoti.
+- Nessun wrap ai bordi.
+- Con piu slot caricati, i bordi restano silenziosi.
+- Se nel banco e caricato un solo slot, il tentativo di cambiare slot annuncia: Only one loaded slot.
+- Nessuna modifica DSP.
+- Non compilato localmente.

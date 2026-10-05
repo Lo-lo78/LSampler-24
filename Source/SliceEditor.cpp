@@ -67,7 +67,7 @@ void SliceEditor::refreshVisuals() {
 void SliceEditor::paint(juce::Graphics& g) {
     g.fillAll(rackgui::chassis);rackgui::caption(g,{20,14,getWidth()-40,32},"LSampler-24 / SLICE EDIT");
     g.setColour(rackgui::muted);g.setFont(14.0f);
-    g.drawFittedText("1/2/3 or Tab: page | Arrows/Home/End: navigate (page 1: 8-row grid) | Alt+Up/Down: value | Alt+PgUp/PgDn: coarse value\nAlt+Left/Right: value step | Alt+Home/End: max/min | Enter: type value\nSpace: normal preview On/Off; when Off, slice/step navigation and edits auto-audition | F1: help | Escape: close",20,getHeight()-76,getWidth()-40,64,juce::Justification::centredLeft,4);
+    g.drawFittedText("F1/F2/F3 or Tab: page | Arrows/Home/End: navigate (page 1: 8-row grid) | Alt+Up/Down: value | Alt+PgUp/PgDn: coarse value\nAlt+Left/Right: value step | Alt+Home/End: max/min | Enter: type value\nSpace: normal preview On/Off; when Off, slice/step navigation and edits auto-audition | F4: help | Escape: close",20,getHeight()-76,getWidth()-40,64,juce::Justification::centredLeft,4);
 }
 void SliceEditor::resized(){
     waveform.setBounds(20,58,getWidth()-40,260);
@@ -223,13 +223,13 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
     // getKeyCode, unlike getTextCharacter, remains a letter for Ctrl+C etc.
     const auto c=juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
     if(code==juce::KeyPress::escapeKey) {processor.stopSlicePreview();if(onClose)onClose();return true;}
-    if(code==juce::KeyPress::F1Key) {
-        announceToActiveScreenReader(*this,"Slice Edit. 1, 2 and 3 jump directly to Global Slice Settings, Slice Sequencer and Boundaries. Tab also cycles the pages. Plain arrows, Home and End navigate. Global Slice Settings uses an 8-row grid: Up/Down moves within a column and Left/Right changes column. On parameter pages a letter, number or punctuation character searches forward by parameter initial; Shift plus the same character searches backward. Alt Up and Alt Down change the current value. Alt Page Up and Alt Page Down change it coarsely. Alt Left and Alt Right select the value step. Alt Home sets maximum and Alt End sets minimum. Enter types a value. Z toggles boundary Zero Crossing. Space toggles the normal slot preview. While Space preview is off, moving between slices or steps and editing them automatically auditions the current slice or programmed step with its current parameters. Shift Up Down selects a step range. Shift Space toggles selection. Ctrl Delete clears selection. Ctrl C V copies and pastes steps. Ctrl Z Y undo and redo. Backspace resets current parameter. Escape closes and stops preview.");return true;
+    if(code==juce::KeyPress::F4Key) {
+        announceToActiveScreenReader(*this,"Slice Edit. F1, F2 and F3 jump directly to Global Slice Settings, Slice Sequencer and Boundaries. Tab also cycles the pages. Plain arrows, Home and End navigate. Global Slice Settings uses an 8-row grid: Up/Down moves within a column and Left/Right changes column. On parameter pages a letter, number or punctuation character searches forward by parameter initial; Shift plus the same character searches backward. Alt Up and Alt Down change the current value. Alt Page Up and Alt Page Down change it coarsely. Alt Left and Alt Right select the value step. Alt Home sets maximum and Alt End sets minimum. Enter types a value. Z toggles boundary Zero Crossing. Space toggles the normal slot preview. While Space preview is off, moving between slices or steps and editing them automatically auditions the current slice or programmed step with its current parameters. Shift Up Down selects a step range. Shift Space toggles selection. Ctrl Delete clears selection. Ctrl C V copies and pastes steps. Ctrl Z Y undo and redo. Backspace resets current parameter. Escape closes and stops preview.");return true;
     }
     if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isShiftDown()&&!mods.isCommandDown()) {
-        if(c=='1'){setPage(Page::globals);return true;}
-        if(c=='2'){setPage(Page::steps);return true;}
-        if(c=='3'){setPage(Page::boundaries);return true;}
+        if(code==juce::KeyPress::F1Key){setPage(Page::globals);return true;}
+        if(code==juce::KeyPress::F2Key){setPage(Page::steps);return true;}
+        if(code==juce::KeyPress::F3Key){setPage(Page::boundaries);return true;}
     }
     // Parameter type-ahead on the parameter pages. Plain character cycles
     // forward; Shift+character cycles backward. Global names use "Slice" only

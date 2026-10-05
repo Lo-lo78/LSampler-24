@@ -1,0 +1,19 @@
+LSampler-24 TEST50 - Slot preview mode, properties and Slice F-keys
+
+Modifiche:
+- I pulsanti principali mantengono lo shortcut visibile nel testo.
+- Alt+L, quando il focus e' sui pulsanti principali, torna sempre allo slot corrente e usa il messaggio slot esistente.
+- Alt+Invio apre Properties solo dallo slot corrente.
+- Properties presenta due colonne: AUDIO FILE e SLOT CONFIGURATION.
+- Esc da Properties torna sempre allo slot corrente e riusa il normale annuncio dello slot.
+- In Slice Edit le pagine dirette sono ora F1=Global Slice Settings, F2=Slice Sequencer, F3=Boundaries. Tab/Shift+Tab restano disponibili. L'help e' stato spostato su F4.
+- Alt+P commuta la modalita' principale degli slot tra DAW space e Slot preview.
+- Modalita' DAW: Space non viene catturato sugli slot e resta disponibile al trasporto del DAW.
+- Modalita' Slot preview: Space Play/Stop della preview; cambiando slot la preview passa automaticamente allo slot nuovo.
+- Il cambio slot usa un comando Start Preview dedicato, non Toggle: lo slot precedente viene fermato e quello nuovo parte sempre.
+- La preview usa lo stesso percorso configurato gia' usato dalla preview normale dello slot (nota di audition C4/60), quindi rispetta la configurazione reale dello slot e lo Slice Mode.
+- Slot vuoto in modalita' preview: ferma la preview precedente e non genera audio.
+
+La modalita' Alt+P e' runtime-only e non viene salvata in preset/progetto/settings.
+
+Nessuna build/compilazione eseguita.

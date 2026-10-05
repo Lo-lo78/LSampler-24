@@ -1,0 +1,11 @@
+LSampler-24 TEST51
+
+- Alt+P contestuale:
+  * pagina Slot: default Space DAW; Alt+P abilita/disabilita preview automatica slot.
+  * griglia principale: default Space preview; Alt+P passa Space alla DAW e viceversa.
+- Entrando nella griglia principale, la preview torna al default On.
+- Properties Alt+Enter: Ctrl+Su/Giu cambia slot tra i soli slot caricati, saltando i vuoti con wrap circolare.
+- Se non esiste un altro slot caricato, resta sul corrente e annuncia No previous/next loaded slot.
+- Cambiando slot dentro Properties, entrambe le colonne vengono aggiornate; Esc torna allo slot corrente con il messaggio normale esistente.
+- Nessun salvataggio permanente delle modalita Alt+P.
+- Nessuna compilazione eseguita.

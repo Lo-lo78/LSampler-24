@@ -189,6 +189,63 @@ private:
     juce::String text;
 };
 
+
+class LSamplerPropertiesPanel final : public juce::Component
+{
+public:
+    LSamplerPropertiesPanel()
+    {
+        setAccessible(false);
+        setWantsKeyboardFocus(false);
+        auto setup = [this](juce::TextEditor& editor, const juce::String& name)
+        {
+            editor.setMultiLine(true, true);
+            editor.setReadOnly(true);
+            editor.setScrollbarsShown(true);
+            editor.setCaretVisible(false);
+            editor.setWantsKeyboardFocus(true);
+            editor.setName(name);
+            editor.setTitle(name);
+            editor.setDescription("Read-only properties");
+            addAndMakeVisible(editor);
+        };
+        setup(sampleInfo, "Audio file information");
+        setup(configInfo, "Slot configuration information");
+    }
+
+    void setInfo(const juce::String& sample, const juce::String& config)
+    {
+        sampleInfo.setText(sample, false);
+        configInfo.setText(config, false);
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        g.fillAll(rackgui::chassis);
+        rackgui::frame(g, getLocalBounds().reduced(4), "PROPERTIES / Alt+Enter");
+        auto r = getLocalBounds().reduced(18).withTrimmedTop(34);
+        const int gap = 14;
+        const int w = (r.getWidth() - gap) / 2;
+        g.setColour(rackgui::amber); g.setFont(15.0f);
+        g.drawText("AUDIO FILE", r.getX(), r.getY(), w, 22, juce::Justification::centredLeft);
+        g.drawText("SLOT CONFIGURATION", r.getX() + w + gap, r.getY(), w, 22, juce::Justification::centredLeft);
+        g.setColour(rackgui::muted); g.setFont(13.0f);
+        g.drawText("Esc: Close   /   Tab: Other column", r.getX(), r.getBottom() - 22, r.getWidth(), 22, juce::Justification::centredLeft);
+    }
+
+    void resized() override
+    {
+        auto r = getLocalBounds().reduced(18).withTrimmedTop(60).withTrimmedBottom(30);
+        const int gap = 14;
+        const int w = (r.getWidth() - gap) / 2;
+        sampleInfo.setBounds(r.removeFromLeft(w));
+        r.removeFromLeft(gap);
+        configInfo.setBounds(r.removeFromLeft(w));
+    }
+
+    juce::TextEditor sampleInfo, configInfo;
+};
+
 class LSampler24AudioProcessorEditor : public juce::AudioProcessorEditor,
                                        private juce::Timer,
                                        private juce::KeyListener
@@ -210,8 +267,16 @@ private:
     rackgui::CurrentParameter currentEdit;
     rackgui::SliceOverview sliceOverview;
     rackgui::MasterOutput masterOutput;
+    LSamplerPropertiesPanel propertiesPanel;
     void refreshVisuals();
     std::unique_ptr<SliceEditor> sliceEditor;
+    bool propertiesOpen = false;
+    // Runtime-only audition modes. On the slot page, Off is the default and
+    // leaves Space to the DAW. In the main parameter grid the inverse default
+    // is used: Space auditions the configured slot until Alt+P hands it back.
+    bool slotPreviewMode = false;
+    bool gridPreviewMode = true;
+    juce::Component::SafePointer<juce::Component> propertiesReturnFocus;
     juce::Component::SafePointer<juce::Component> sliceReturnFocus;
     void openSliceEditor(bool sequencer);
     void closeSliceEditor();
@@ -287,6 +352,8 @@ private:
     void selectSlot(int slotIndex, bool moveKeyboardFocus);
     void refreshSlotCells();
     void returnToCurrentSlotAndAnnounce();
+    void openProperties();
+    void closeProperties();
 
     void enterSlotParameters();
     void leaveSlotParameters();

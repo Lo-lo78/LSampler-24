@@ -25,3 +25,7 @@ Alt+O resta il browser di importazione esistente.
 Leggere `SLICE_TEST31_NOTE_IT.txt` per strutture dati, shortcut, persistenza,
 DSP, differenze dal riferimento JSFX e collaudo Windows/REAPER/NVDA.
 Il workflow di build è invariato; i test Slice sono nel target opzionale.
+
+
+TEST52
+- Properties Ctrl+Up/Down now uses silent physical boundaries: skips empty slots only in the requested direction and never wraps from 24 to 1 or 1 to 24.
