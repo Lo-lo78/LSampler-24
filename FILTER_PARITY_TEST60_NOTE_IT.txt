@@ -1,0 +1,61 @@
+LSampler-24 TEST60 - esperimento filtri con confronto audio TEST59
+
+OBIETTIVO
+Ridurre i calcoli ripetuti dei coefficienti LP/HP quando piu' voci hanno
+esattamente la stessa modulazione. Non cambia la frequenza di aggiornamento,
+non quantizza i valori, non riduce voci, release o qualita' di lettura.
+La cache usa i bit esatti di frequenza base, modulazione, risonanza, sample
+rate e tipo di filtro. Una collisione causa un ricalcolo, mai un falso hit.
+Le memorie del filtro restano separate per ciascuna voce e canale.
+
+COME PROVARLA CON GITHUB ACTIONS
+1. Sostituire i sorgenti nel repository includendo la cartella .github.
+2. Fare push su main. Parte la nuova Action:
+   Test LSampler-24 Filters TEST60
+   Si puo' anche avviare manualmente da Actions con Run workflow.
+3. Scaricare LSampler-24-TEST60-Reports e leggere:
+   FILTER_TEST60_REPORT.txt
+   FILTER_TEST60_BENCHMARK.csv
+4. Solo se il confronto audio passa, la Action pubblica anche:
+   LSampler-24-TEST60-Experimental-VST3
+   che contiene LSampler-24-TEST60-Experimental-VST3.zip.
+   E' questo il plugin sperimentale da provare in REAPER.
+
+La normale Action Build LSampler-24 VST3 continua a creare la versione
+con cache disattivata. Il suo artifact abituale non contiene l'esperimento.
+L'opzione LSAMPLER_ENABLE_FILTER_CACHE e' OFF per impostazione predefinita;
+la nuova Action la abilita esclusivamente nella propria build separata.
+Il VST3 sperimentale ha lo stesso identificativo del plugin normale:
+usarlo al suo posto, conservando la versione TEST59 per il confronto.
+
+CHE COSA CONTROLLA LA NUOVA ACTION
+- Compila in Release il candidato e il renderer TEST59 conservato nei test.
+  Il renderer di riferimento cambia solo nome e percorsi degli include.
+  SHA256 protegge il riferimento e le dipendenze DSP comuni.
+- Confronta esattamente i bit di ogni float su tutti i 50 canali di uscita
+  del motore voci, senza tolleranza, e rifiuta valori non finiti.
+- Prova 20 scenari: 44.1/48/96 kHz, LP/HP/entrambi, fino a 96 voci,
+  due LFO, sei forme LFO, velocity/envelope/key follow, mono/stereo,
+  slice/loop, sustain, note off, pitch bend, mod wheel, modifiche live,
+  offset nei buffer, preview e riuso della cache dopo cambio sample rate.
+- Verifica conteggi voci e stato preview, operazioni DSP e contatori
+  new/delete standard durante il render. La cache e' allocata prima.
+- Misura cinque volte TEST59 e candidato alternando l'ordine, con warm-up.
+  Riporta tempi mediani, rapporto e riduzione percentuale; un valore
+  negativo significa che il candidato e' piu' lento in quello scenario.
+  La misura include voci in release lungo, con due slot e due LFO.
+- Se compilazione o confronto falliscono, non pubblica il VST3 sperimentale.
+  I rapporti e log disponibili vengono comunque conservati.
+
+LIMITI E STATO DELLA VERIFICA
+Questa consegna contiene sorgenti, non un VST3 gia' compilato o collaudato.
+Qui sono stati fatti controlli statici: struttura del codice e workflow,
+corrispondenza del riferimento alla TEST59, dipendenze DSP invariate.
+Non sono stati eseguiti CMake, compilatori, binari o GitHub Actions.
+Il risultato audio e il guadagno di CPU restano da verificare nella Action.
+Un PASS dimostra parita' nei casi provati, non in ogni possibile preset.
+Il benchmark misura il motore voci, non driver, GUI, screen reader o tutto
+il carico REAPER. Lo stadio di uscita del plugin resta invariato.
+Il candidato viene pubblicato se l'audio passa, anche se non e' piu' veloce:
+leggere il rapporto prima di decidere se mantenere questa ottimizzazione.
+Modulazioni differenti tra le voci possono offrire poco riuso della cache.

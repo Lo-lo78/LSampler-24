@@ -1,7 +1,6 @@
 #include "SamplerVoice.h"
 #include <cmath>
 #include <algorithm>
-#include <cstring>
 using namespace lsampler;
 namespace {
 constexpr double pi=3.14159265358979323846, offAmplitude=.00003162277660168379;
@@ -20,7 +19,7 @@ double velocityGain(double velocity,double depth) noexcept {
     return 1-depth+depth*velocity;
 }
 }
-double GlobalVoicePool::Envelope::tick(const EnvelopeSettings& e) noexcept {
+double Test59VoicePool::Envelope::tick(const EnvelopeSettings& e) noexcept {
     if(phase==1) {value+=e.attackStep;if(value>=1){value=1;phase=2;}}
     if(phase==2) {
         value=e.filter?value-e.decay:e.sustain+(value-e.sustain)*e.decay;
@@ -30,12 +29,12 @@ double GlobalVoicePool::Envelope::tick(const EnvelopeSettings& e) noexcept {
     if(phase==4){value*=e.release;if(value<=offAmplitude){value=0;phase=0;}}
     return value;
 }
-void GlobalVoicePool::prepare(double rate) {
+void Test59VoicePool::prepare(double rate) {
     allNotesOff();hostSampleRate=rate>0?rate:44100;ageCounter=noteCounter=0;
     freePhase={};bend={};wheel={};pedal={};diagnostics={};
     outputRoutes.fill(-1);outputRoutes[0]=0;
 }
-void GlobalVoicePool::setStates(const std::array<SlotAudioState,slotCount>* next) noexcept {
+void Test59VoicePool::setStates(const std::array<SlotAudioState,slotCount>* next) noexcept {
     states=next;
     if(!states)return;
     std::array<bool,slotCount> changed {};
@@ -52,7 +51,7 @@ void GlobalVoicePool::setStates(const std::array<SlotAudioState,slotCount>* next
         while(cap>0 && activePerSlot[size_t(slot)]>cap)stop(chooseVoice(slot,cap));
     }
 }
-void GlobalVoicePool::stop(Voice& v) noexcept {
+void Test59VoicePool::stop(Voice& v) noexcept {
     if(v.active) {
         --activePerSlot[size_t(v.slotIndex)];
         --activeTotal; if (v.preview) --previewTotal;
@@ -61,14 +60,14 @@ void GlobalVoicePool::stop(Voice& v) noexcept {
         v.sample=nullptr;
     }
 }
-void GlobalVoicePool::release(Voice& v) noexcept {v.amp.release();v.lpEnvelope.release();v.hpEnvelope.release();v.keyDown=false;v.sustained=false;v.loopsReleased=true;}
-void GlobalVoicePool::allNotesOff() {for(auto& v:voices)stop(v);held={};pedal={};}
-void GlobalVoicePool::stopSlotVoices(int slot) {for(auto& v:voices)if(v.active&&v.slotIndex==slot)stop(v);}
-void GlobalVoicePool::stopPreviewVoices(int slot) {for(auto& v:voices)if(v.active&&v.preview&&(slot<0||v.slotIndex==slot))stop(v);}
-bool GlobalVoicePool::hasPreviewVoices(int slot) const noexcept {if(previewTotal==0)return false;for(const auto& v:voices)if(v.active&&v.preview&&(slot<0||v.slotIndex==slot))return true;return false;}
-int GlobalVoicePool::activeVoiceCount() const noexcept {return activeTotal;}
-int GlobalVoicePool::activeVoiceCount(int slot) const noexcept {return activePerSlot[size_t(slot)];}
-GlobalVoicePool::Voice& GlobalVoicePool::chooseVoice(int slot,int cap) {
+void Test59VoicePool::release(Voice& v) noexcept {v.amp.release();v.lpEnvelope.release();v.hpEnvelope.release();v.keyDown=false;v.sustained=false;v.loopsReleased=true;}
+void Test59VoicePool::allNotesOff() {for(auto& v:voices)stop(v);held={};pedal={};}
+void Test59VoicePool::stopSlotVoices(int slot) {for(auto& v:voices)if(v.active&&v.slotIndex==slot)stop(v);}
+void Test59VoicePool::stopPreviewVoices(int slot) {for(auto& v:voices)if(v.active&&v.preview&&(slot<0||v.slotIndex==slot))stop(v);}
+bool Test59VoicePool::hasPreviewVoices(int slot) const noexcept {if(previewTotal==0)return false;for(const auto& v:voices)if(v.active&&v.preview&&(slot<0||v.slotIndex==slot))return true;return false;}
+int Test59VoicePool::activeVoiceCount() const noexcept {return activeTotal;}
+int Test59VoicePool::activeVoiceCount(int slot) const noexcept {return activePerSlot[size_t(slot)];}
+Test59VoicePool::Voice& Test59VoicePool::chooseVoice(int slot,int cap) {
     Voice* oldest=nullptr;
     if(cap>0 && activePerSlot[size_t(slot)]>=cap) {
         for(auto& v:voices)if(v.active&&v.slotIndex==slot&&(!oldest||v.age<oldest->age))oldest=&v;
@@ -78,13 +77,13 @@ GlobalVoicePool::Voice& GlobalVoicePool::chooseVoice(int slot,int cap) {
     oldest=&voices.front();for(auto& v:voices)if(v.age<oldest->age)oldest=&v;
     return *oldest;
 }
-void GlobalVoicePool::selectStage(Voice& v,const SlotAudioState& s) noexcept {
+void Test59VoicePool::selectStage(Voice& v,const SlotAudioState& s) noexcept {
     const double pos=v.position/s.stretchFactor;
     int selected=-1;
     for(int i=0;i<s.stageCount;++i)if(s.stages[size_t(i)].start<=pos)selected=i;
     if(selected!=v.stage){v.stage=selected;v.repeat=0;v.skipStage=-1;}
 }
-void GlobalVoicePool::updateVoice(Voice& v,const SlotAudioState& s) noexcept {
+void Test59VoicePool::updateVoice(Voice& v,const SlotAudioState& s) noexcept {
     const auto& p=s.params;
     v.revision=s.revision;v.pitchCached=v.followCached=v.lpModCached=v.hpModCached=1e30;
     v.velocityGain=velocityGain(v.velocity,p[P::vel_volume_depth]);
@@ -126,7 +125,7 @@ void GlobalVoicePool::updateVoice(Voice& v,const SlotAudioState& s) noexcept {
     }
     v.slice.configured=false;
 }
-void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudioState& s,bool retrigger) {
+void Test59VoicePool::retarget(Voice& v,int note,double velocity,const SlotAudioState& s,bool retrigger) {
     v.note=note;v.velocity=velocity;v.keyDown=true;v.sustained=false;
     if(retrigger) {
         v.amp={};v.lpEnvelope={};v.hpEnvelope={};v.loopsReleased=false;v.repeat=0;v.skipStage=-1;
@@ -146,7 +145,7 @@ void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudio
     if(s.params[P::portamento]==0)v.effectiveNote=note;
     updateVoice(v,s);
 }
-void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool preview,double previewStartPercent,int sliceRequest,bool sliceMidiPad) {
+void Test59VoicePool::noteOn(int slot,int note,float velocity,int channel,bool preview,double previewStartPercent,int sliceRequest,bool sliceMidiPad) {
     if(!states||slot<0||slot>=slotCount||note<0||note>127||channel<0||channel>15)return;
     const auto& s=(*states)[size_t(slot)];const auto& p=s.params;
     if(!s.sample||s.length<1||s.sample->peak<1e-12)return;
@@ -200,7 +199,7 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
     v.slice.start(s.slice,sliceRequest,v.randomState,sliceMidiPad);
     if(sliceMidiPad)v.effectiveNote=p[P::root];
 }
-void GlobalVoicePool::noteOff(int note,int channel) {
+void Test59VoicePool::noteOff(int note,int channel) {
     if(!states||note<0||note>127||channel<0||channel>15)return;
     held[size_t(channel)][size_t(note)]={};
     for(auto& v:voices)if(v.active&&!v.preview&&v.note==note&&v.channel==channel) {
@@ -218,7 +217,7 @@ void GlobalVoicePool::noteOff(int note,int channel) {
         else release(v);
     }
 }
-void GlobalVoicePool::controller(int ch,int number,int value) {
+void Test59VoicePool::controller(int ch,int number,int value) {
     if(ch<0||ch>=16)return;
     if(number==1)wheel[size_t(ch)]=value/127.0;
     if(number==64) {
@@ -234,19 +233,19 @@ void GlobalVoicePool::controller(int ch,int number,int value) {
         for(auto& v:voices)if(v.active&&v.channel==ch&&v.sustained)release(v);
     }
 }
-void GlobalVoicePool::pitchBend(int ch,int value) noexcept {if(ch>=0&&ch<16)bend[size_t(ch)]=clamp(value/8192.0,-1,1);}
-void GlobalVoicePool::choke(int note) {
+void Test59VoicePool::pitchBend(int ch,int value) noexcept {if(ch>=0&&ch<16)bend[size_t(ch)]=clamp(value/8192.0,-1,1);}
+void Test59VoicePool::choke(int note) {
     if(!states)return;
     for(const auto& s:*states)if(s.sample&&s.params[P::choke_trigger]==note&&s.params[P::choke_target]>=0)
         for(auto& v:voices)if(v.active&&!v.preview&&v.note==int(s.params[P::choke_target])) {
             if(s.params[P::choke_mode]==0)stop(v);else release(v);
         }
 }
-double GlobalVoicePool::random(Voice& v) noexcept {
+double Test59VoicePool::random(Voice& v) noexcept {
     uint32_t x=v.randomState;x^=x<<13;x^=x>>17;x^=x<<5;v.randomState=x;
     return double(x)*(2.0/4294967296.0)-1;
 }
-double GlobalVoicePool::oscillator(Voice& v,double phase,int wave,bool isLfo) noexcept {
+double Test59VoicePool::oscillator(Voice& v,double phase,int wave,bool isLfo) noexcept {
     phase=wrap(phase,1);
     switch(wave) {
         case 0:return std::sin(2*pi*phase);
@@ -257,7 +256,7 @@ double GlobalVoicePool::oscillator(Voice& v,double phase,int wave,bool isLfo) no
         default:return random(v);
     }
 }
-double GlobalVoicePool::lfoTick(Voice& v,int index,const LfoSettings& s,double wheelValue) noexcept {
+double Test59VoicePool::lfoTick(Voice& v,int index,const LfoSettings& s,double wheelValue) noexcept {
     if(!s.active && (s.wheel==0||wheelValue==0))return 0;
     ++diagnostics.lfo;
     auto& l=v.lfo[size_t(index)];++l.age;
@@ -270,7 +269,7 @@ double GlobalVoicePool::lfoTick(Voice& v,int index,const LfoSettings& s,double w
     l.output+=(raw-l.output)*s.smoothing;
     return l.output;
 }
-double GlobalVoicePool::read(const Voice& v,const SlotAudioState& s,double pos,int channel) const noexcept {
+double Test59VoicePool::read(const Voice& v,const SlotAudioState& s,double pos,int channel) const noexcept {
     if(pos<0)return 0; // native equivalent of the legacy per-channel delay's silent pre-roll
     pos=clamp(pos,0,double(s.length-1));
     if(!v.slice.active&&s.params[P::ram_reverse]!=0)pos=s.length-1-pos;
@@ -301,7 +300,7 @@ double GlobalVoicePool::read(const Voice& v,const SlotAudioState& s,double pos,i
     } else {const double a=at(idx);value=a+(at(std::min(idx+1,s.length-1))-a)*(pos-idx);}
     return value;
 }
-void GlobalVoicePool::processEffects(Voice& v,const SlotAudioState& s,double& left,double& right) {
+void Test59VoicePool::processEffects(Voice& v,const SlotAudioState& s,double& left,double& right) {
     const auto& p=s.params;
     if(p[P::ram_swap_lr]!=0)std::swap(left,right);
     if(p[P::ram_stereo_width]!=100) {
@@ -366,7 +365,7 @@ void GlobalVoicePool::processEffects(Voice& v,const SlotAudioState& s,double& le
         const double gain=1+oscillator(v,v.ringPhase,int(p[P::ring_wave]))*p[P::ring_amount];left*=gain;right*=gain;
     }
 }
-void GlobalVoicePool::applyMachine(Voice& v,const SlotAudioState& s,double& left,double& right) noexcept {
+void Test59VoicePool::applyMachine(Voice& v,const SlotAudioState& s,double& left,double& right) noexcept {
     ++diagnostics.machine;
     const auto& a=s.character;
     if(a[2]+a[3]+a[4]>0) {
@@ -396,7 +395,7 @@ void GlobalVoicePool::applyMachine(Voice& v,const SlotAudioState& s,double& left
         const double gain=(1+a[5]*.08)/(1+v.characterGlue*a[5]*.55);left*=gain;right*=gain;
     }
 }
-void GlobalVoicePool::advanceLoops(Voice& v,const SlotAudioState& s,double increment) noexcept {
+void Test59VoicePool::advanceLoops(Voice& v,const SlotAudioState& s,double increment) noexcept {
     v.position+=increment;
     const double cycle=s.length*s.stretchFactor;
     const int oneShot=int(s.params[P::global_one_shot]);
@@ -442,33 +441,14 @@ void GlobalVoicePool::advanceLoops(Voice& v,const SlotAudioState& s,double incre
         v.position=wrap(v.position,cycle);v.repeat=0;v.skipStage=-1;selectStage(v,s);
     }
 }
-void GlobalVoicePool::advanceSlice(Voice& v,const SlotAudioState& s,double increment) noexcept {
+void Test59VoicePool::advanceSlice(Voice& v,const SlotAudioState& s,double increment) noexcept {
     if(v.slice.advance(s.slice,increment)) {
         if(v.slice.single||s.params[P::global_one_shot]==1){stop(v);return;}
         if(s.params[P::global_one_shot]==2&&!v.loopsReleased)release(v);
     }
 }
- #if LSAMPLER_ENABLE_FILTER_CACHE
-lsampler::FilterCoefficients GlobalVoicePool::cachedModulatedFilter(bool highPass,double baseHz,double modulation,double resonance) noexcept {
-    // Exact keys: no quantisation, tolerance, coefficient interpolation or
-    // control-rate reduction. A collision can only cause a cache miss.
-    auto bits=[](double x) noexcept { uint64_t b; std::memcpy(&b,&x,sizeof(b)); return b; };
-    const std::array<uint64_t,5> key {bits(baseHz),bits(modulation),bits(resonance),bits(hostSampleRate),highPass?1u:0u};
-    uint64_t hash=key[1] ^ (key[0]*0x9e3779b97f4a7c15ULL) ^ (key[2]*0xbf58476d1ce4e5b9ULL)
-        ^ (key[3]*0x94d049bb133111ebULL) ^ key[4];
-    hash^=hash>>30;hash*=0xbf58476d1ce4e5b9ULL;hash^=hash>>27;
-    auto& entry=(*filterCache)[size_t(hash)&(filterCacheSize-1)];
-    if(entry.valid && entry.key==key) {++diagnostics.filterCacheHits;return entry.coefficients;}
-    ++diagnostics.filterCacheMisses;
-    const auto result=filterCoefficients(highPass,baseHz*std::pow(2.0,modulation/12),resonance,hostSampleRate);
-    entry.key=key;entry.coefficients=result;entry.valid=true;
-    return result;
-}
-
- #endif
-
 template<bool Simple, bool Optimised>
-void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBuffer<float>& output,
+void Test59VoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBuffer<float>& output,
                                   int start,int count,float* outL,float* outR,double mirror) {
     const auto& p=s.params;
     // These cannot change within a render span. MIDI changes start a new span.
@@ -587,14 +567,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             const double mod=env*p[P::lp_env_amount]+(v.note-p[P::root])*p[P::lp_key_follow]
                 +l1*s.lfo[0].lp+l2*s.lfo[1].lp-(loop?repeats*loop->lp:0)+(v.slice.active?v.slice.lp:0);
             if(mod!=v.lpModCached) {
-                if(mod==0&&p[P::lp_vel_amount]==0) v.lpCoefficients=s.lpStatic;
-                else {
-                   #if LSAMPLER_ENABLE_FILTER_CACHE
-                    if constexpr(Optimised) v.lpCoefficients=cachedModulatedFilter(false,v.lpBase,mod,p[P::lp_resonance]);
-                    else
-                   #endif
-                        v.lpCoefficients=filterCoefficients(false,v.lpBase*std::pow(2.0,mod/12),p[P::lp_resonance],hostSampleRate);
-                }
+                v.lpCoefficients=mod==0&&p[P::lp_vel_amount]==0?s.lpStatic:filterCoefficients(false,v.lpBase*std::pow(2.0,mod/12),p[P::lp_resonance],hostSampleRate);
                 v.lpModCached=mod;
             }
             auto filter=[&](double x,int ch) {
@@ -614,14 +587,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             const double env=p[P::hp_env_amount]!=0?v.hpEnvelope.tick(s.hpEnv):0;
             const double mod=env*p[P::hp_env_amount]+l1*s.lfo[0].hp+l2*s.lfo[1].hp-(loop?repeats*loop->hp:0)+(v.slice.active?v.slice.hp:0);
             if(mod!=v.hpModCached) {
-                if(mod==0&&p[P::hp_vel_amount]==0) v.hpCoefficients=s.hpStatic;
-                else {
-                   #if LSAMPLER_ENABLE_FILTER_CACHE
-                    if constexpr(Optimised) v.hpCoefficients=cachedModulatedFilter(true,v.hpBase,mod,p[P::hp_resonance]);
-                    else
-                   #endif
-                        v.hpCoefficients=filterCoefficients(true,v.hpBase*std::pow(2.0,mod/12),p[P::hp_resonance],hostSampleRate);
-                }
+                v.hpCoefficients=mod==0&&p[P::hp_vel_amount]==0?s.hpStatic:filterCoefficients(true,v.hpBase*std::pow(2.0,mod/12),p[P::hp_resonance],hostSampleRate);
                 v.hpModCached=mod;
             }
             auto filter=[&](double x,int ch) {
@@ -664,15 +630,15 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
     }
 }
 
-void GlobalVoicePool::render(juce::AudioBuffer<float>& output,int start,int count) {
+void Test59VoicePool::render(juce::AudioBuffer<float>& output,int start,int count) {
     renderInternal<true>(output,start,count);
 }
-void GlobalVoicePool::renderReferenceForTesting(juce::AudioBuffer<float>& output,int start,int count) {
+void Test59VoicePool::renderReferenceForTesting(juce::AudioBuffer<float>& output,int start,int count) {
     renderInternal<false>(output,start,count);
 }
 
 template<bool Optimised>
-void GlobalVoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,int count) {
+void Test59VoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,int count) {
     if(!states||count<=0||activeVoiceCount()==0)return;
     for(auto& v:voices) {
         if(!v.active)continue;

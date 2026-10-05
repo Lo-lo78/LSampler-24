@@ -1,0 +1,13 @@
+{
+  "Tests/ReferenceTEST59/SamplerVoice.h": "dc8fcca8ad531efa1398ebd8565264e8a42de51921fedaa8640c6b97a0a01262",
+  "Tests/ReferenceTEST59/SamplerVoice.cpp": "7971252d8b18e9917936cad62dbae1aa8dddfb1c85cb319d9eb533b8ec666cac",
+  "Source/SlotAudioState.h": "077a80eac138edaaaefdd8bbf32f2026bf6e14c58f3ac7b37db03b57ab7a1efd",
+  "Source/SlotAudioState.cpp": "e94cba01bd432b527aa8209b8976fbce3f744cf264cacdd2c481502c6eacf485",
+  "Source/Parameters.h": "0146f40e4a73ff082d726a59032b1f10b46d6d01719def9af6d159eac5d5411e",
+  "Source/SliceState.h": "30431e37f7fb9343c6eb58609cdf5318dfa0737b3400252fa8ecf41d63321a9d",
+  "Source/SliceState.cpp": "f2d00c175818a7dd436e8546d704988d72f069a487aebf77d4cb19489e27a6a1",
+  "Source/SliceEngine.h": "f5cb8391eb743f39e23095ed2bf021202cb0d2a3ef6640f7bdfc8a3b14cee112",
+  "Source/SliceEngine.cpp": "63324db106500b495da1a4c75cd48f330a6dcf6123e5e09a56643b9e29609612",
+  "Source/SamplePool.h": "86a59cb1727d22653f693b6dcabddc0b67d2c32f7b57165b660e4b9a67cc2780",
+  "Source/PluginProcessor.cpp": "ddf6a0491fcaf5020c7bfccc982826fb0f716c3b65174ba3446ee925362797d9"
+}

@@ -1,0 +1,65 @@
+name: Test LSampler-24 Filters TEST60
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare-filter-audio:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify frozen TEST59 reference
+        shell: powershell
+        run: |
+          python Tools/verify-test59-reference.py
+          if ($LASTEXITCODE -ne 0) { throw "Frozen reference verification failed." }
+
+      - name: Build candidate, compare audio, benchmark
+        id: compare
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File Tools/test-filter-windows.ps1
+
+      - name: Add readable report to run summary
+        if: always()
+        shell: powershell
+        run: |
+          $reportPath = "build\filter-test60\filter-reports\FILTER_TEST60_REPORT.txt"
+          if (Test-Path -LiteralPath $reportPath) {
+            Get-Content -LiteralPath $reportPath | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          } else {
+            "TEST60 did not reach audio comparison. Read the failed build step; no experimental plugin is approved." | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          }
+
+      - name: Upload comparison reports and test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LSampler-24-TEST60-Reports
+          path: |
+            build/filter-test60/filter-reports/
+            build/filter-test60/Testing/Temporary/
+          if-no-files-found: warn
+
+      - name: Package candidate only after audio comparison passes
+        if: success() && steps.compare.outcome == 'success'
+        shell: powershell
+        run: |
+          $bundle = "build\filter-test60\LSampler24_artefacts\Release\VST3\LSampler-24.vst3"
+          if (-not (Test-Path -LiteralPath $bundle)) { throw "Candidate VST3 bundle not found." }
+          Compress-Archive -Path $bundle -DestinationPath "LSampler-24-TEST60-Experimental-VST3.zip" -Force
+
+      - name: Upload experimental VST3
+        if: success() && steps.compare.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: LSampler-24-TEST60-Experimental-VST3
+          path: LSampler-24-TEST60-Experimental-VST3.zip
+          if-no-files-found: error
