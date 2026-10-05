@@ -1,0 +1,65 @@
+LSampler-24 TEST59 - Ottimizzazione delle voci, priorita al suono
+Base: TEST58 con idle e operazioni file asincrone. Progetto completo.
+
+INTERVENTO
+Il renderer ora seleziona, per ciascuna voce e tratto tra eventi MIDI,
+una specializzazione dello stesso algoritmo quando le elaborazioni opzionali
+sono inattive. Non e un nuovo motore con formule diverse.
+
+1. Percorso semplice: puntatori audio e selezione dei canali preparati una
+   volta per voce/tratto, interpolazione lineare double con gli stessi
+   campioni e lo stesso ordine delle operazioni. I controlli relativi a
+   funzioni inattive sono eliminabili dal compilatore.
+2. Se entrambi i canali leggono la stessa sorgente alla stessa posizione,
+   la seconda lettura viene riutilizzata. Anche il crossfade mono puo
+   riutilizzare il risultato. Ritardi L/R diversi mantengono letture separate.
+3. Quando processEffects non farebbe alcuna operazione, la chiamata viene
+   saltata anche nel percorso completo.
+4. Coefficiente di smoothing della velocity e valore della mod wheel letti
+   una volta per tratto, senza cambiare le operazioni sui singoli campioni.
+
+CONSERVATO
+- 96 voci globali, limiti per slot e politica di voice stealing.
+- Durata del release, soglia di spegnimento e code sonore.
+- Precisione double, interpolazione e ordine di somma delle voci.
+- Inviluppi, smoothing, pitch, pan statico, loop e pitch per ripetizione.
+- Suono e impostazioni degli effetti e dello stadio di uscita.
+- Nessun calcolo di modulazione a frequenza ridotta, nessuna riduzione
+  della qualita di ricampionamento e nessuna nuova opzione economica.
+- Le modifiche TEST58 all'idle e all'import/export non sono state toccate.
+
+SELEZIONE PRUDENTE
+Il percorso semplice e escluso con Slice attivo, LFO o mod wheel efficaci,
+filtri, effetti, normalize, reverse, downsample, DC removal, ritardi stereo,
+stretch, crossfade/fade effettivi, pan envelope o retrigger smoothing.
+Sono ammessi release lungo, velocity, pan statico, pitch envelope, portamento
+ed eventuali loop senza fade: le loro formule restano le stesse.
+Il controllo e ripetuto tra i tratti separati dagli eventi MIDI, quindi
+mod wheel, automazioni/modifiche pubblicate e cambi di stato possono
+riattivare il percorso completo senza cambiare fase agli LFO o resettare voci.
+
+VERIFICHE
+- Controllo del confronto sorgente rispetto a TEST58 e delimitatori C++.
+- Confronto numerico indipendente della lettura originale e semplificata:
+  100.000 confronti double identici a livello di bit, su campioni float,
+  finestre e posizioni variabili, bordi, mono/stereo e zeri con segno.
+  Questa e una verifica della lettura, NON un null test dell'intero plugin.
+- Aggiunto renderReferenceForTesting: forza il percorso completo senza
+  riuso delle letture. Non e un parametro del plugin e non appare nella GUI.
+- Aggiunti test C++ di confronto esatto dei buffer float per 96 voci con
+  quadra/saw pannate e release lungo, mono/stereo, release corto, inviluppi,
+  pitch bend, sustain, mod wheel, HP on/off, loop, RAM processing e Slice.
+  Verificano anche i conteggi di voci e di elaborazioni opzionali.
+- Nessuna compilazione eseguita. I test C++ NON sono stati eseguiti.
+  Nessuna misura CPU o confronto audio del VST3 compilato eseguito qui.
+- CMake, workflow GitHub, parametri e formato dei preset restano invariati.
+
+PROVA PRATICA
+Compilare come di consueto e ripetere lo stesso test della TEST58:
+stessi campioni, preset, note, release, buffer, sample rate e uscite.
+Confrontare il valore osservato 0.31 e ascoltare soprattutto attacchi,
+code lunghe e passaggi con pitch bend/mod wheel. Il miglioramento dipende
+dalle elaborazioni attive; non e stata stimata una percentuale.
+Per la conferma rigorosa dell'identita del rendering occorre eseguire i
+nuovi test C++ nella build e/o confrontare render controllati delle due
+versioni. Con funzioni casuali, il confronto deve usare identici semi/stati.

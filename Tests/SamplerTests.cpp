@@ -220,6 +220,104 @@ void concurrentPublicationTest(const juce::File& folder) {
     audio.join();require(allocations==0&&deletes==0,"Concurrent publication has no audio-thread allocations or frees");
     std::cout<<"PASS concurrent snapshot publication and realtime allocation/deletion guard\n";
 }
+// TEST59: exact float comparison between the specialised path and the full
+// scalar path in the same build. These sources are delivered, not run here.
+void voiceOptimisationParityTests() {
+    auto scenario = [](SlotParameters settings, bool expectSimple, bool monoFile, bool useSlice, bool dense) {
+        auto fast=std::make_unique<Rig>(), reference=std::make_unique<Rig>();
+        for(auto* rig : {fast.get(),reference.get()}) {
+            rig->sample.audio.setSize(monoFile?1:2,4096);
+            for(int ch=0;ch<rig->sample.audio.getNumChannels();++ch)
+                for(int i=0;i<4096;++i) {
+                    const float square=i%127<63?.4f:-.4f;
+                    const float saw=float((i%131)/130.0*.8-.4);
+                    rig->sample.audio.setSample(ch,i,ch==0?square:saw);
+                }
+            rig->sample.dc={.002,-.003};
+            for(int slot=0;slot<2;++slot) {
+                auto p=settings; p[P::pan]=slot==0?-100:100;
+                rig->set(slot,p);
+                if(useSlice) {
+                    SliceState slice;slice[SliceG::mode]=7;slice.setDivision(3);
+                    slice.steps[0][SliceP::pan]=-30;slice.steps[1][SliceP::pitch]=3;
+                    rig->states[size_t(slot)].slice=prepareSliceAudio(slice,rig->states[size_t(slot)].length);
+                }
+            }
+            for(int i=0;i<(dense?48:8);++i)for(int slot=0;slot<2;++slot)
+                rig->on(slot,40+i,.25f+float(i%7)*.1f);
+        }
+        require(fast->pool.activeVoiceCount()==reference->pool.activeVoiceCount(),"Initial voice counts match");
+        if(dense)require(fast->pool.activeVoiceCount()==96,"Parity scenario exercises all 96 voices");
+        for(int block=0;block<144;++block) {
+            for(auto* rig : {fast.get(),reference.get()}) {
+                if(block==2)rig->pool.controller(0,64,127);
+                if(block==3)for(int note=40;note<88;++note)rig->pool.noteOff(note);
+                if(block==4)rig->pool.controller(0,64,0);
+                if(block==6)rig->pool.pitchBend(0,3071);
+                if(block==7)rig->pool.pitchBend(0,0);
+                if(block==8)rig->pool.controller(0,1,96); // exits specialised path
+                if(block==12)rig->pool.controller(0,1,0); // returns to it without LFO reset
+                if(!useSlice && (block==16 || block==20)) {
+                    auto p=settings;p[P::pan]=-35;p[P::hp_on]=block==16?1:0;
+                    rig->set(0,p); // live filter on/off and HP integrator retirement
+                    if(useSlice) {
+                        SliceState slice;slice[SliceG::mode]=7;slice.setDivision(3);
+                        rig->states[0].slice=prepareSliceAudio(slice,rig->states[0].length);
+                    }
+                }
+                rig->output.clear();
+            }
+            // Non-zero offsets also exercise partially rendered host blocks.
+            const int count=block%3==0?64:block%3==1?127:251;
+            realtimeGuard=true;
+            fast->pool.render(fast->output,7,count);
+            reference->pool.renderReferenceForTesting(reference->output,7,count);
+            realtimeGuard=false;
+            for(int ch=0;ch<2;++ch)
+                require(std::memcmp(fast->output.getReadPointer(ch),reference->output.getReadPointer(ch),
+                                    size_t(count+14)*sizeof(float))==0,"Optimised audio matches full path bit for bit");
+            require(fast->pool.activeVoiceCount()==reference->pool.activeVoiceCount(),"Release/voice retirement identical");
+            require(fast->pool.hasPreviewVoices()==reference->pool.hasPreviewVoices(),"Preview flags identical");
+        }
+        if(expectSimple)require(fast->pool.diagnostics.simpleSpans>0,"Specialised path was exercised");
+        else require(fast->pool.diagnostics.simpleSpans==0,"Unsupported processing stays on full path");
+        require(reference->pool.diagnostics.simpleSpans==0,"Reference never takes specialised path");
+        const auto& a=fast->pool.diagnostics;const auto& b=reference->pool.diagnostics;
+        require(a.lp==b.lp&&a.hp==b.hp&&a.lfo==b.lfo&&a.ring==b.ring&&a.fm==b.fm
+            &&a.drive==b.drive&&a.comp==b.comp&&a.gate==b.gate&&a.transient==b.transient
+            &&a.degrade==b.degrade&&a.machine==b.machine,"Optional DSP call counts identical");
+    };
+    SlotParameters base;base[P::global_one_shot]=0;base[P::release]=4;
+    base[P::input_gain]=-24;base[P::sustain_pedal]=1;
+    scenario(base,true,false,false,true); // panned square + saw, long release, 96 voices
+    scenario(base,true,true,false,false); // mono file, identical L/R reads
+    auto p=base;p[P::mode]=0;scenario(p,true,false,false,false); // mono mode from stereo
+    p=base;p[P::release]=.015;scenario(p,true,false,false,false); // actual retirement
+    p=base;p[P::attack]=.01;p[P::decay]=.05;p[P::sustain]=.3;p[P::pitch_env]=-7;
+    scenario(p,true,false,false,false);
+    p=base;p[P::portamento]=35;p[P::poly_drift]=.2;scenario(p,true,false,false,false);
+    p=base;p[P::sustain]=0;p[P::decay]=0;scenario(p,true,false,false,false); // silent-sustain clock
+    p=base;p[P::sample_start]=13;p[P::sample_end]=79;scenario(p,true,false,false,false);
+    p=base;p.loops[0][size_t(L::end)]=50;p.loops[0][size_t(L::repeats)]=4;
+    p.loops[0][size_t(L::pitch_down)]=.3;p.loops[1][size_t(L::start)]=50;
+    scenario(p,true,false,false,false); // stage transitions and per-repeat pitch
+    p.loops[0][size_t(L::fade_out)]=3;scenario(p,false,true,false,false);
+    p=base;p[P::pan_env]=25;scenario(p,false,true,false,false);
+    p=base;p[P::ram_reverse]=1;p[P::dc_remove]=1;p[P::ram_fade_in]=5;p[P::ram_fade_out]=8;
+    scenario(p,false,true,false,false);
+    p=base;p[P::ram_downsample]=4;scenario(p,false,true,false,false);
+    p=base;p[P::stereo_delay_left]=1;p[P::stereo_delay_right]=2;scenario(p,false,true,false,false);
+    p=base;p[P::stereo_delay_left]=2;p[P::stereo_delay_right]=2;scenario(p,false,true,false,false);
+    p=base;p[P::loop_crossfade]=3;scenario(p,false,true,false,false);
+    p=base;p[P::normalize_on]=1;p[P::ram_swap_lr]=1;p[P::ram_stereo_width]=130;
+    scenario(p,false,true,false,false);
+    p=base;p[P::lp_on]=1;p[P::lfo1_lp_depth]=12;scenario(p,false,true,false,false);
+    p=base;p[P::drive_type]=2;p[P::drive_amount]=20;scenario(p,false,true,false,false);
+    p=base;p[P::lfo1_pan_depth]=.5;scenario(p,false,true,false,false);
+    scenario(base,false,true,true,false); // Slice never enters the simple path
+    std::cout<<"PASS TEST59 specialised/general exact audio parity scenarios\n";
+}
+
 // TEST58: compile/run only on the user's regression target, never as part of
 // source preparation. Covers sleep/wake, pending commands and worker ownership.
 void idleAndFileWorkerTests(const juce::File& folder) {
@@ -314,7 +412,7 @@ int main() {
     try {
         juce::ScopedJuceInitialiser_GUI initialise;
         const auto folder=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("lsampler-regression","",false);folder.createDirectory();
-        catalogTests();cleanAndBypassTests();voiceTests();pitchAndStereoTests();dspReferenceTests();loopAndEffectTests();
+        voiceOptimisationParityTests();catalogTests();cleanAndBypassTests();voiceTests();pitchAndStereoTests();dspReferenceTests();loopAndEffectTests();
         persistenceAndProcessorTests(folder);concurrentPublicationTest(folder);idleAndFileWorkerTests(folder);editorTests(folder);runSliceTests(folder);
         require(realtimeAllocations==0&&realtimeDeletes==0,"Zero allocations and frees across all guarded render/note-on/process calls");
         folder.deleteRecursively();

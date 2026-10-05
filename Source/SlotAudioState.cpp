@@ -174,6 +174,18 @@ SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sampl
         }
     }
     s.crossfade=v(P::loop_crossfade)*sourceMs;
+    s.effectsNeeded = v(P::ram_swap_lr)!=0 || v(P::ram_stereo_width)!=100 || v(P::normalize_on)!=0
+        || s.transient || s.drive || s.comp || s.gate || s.degrade || s.ring;
+    // Selection is prepared off the audio thread. Dynamic Slice/LFO/wheel state
+    // is checked again at each render span (MIDI events split render spans).
+    s.simpleVoicePath = !s.effectsNeeded && !s.lp && !s.hp && !s.fm && !s.machine
+        && v(P::ram_reverse)==0 && v(P::ram_downsample)==0 && v(P::dc_remove)==0
+        && s.fadeIn<=1 && s.fadeOut<=1 && s.delayL==0 && s.delayR==0
+        && !std::signbit(s.delayL) && !std::signbit(s.delayR)
+        && v(P::stretch_amount)==0 && s.crossfade<=1 && s.edgeFade<=0
+        && v(P::pan_env)==0 && v(P::retrigger_smooth)==0;
+    for(int i=0;i<s.stageCount && s.simpleVoicePath;++i)
+        if(s.stages[size_t(i)].fadeIn>0 || s.stages[size_t(i)].fadeOut>0) s.simpleVoicePath=false;
     return s;
 }
 } // namespace lsampler

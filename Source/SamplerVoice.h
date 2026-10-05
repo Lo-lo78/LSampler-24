@@ -25,8 +25,11 @@ public:
     int activeVoiceCount() const noexcept;
     int activeVoiceCount(int slot) const noexcept;
     void render(juce::AudioBuffer<float>& output,int start,int count);
+    // Offline comparison hook: the full scalar path, with read reuse disabled.
+    // Not a plugin parameter, not a user-visible quality setting.
+    void renderReferenceForTesting(juce::AudioBuffer<float>& output,int start,int count);
     // Counters count actual optional module calls; useful for bypass regression tests.
-    struct Diagnostics { uint64_t lp=0,hp=0,lfo=0,ring=0,fm=0,drive=0,comp=0,gate=0,transient=0,degrade=0,machine=0; } diagnostics;
+    struct Diagnostics { uint64_t lp=0,hp=0,lfo=0,ring=0,fm=0,drive=0,comp=0,gate=0,transient=0,degrade=0,machine=0,simpleSpans=0,sharedReadSpans=0; } diagnostics;
 private:
     struct Envelope {
         double value=0; int phase=1;
@@ -56,6 +59,9 @@ private:
         double characterPhase=0,characterPhase2=0,characterConverter[2]{},characterAir[2]{},characterDelay[2]{},characterGlue=0;
         uint32_t randomState=1;
     };
+    template<bool Optimised> void renderInternal(juce::AudioBuffer<float>&,int start,int count);
+    template<bool Simple, bool Optimised> void renderVoice(Voice&,const lsampler::SlotAudioState&,
+        juce::AudioBuffer<float>&,int start,int count,float* outL,float* outR,double mirror);
     struct HeldNote { uint64_t order=0; float velocity=0; };
     void stop(Voice&) noexcept;
     void release(Voice&) noexcept;

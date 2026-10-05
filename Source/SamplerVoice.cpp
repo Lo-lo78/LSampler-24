@@ -447,7 +447,198 @@ void GlobalVoicePool::advanceSlice(Voice& v,const SlotAudioState& s,double incre
         if(s.params[P::global_one_shot]==2&&!v.loopsReleased)release(v);
     }
 }
+template<bool Simple, bool Optimised>
+void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBuffer<float>& output,
+                                  int start,int count,float* outL,float* outR,double mirror) {
+    const auto& p=s.params;
+    // These cannot change within a render span. MIDI changes start a new span.
+    const double wheelValue=wheel[size_t(v.channel)];
+    const double velocitySmoothing=std::min(1.0,1/(.002*hostSampleRate));
+    const bool sharedRead=Optimised && s.delayL==s.delayR
+        && std::signbit(s.delayL)==std::signbit(s.delayR)
+        && (p[P::mode]==0 || v.sample->audio.getNumChannels()==1);
+    if(sharedRead) ++diagnostics.sharedReadSpans;
+    const float* dataL=nullptr;
+    const float* dataR=nullptr;
+    if constexpr(Simple) {
+        dataL=v.sample->audio.getReadPointer(0)+s.start;
+        const int rightChannel=p[P::mode]==0?0:std::min(1,v.sample->audio.getNumChannels()-1);
+        dataR=v.sample->audio.getReadPointer(rightChannel)+s.start;
+    }
+    for(int frame=start;frame<start+count && v.active;++frame) {
+        if(v.amp.phase==0){stop(v);break;}
+        if(!Simple && v.slice.active) {
+            if(s.slice.count<=0){stop(v);break;}
+            if(!v.slice.configured)v.slice.configure(s.slice,s.length,s.sample->sourceSampleRate,p[P::ram_reverse]!=0,int(p[P::ram_downsample]));
+        }
+        const double targetNote=v.slice.pad?p[P::root]:v.note;
+        if(std::abs(v.effectiveNote-targetNote)>.0000001)v.effectiveNote+=(targetNote-v.effectiveNote)*s.portamento;
+        else v.effectiveNote=targetNote;
+        const double effective=v.effectiveNote+bend[size_t(v.channel)]*p[P::pitch_bend_range];
+        // Zero level / settled silent sustain keeps its musical read clock but sleeps every optional processor.
+        if(s.level==0 || (v.amp.phase==3 && s.amp.sustain==0)) {
+            v.amp.tick(s.amp);
+            const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+v.drift;
+            if(pitch!=v.pitchCached){v.increment=std::pow(2.0,pitch/12)*s.sourceRatio;v.pitchCached=pitch;}
+            if(!Simple&&v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);continue;
+        }
+        const double l1=Simple?0:lfoTick(v,0,s.lfo[0],wheelValue),l2=Simple?0:lfoTick(v,1,s.lfo[1],wheelValue);
+        const LoopAudioState* loop=!v.slice.active&&v.stage>=0?&s.stages[size_t(v.stage)]:nullptr;
+        const double repeats=loop&&loop->repeats>2?std::min(v.repeat,loop->repeats):0;
+        const double repeatPitch=loop?-repeats*loop->pitch:0;
+        const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+v.drift
+            +v.amp.value*p[P::pitch_env]+l1*s.lfo[0].pitch+l2*(s.lfo[1].pitch+wheelValue*s.lfo[1].wheel)+repeatPitch;
+        if(pitch!=v.pitchCached) {v.increment=std::pow(2.0,pitch/12)*s.sourceRatio;v.pitchCached=pitch;}
+        if(!Simple&&(s.ring||s.fm)&&effective!=v.followCached) {
+            const double follow=std::pow(2.0,(effective-69)/12);
+            if(s.ring)v.ringIncrement=clamp(p[P::ring_freq]*(p[P::ring_mode]==2?follow:1),.1,20000)/hostSampleRate;
+            if(s.fm)v.fmIncrement=clamp(440*follow*p[P::fm_ratio],.1,20000)/hostSampleRate;
+            v.followCached=effective;
+        }
+        bool sliceSilent=false;
+        double pos=(!Simple&&v.slice.active)?v.slice.position(sliceSilent):v.position;
+        if(!Simple&&!v.slice.active&&p[P::stretch_amount]>0)pos=std::floor(pos/(s.grain*s.stretchFactor))*s.grain+wrap(pos,s.grain);
+        else if(!Simple&&!v.slice.active&&p[P::stretch_amount]<0)pos=std::floor(pos/s.grain)*(s.grain/s.stretchFactor)+wrap(pos,s.grain);
+        pos=clamp(pos,0,double(s.length-1));
+        if(!Simple&&(s.lfo[0].move!=0||s.lfo[1].move!=0))pos=clamp(pos+(l1*s.lfo[0].move+l2*s.lfo[1].move)*.01*s.length,0,double(s.length-1));
+        if(!Simple&&s.fm) {
+            ++diagnostics.fm;v.fmPhase=wrap(v.fmPhase+v.fmIncrement,1);
+            v.fmFeedback=oscillator(v,v.fmPhase+v.fmFeedback*p[P::fm_feedback]*.0095,int(p[P::fm_wave]));
+            pos=clamp(pos+v.fmFeedback*p[P::fm_amount]*.01*std::min(2048.0,std::max(1.0,s.length*.025)),0,double(s.length-1));
+        }
+        double left, right;
+        if constexpr (Simple) {
+            // Same double-precision linear interpolation and endpoint clamp
+            // as read(). Eligibility excludes RAM transforms and delays.
+            const double readPos=pos-s.delayL;
+            const int idx=int(readPos), next=std::min(idx+1,s.length-1);
+            const double fraction=readPos-idx;
+            const double a=dataL[idx], b=dataL[next];
+            left=a+(b-a)*fraction;
+            if(dataL==dataR) right=left;
+            else { const double ar=dataR[idx], br=dataR[next]; right=ar+(br-ar)*fraction; }
+        } else {
+            left=read(v,s,pos-s.delayL,0);
+            right=sharedRead?left:read(v,s,pos-s.delayR,1);
+        }
+        if(!Simple && v.slice.active) {
+            const auto& q=v.slice;
+            const double fade=q.fade(pos-q.begin)*(sliceSilent?0:q.gain);
+            left*=fade*(1-std::max(0.0,q.pan))*(1-std::max(0.0,q.repeatPan));
+            right*=fade*(1+std::min(0.0,q.pan))*(1+std::min(0.0,q.repeatPan));
+        }
+        if(!Simple&&!v.slice.active&&s.crossfade>1) {
+            const double ls=loop?loop->start:0,le=loop?loop->end:s.length;
+            const bool one=loop?loop->oneShot:p[P::global_one_shot]!=0;
+            const double fade=std::min(s.crossfade,(le-ls)*.5);
+            if(!one&&fade>1) {
+                auto cross=[&](double x,int ch,double current) {
+                    if(x<le-fade||x>=le)return current;
+                    const double t=(x-(le-fade))/fade;
+                    return current*(1-t)+read(v,s,ls+x-(le-fade),ch)*t;
+                };
+                left=cross(pos-s.delayL,0,left);right=sharedRead?left:cross(pos-s.delayR,1,right);
+            }
+        }
+        if(!Simple&&s.edgeFade>0) {left*=edgeGain(pos-s.delayL,s.length,s.edgeFade,s.edgeFade);right*=edgeGain(pos-s.delayR,s.length,s.edgeFade,s.edgeFade);}
+        if(!Simple&&loop&&(loop->fadeIn>0||loop->fadeOut>0)) {
+            auto loopFade=[&](double x) {
+                if(x<loop->start||x>=loop->end)return 1.0;
+                const double gain=edgeGain(x-loop->start,loop->end-loop->start,loop->fadeIn,loop->fadeOut);
+                return gain*gain*gain; // compute_fade_gain_in_out in the supplied JSFX
+            };
+            left*=loopFade(pos-s.delayL);right*=loopFade(pos-s.delayR);
+        }
+        if(!Simple && (!Optimised || s.effectsNeeded)) processEffects(v,s,left,right);
+        if(!Simple&&v.slice.active&&v.slice.globalPanDepth>0) {
+            const auto& q=v.slice;const double mid=(left+right)*.70710678,phase=(q.globalPan+1)*pi*.25;
+            left=left*(1-q.globalPanDepth)+mid*std::cos(phase)*q.globalPanDepth;
+            right=right*(1-q.globalPanDepth)+mid*std::sin(phase)*q.globalPanDepth;
+        }
+        const double lfoPan=clamp((l1*s.lfo[0].pan+l2*s.lfo[1].pan)*mirror,-1,1);
+        if(!Simple&&lfoPan!=0) {
+            const double depth=std::abs(lfoPan),mono=(left+right)*.70710678,phase=(lfoPan+1)*pi*.25;
+            left=left*(1-depth)+mono*std::cos(phase)*depth;right=right*(1-depth)+mono*std::sin(phase)*depth;
+        }
+        const double amp=v.amp.tick(s.amp);
+        if(!Simple&&(s.lp||(v.slice.active&&v.slice.lp!=0))) {
+            ++diagnostics.lp;
+            const double env=p[P::lp_env_amount]!=0?v.lpEnvelope.tick(s.lpEnv):0;
+            const double mod=env*p[P::lp_env_amount]+(v.note-p[P::root])*p[P::lp_key_follow]
+                +l1*s.lfo[0].lp+l2*s.lfo[1].lp-(loop?repeats*loop->lp:0)+(v.slice.active?v.slice.lp:0);
+            if(mod!=v.lpModCached) {
+                v.lpCoefficients=mod==0&&p[P::lp_vel_amount]==0?s.lpStatic:filterCoefficients(false,v.lpBase*std::pow(2.0,mod/12),p[P::lp_resonance],hostSampleRate);
+                v.lpModCached=mod;
+            }
+            auto filter=[&](double x,int ch) {
+                const auto& c=v.lpCoefficients;const double v3=x-v.lp.low[ch];
+                const double v1=c.a1*v.lp.band[ch]+c.a2*v3,v2=v.lp.low[ch]+c.a2*v.lp.band[ch]+c.a3*v3;
+                v.lp.band[ch]=clamp(2*v1-v.lp.band[ch],-16,16);v.lp.low[ch]=clamp(2*v2-v.lp.low[ch],-16,16);
+                return v.lp.low[ch]; // preserve the legacy integrator output
+            };left=filter(left,0);right=filter(right,1);
+        }
+        const bool hpProcessing=!Simple&&(s.hp||(v.slice.active&&v.slice.hp!=0));
+        if(hpProcessing) {
+            // Do not revive stale integrator memory when HP is enabled again
+            // (including temporary Slice/Loop activation while slot HP is Off).
+            if(!v.hpProcessingLast) { v.hp={}; v.hpModCached=1e30; }
+            v.hpProcessingLast=true;
+            ++diagnostics.hp;
+            const double env=p[P::hp_env_amount]!=0?v.hpEnvelope.tick(s.hpEnv):0;
+            const double mod=env*p[P::hp_env_amount]+l1*s.lfo[0].hp+l2*s.lfo[1].hp-(loop?repeats*loop->hp:0)+(v.slice.active?v.slice.hp:0);
+            if(mod!=v.hpModCached) {
+                v.hpCoefficients=mod==0&&p[P::hp_vel_amount]==0?s.hpStatic:filterCoefficients(true,v.hpBase*std::pow(2.0,mod/12),p[P::hp_resonance],hostSampleRate);
+                v.hpModCached=mod;
+            }
+            auto filter=[&](double x,int ch) {
+                const auto& c=v.hpCoefficients;
+                const double y=x-v.hp.low[ch]-c.q*v.hp.band[ch];
+                if(!std::isfinite(y)) { v.hp.band[ch]=0; v.hp.low[ch]=0; return x; }
+                const double nextBand=v.hp.band[ch]+c.f*y;
+                const double nextLow=v.hp.low[ch]+c.f*nextBand;
+                if(!std::isfinite(nextBand)||!std::isfinite(nextLow)) {
+                    v.hp.band[ch]=0;v.hp.low[ch]=0;return x;
+                }
+                v.hp.band[ch]=clamp(nextBand,-16,16);
+                v.hp.low[ch]=clamp(nextLow,-16,16);
+                return y;
+            };
+            left=filter(left,0);right=filter(right,1);
+        } else {
+            // Bypass must not keep a potentially incompatible state around.
+            if(v.hpProcessingLast)v.hp={};
+            v.hpProcessingLast=false;
+        }
+        v.velocitySmooth+=(v.velocityGain-v.velocitySmooth)*velocitySmoothing;
+        const double rawAmp=amp*v.velocitySmooth;
+        if(!Simple&&p[P::retrigger_smooth]>0)v.ampSmooth+=(rawAmp-v.ampSmooth)*s.smooth;else v.ampSmooth=rawAmp;
+        const double gain=v.ampSmooth*s.level*clamp(1+l1*s.lfo[0].volume+l2*s.lfo[1].volume,0,2);
+        double panL=s.panL,panR=s.panR;
+        if(!Simple&&p[P::pan_env]!=0){const double pan=clamp((p[P::pan]+amp*p[P::pan_env]*mirror)*.01,-1,1);panL=1-std::max(0.0,pan);panR=1+std::min(0.0,pan);}
+        left*=gain*panL;right*=gain*panR;
+        if(!Simple&&s.machine)applyMachine(v,s,left,right);
+        if(!Simple&&v.slice.active&&v.slice.output>0) {
+            const int route=outputRoutes[size_t(v.slice.output)];
+            if(route>=0&&route+1<output.getNumChannels()) {
+                output.addSample(route,frame,float(left));output.addSample(route+1,frame,float(right));
+            }
+        } else {
+            if(outL)* (outL+frame)+=float(left);
+            if(outR)* (outR+frame)+=float(right);
+        }
+        if(!Simple&&v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);
+    }
+}
+
 void GlobalVoicePool::render(juce::AudioBuffer<float>& output,int start,int count) {
+    renderInternal<true>(output,start,count);
+}
+void GlobalVoicePool::renderReferenceForTesting(juce::AudioBuffer<float>& output,int start,int count) {
+    renderInternal<false>(output,start,count);
+}
+
+template<bool Optimised>
+void GlobalVoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,int count) {
     if(!states||count<=0||activeVoiceCount()==0)return;
     for(auto& v:voices) {
         if(!v.active)continue;
@@ -456,156 +647,17 @@ void GlobalVoicePool::render(juce::AudioBuffer<float>& output,int start,int coun
         float* outL=channel>=0 && channel<output.getNumChannels()?output.getWritePointer(channel):nullptr;
         float* outR=channel>=0 && channel+1<output.getNumChannels()?output.getWritePointer(channel+1):nullptr;
         const double mirror=p[P::polyphony]!=0&&((&v-voices.data())%2)!=0?-1:1;
-        for(int frame=start;frame<start+count && v.active;++frame) {
-            if(v.amp.phase==0){stop(v);break;}
-            if(v.slice.active) {
-                if(s.slice.count<=0){stop(v);break;}
-                if(!v.slice.configured)v.slice.configure(s.slice,s.length,s.sample->sourceSampleRate,p[P::ram_reverse]!=0,int(p[P::ram_downsample]));
+        const double wheelValue=wheel[size_t(v.channel)];
+        const bool lfoRunning=s.lfo[0].active || s.lfo[1].active
+            || (wheelValue!=0 && (s.lfo[0].wheel!=0 || s.lfo[1].wheel!=0));
+        if constexpr(Optimised) {
+            if(s.simpleVoicePath && !v.slice.active && !lfoRunning) {
+                ++diagnostics.simpleSpans;
+                renderVoice<true,true>(v,s,output,start,count,outL,outR,mirror);
+                continue;
             }
-            const double targetNote=v.slice.pad?p[P::root]:v.note;
-            if(std::abs(v.effectiveNote-targetNote)>.0000001)v.effectiveNote+=(targetNote-v.effectiveNote)*s.portamento;
-            else v.effectiveNote=targetNote;
-            const double effective=v.effectiveNote+bend[size_t(v.channel)]*p[P::pitch_bend_range];
-            // Zero level / settled silent sustain keeps its musical read clock but sleeps every optional processor.
-            if(s.level==0 || (v.amp.phase==3 && s.amp.sustain==0)) {
-                v.amp.tick(s.amp);
-                const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+v.drift;
-                if(pitch!=v.pitchCached){v.increment=std::pow(2.0,pitch/12)*s.sourceRatio;v.pitchCached=pitch;}
-                if(v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);continue;
-            }
-            const double wheelValue=wheel[size_t(v.channel)];
-            const double l1=lfoTick(v,0,s.lfo[0],wheelValue),l2=lfoTick(v,1,s.lfo[1],wheelValue);
-            const LoopAudioState* loop=!v.slice.active&&v.stage>=0?&s.stages[size_t(v.stage)]:nullptr;
-            const double repeats=loop&&loop->repeats>2?std::min(v.repeat,loop->repeats):0;
-            const double repeatPitch=loop?-repeats*loop->pitch:0;
-            const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+v.drift
-                +v.amp.value*p[P::pitch_env]+l1*s.lfo[0].pitch+l2*(s.lfo[1].pitch+wheelValue*s.lfo[1].wheel)+repeatPitch;
-            if(pitch!=v.pitchCached) {v.increment=std::pow(2.0,pitch/12)*s.sourceRatio;v.pitchCached=pitch;}
-            if((s.ring||s.fm)&&effective!=v.followCached) {
-                const double follow=std::pow(2.0,(effective-69)/12);
-                if(s.ring)v.ringIncrement=clamp(p[P::ring_freq]*(p[P::ring_mode]==2?follow:1),.1,20000)/hostSampleRate;
-                if(s.fm)v.fmIncrement=clamp(440*follow*p[P::fm_ratio],.1,20000)/hostSampleRate;
-                v.followCached=effective;
-            }
-            bool sliceSilent=false;
-            double pos=v.slice.active?v.slice.position(sliceSilent):v.position;
-            if(!v.slice.active&&p[P::stretch_amount]>0)pos=std::floor(pos/(s.grain*s.stretchFactor))*s.grain+wrap(pos,s.grain);
-            else if(!v.slice.active&&p[P::stretch_amount]<0)pos=std::floor(pos/s.grain)*(s.grain/s.stretchFactor)+wrap(pos,s.grain);
-            pos=clamp(pos,0,double(s.length-1));
-            if(s.lfo[0].move!=0||s.lfo[1].move!=0)pos=clamp(pos+(l1*s.lfo[0].move+l2*s.lfo[1].move)*.01*s.length,0,double(s.length-1));
-            if(s.fm) {
-                ++diagnostics.fm;v.fmPhase=wrap(v.fmPhase+v.fmIncrement,1);
-                v.fmFeedback=oscillator(v,v.fmPhase+v.fmFeedback*p[P::fm_feedback]*.0095,int(p[P::fm_wave]));
-                pos=clamp(pos+v.fmFeedback*p[P::fm_amount]*.01*std::min(2048.0,std::max(1.0,s.length*.025)),0,double(s.length-1));
-            }
-            double left=read(v,s,pos-s.delayL,0),right=read(v,s,pos-s.delayR,1);
-            if(v.slice.active) {
-                const auto& q=v.slice;
-                const double fade=q.fade(pos-q.begin)*(sliceSilent?0:q.gain);
-                left*=fade*(1-std::max(0.0,q.pan))*(1-std::max(0.0,q.repeatPan));
-                right*=fade*(1+std::min(0.0,q.pan))*(1+std::min(0.0,q.repeatPan));
-            }
-            if(!v.slice.active&&s.crossfade>1) {
-                const double ls=loop?loop->start:0,le=loop?loop->end:s.length;
-                const bool one=loop?loop->oneShot:p[P::global_one_shot]!=0;
-                const double fade=std::min(s.crossfade,(le-ls)*.5);
-                if(!one&&fade>1) {
-                    auto cross=[&](double x,int ch,double current) {
-                        if(x<le-fade||x>=le)return current;
-                        const double t=(x-(le-fade))/fade;
-                        return current*(1-t)+read(v,s,ls+x-(le-fade),ch)*t;
-                    };
-                    left=cross(pos-s.delayL,0,left);right=cross(pos-s.delayR,1,right);
-                }
-            }
-            if(s.edgeFade>0) {left*=edgeGain(pos-s.delayL,s.length,s.edgeFade,s.edgeFade);right*=edgeGain(pos-s.delayR,s.length,s.edgeFade,s.edgeFade);}
-            if(loop&&(loop->fadeIn>0||loop->fadeOut>0)) {
-                auto loopFade=[&](double x) {
-                    if(x<loop->start||x>=loop->end)return 1.0;
-                    const double gain=edgeGain(x-loop->start,loop->end-loop->start,loop->fadeIn,loop->fadeOut);
-                    return gain*gain*gain; // compute_fade_gain_in_out in the supplied JSFX
-                };
-                left*=loopFade(pos-s.delayL);right*=loopFade(pos-s.delayR);
-            }
-            processEffects(v,s,left,right);
-            if(v.slice.active&&v.slice.globalPanDepth>0) {
-                const auto& q=v.slice;const double mid=(left+right)*.70710678,phase=(q.globalPan+1)*pi*.25;
-                left=left*(1-q.globalPanDepth)+mid*std::cos(phase)*q.globalPanDepth;
-                right=right*(1-q.globalPanDepth)+mid*std::sin(phase)*q.globalPanDepth;
-            }
-            const double lfoPan=clamp((l1*s.lfo[0].pan+l2*s.lfo[1].pan)*mirror,-1,1);
-            if(lfoPan!=0) {
-                const double depth=std::abs(lfoPan),mono=(left+right)*.70710678,phase=(lfoPan+1)*pi*.25;
-                left=left*(1-depth)+mono*std::cos(phase)*depth;right=right*(1-depth)+mono*std::sin(phase)*depth;
-            }
-            const double amp=v.amp.tick(s.amp);
-            if(s.lp||(v.slice.active&&v.slice.lp!=0)) {
-                ++diagnostics.lp;
-                const double env=p[P::lp_env_amount]!=0?v.lpEnvelope.tick(s.lpEnv):0;
-                const double mod=env*p[P::lp_env_amount]+(v.note-p[P::root])*p[P::lp_key_follow]
-                    +l1*s.lfo[0].lp+l2*s.lfo[1].lp-(loop?repeats*loop->lp:0)+(v.slice.active?v.slice.lp:0);
-                if(mod!=v.lpModCached) {
-                    v.lpCoefficients=mod==0&&p[P::lp_vel_amount]==0?s.lpStatic:filterCoefficients(false,v.lpBase*std::pow(2.0,mod/12),p[P::lp_resonance],hostSampleRate);
-                    v.lpModCached=mod;
-                }
-                auto filter=[&](double x,int ch) {
-                    const auto& c=v.lpCoefficients;const double v3=x-v.lp.low[ch];
-                    const double v1=c.a1*v.lp.band[ch]+c.a2*v3,v2=v.lp.low[ch]+c.a2*v.lp.band[ch]+c.a3*v3;
-                    v.lp.band[ch]=clamp(2*v1-v.lp.band[ch],-16,16);v.lp.low[ch]=clamp(2*v2-v.lp.low[ch],-16,16);
-                    return v.lp.low[ch]; // preserve the legacy integrator output
-                };left=filter(left,0);right=filter(right,1);
-            }
-            const bool hpProcessing=s.hp||(v.slice.active&&v.slice.hp!=0);
-            if(hpProcessing) {
-                // Do not revive stale integrator memory when HP is enabled again
-                // (including temporary Slice/Loop activation while slot HP is Off).
-                if(!v.hpProcessingLast) { v.hp={}; v.hpModCached=1e30; }
-                v.hpProcessingLast=true;
-                ++diagnostics.hp;
-                const double env=p[P::hp_env_amount]!=0?v.hpEnvelope.tick(s.hpEnv):0;
-                const double mod=env*p[P::hp_env_amount]+l1*s.lfo[0].hp+l2*s.lfo[1].hp-(loop?repeats*loop->hp:0)+(v.slice.active?v.slice.hp:0);
-                if(mod!=v.hpModCached) {
-                    v.hpCoefficients=mod==0&&p[P::hp_vel_amount]==0?s.hpStatic:filterCoefficients(true,v.hpBase*std::pow(2.0,mod/12),p[P::hp_resonance],hostSampleRate);
-                    v.hpModCached=mod;
-                }
-                auto filter=[&](double x,int ch) {
-                    const auto& c=v.hpCoefficients;
-                    const double y=x-v.hp.low[ch]-c.q*v.hp.band[ch];
-                    if(!std::isfinite(y)) { v.hp.band[ch]=0; v.hp.low[ch]=0; return x; }
-                    const double nextBand=v.hp.band[ch]+c.f*y;
-                    const double nextLow=v.hp.low[ch]+c.f*nextBand;
-                    if(!std::isfinite(nextBand)||!std::isfinite(nextLow)) {
-                        v.hp.band[ch]=0;v.hp.low[ch]=0;return x;
-                    }
-                    v.hp.band[ch]=clamp(nextBand,-16,16);
-                    v.hp.low[ch]=clamp(nextLow,-16,16);
-                    return y;
-                };
-                left=filter(left,0);right=filter(right,1);
-            } else {
-                // Bypass must not keep a potentially incompatible state around.
-                if(v.hpProcessingLast)v.hp={};
-                v.hpProcessingLast=false;
-            }
-            v.velocitySmooth+=(v.velocityGain-v.velocitySmooth)*std::min(1.0,1/(.002*hostSampleRate));
-            const double rawAmp=amp*v.velocitySmooth;
-            if(p[P::retrigger_smooth]>0)v.ampSmooth+=(rawAmp-v.ampSmooth)*s.smooth;else v.ampSmooth=rawAmp;
-            const double gain=v.ampSmooth*s.level*clamp(1+l1*s.lfo[0].volume+l2*s.lfo[1].volume,0,2);
-            double panL=s.panL,panR=s.panR;
-            if(p[P::pan_env]!=0){const double pan=clamp((p[P::pan]+amp*p[P::pan_env]*mirror)*.01,-1,1);panL=1-std::max(0.0,pan);panR=1+std::min(0.0,pan);}
-            left*=gain*panL;right*=gain*panR;
-            if(s.machine)applyMachine(v,s,left,right);
-            if(v.slice.active&&v.slice.output>0) {
-                const int route=outputRoutes[size_t(v.slice.output)];
-                if(route>=0&&route+1<output.getNumChannels()) {
-                    output.addSample(route,frame,float(left));output.addSample(route+1,frame,float(right));
-                }
-            } else {
-                if(outL)* (outL+frame)+=float(left);
-                if(outR)* (outR+frame)+=float(right);
-            }
-            if(v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);
         }
+        renderVoice<false,Optimised>(v,s,output,start,count,outL,outR,mirror);
     }
     // Free-running phase is slot-shared and advanced analytically once per render span.
     // Idle slots and ineffective LFOs do not do waveform or phase work.

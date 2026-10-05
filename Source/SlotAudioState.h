@@ -40,6 +40,8 @@ struct SlotAudioState {
     double lpHz = 10000, hpHz = 20;
     bool lp = false, hp = false, drive = false, comp = false, gate = false;
     bool transient = false, degrade = false, ring = false, fm = false, machine = false;
+    // Derived only. Never serialised as parameters or preset state.
+    bool simpleVoicePath = false, effectsNeeded = false;
     double compAttack = 0, compRelease = 0, compThreshold = 1, compExponent = 0, compMakeup = 1, compMix = 0;
     double gateAttack = 0, gateRelease = 0, gateThreshold = 0, gateClosed = 0, gateHold = 0, gateMix = 0;
     double transFast = 0, transSlow = 0, transAmount = 0, transMix = 0;
