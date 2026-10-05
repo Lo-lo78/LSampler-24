@@ -5,6 +5,7 @@
 #include "LibraryManager.h"
 #include <array>
 #include <vector>
+#include <functional>
 
 class LSampler24AudioProcessor : public juce::AudioProcessor
 {
@@ -37,7 +38,16 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
+    struct FileTaskResult { bool ok = false; juce::String message; int count = 0, skipped = 0, slot = -1; };
+    using FileTask = std::function<FileTaskResult(LSampler24AudioProcessor&)>;
+    bool startFileTask(FileTask, std::function<void(FileTaskResult)> completion);
+    bool isFileTaskRunning() const noexcept { return fileTaskRunning.load(std::memory_order_acquire); }
+    FileTaskResult getLastFileTaskResult() const { const juce::ScopedLock lock(fileResultLock); return lastFileTaskResult; }
+    bool shouldStopFileTask() const noexcept { return shuttingDown.load(std::memory_order_acquire); }
+    uint64_t getUiRevision() const noexcept { return uiRevision.load(std::memory_order_acquire); }
+
     bool loadSample(const juce::File& file, juce::String& error);
+    bool loadSampleToSlot(const juce::File& file, int slot, juce::String& error);
     bool importSampleToSlot(const juce::File& file, int slotIndex, double startSeconds, double endSeconds, juce::String& error);
     bool isSlotOccupied(int slotIndex) const;
     bool prepareImportPreview(const juce::File& file, juce::String& error);
@@ -54,6 +64,7 @@ public:
     double getImportPreviewLengthSeconds() const noexcept { return importPreviewLengthSeconds.load(std::memory_order_relaxed); }
     bool isImportPreviewPlaying() const noexcept { return importPreviewPlayingAtomic.load(std::memory_order_relaxed); }
     bool saveSlotPreset(const juce::File& presetFile, juce::String& error);
+    bool saveSlotPresetAt(const juce::File& presetFile, int slot, juce::String& error);
     bool loadSlotPreset(const juce::File& presetFile, juce::String& error);
     bool loadSlotPresetToSlot(const juce::File& presetFile, int slotIndex, juce::String& error);
     bool prepareLibrarySlotPreview(const juce::File& presetFile, juce::String& error);
@@ -183,6 +194,12 @@ private:
     void markAudioStateDirty();
     void syncAudioStateFromSlots();
 
+    mutable juce::CriticalSection fileResultLock;
+    FileTaskResult lastFileTaskResult;
+    std::atomic<uint64_t> uiRevision { 1 };
+    std::atomic<bool> fileTaskRunning { false }, shuttingDown { false };
+    juce::ThreadPool fileWorker { 1, 0, juce::Thread::Priority::low };
+    std::atomic<bool> resetOutputEnvelope { false };
     mutable juce::CriticalSection stateLock;
     std::unique_ptr<std::array<SlotState,slotCount>> slotStorage=std::make_unique<std::array<SlotState,slotCount>>();
     std::array<SlotState,slotCount>& slots=*slotStorage;
@@ -255,7 +272,14 @@ private:
     std::unique_ptr<std::array<lsampler::SlotAudioState,GlobalVoicePool::slotCount>> libraryPreviewStorage=
         std::make_unique<std::array<lsampler::SlotAudioState,GlobalVoicePool::slotCount>>();
     std::array<lsampler::SlotAudioState,GlobalVoicePool::slotCount>& libraryPreviewStates=*libraryPreviewStorage;
-    std::array<std::shared_ptr<SharedSample>, GlobalVoicePool::slotCount> libraryPreviewOwners {};
+    struct LibraryPreviewSnapshot {
+        lsampler::SlotAudioState state;
+        std::shared_ptr<SharedSample> owner;
+    };
+    std::unique_ptr<std::array<LibraryPreviewSnapshot, 3>> libraryPreviewSnapshots =
+        std::make_unique<std::array<LibraryPreviewSnapshot, 3>>();
+    std::atomic<int> libraryPreviewMiddle { 1 };
+    int libraryPreviewWriter = 2, libraryPreviewReader = 0;
     std::atomic<bool> libraryPreviewToggleRequested { false };
     std::atomic<bool> libraryPreviewStopRequested { false };
     std::atomic<bool> libraryPreviewPlayingAtomic { false };

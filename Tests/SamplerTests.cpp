@@ -220,6 +220,68 @@ void concurrentPublicationTest(const juce::File& folder) {
     audio.join();require(allocations==0&&deletes==0,"Concurrent publication has no audio-thread allocations or frees");
     std::cout<<"PASS concurrent snapshot publication and realtime allocation/deletion guard\n";
 }
+// TEST58: compile/run only on the user's regression target, never as part of
+// source preparation. Covers sleep/wake, pending commands and worker ownership.
+void idleAndFileWorkerTests(const juce::File& folder) {
+    LSampler24AudioProcessor p(folder.getChildFile("idle-worker-library"));
+    juce::String error;
+    require(p.loadSample(folder.getChildFile("test.wav"), error), "Idle test sample");
+    p.prepareToPlay(48000, 128);
+    juce::AudioBuffer<float> audio(2, 128); juce::MidiBuffer midi;
+    for (int block = 0; block < 64; ++block) {
+        for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 128; ++i) audio.setSample(ch, i, 1.0f);
+        process(p, audio, midi);
+        require(audio.getMagnitude(0, 128) == 0.0f, "Idle always clears host buffers");
+        require(p.getActiveVoiceCount() == 0, "Idle creates no voices");
+    }
+    midi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 37);
+    process(p, audio, midi);
+    require(audio.getMagnitude(0, 0, 37) == 0.0f, "First note after idle preserves MIDI offset");
+    require(audio.getMagnitude(0, 37, 91) > 0.0f, "First note after idle is audible in same block");
+    midi.addEvent(juce::MidiMessage::allSoundOff(1), 0); process(p, audio, midi);
+    require(p.getActiveVoiceCount() == 0, "All sound off retires active counter");
+    process(p, audio, midi);
+    p.requestPreviewStart(); process(p, audio, midi);
+    require(p.getActiveVoiceCount() > 0, "Slot preview wakes idle");
+    p.requestPreviewStop(); process(p, audio, midi);
+    require(p.getActiveVoiceCount() == 0, "Preview stop retires preview counter");
+    require(p.prepareImportPreview(folder.getChildFile("test.wav"), error), "Prepare import preview");
+    p.requestImportPreviewToggle(); process(p, audio, midi);
+    require(p.isImportPreviewPlaying(), "Import preview publication and toggle wake idle");
+    p.requestImportPreviewStop(); process(p, audio, midi);
+    require(!p.isImportPreviewPlaying(), "Import preview stop processed");
+    const auto preset = folder.getChildFile("idle-preview.lsampler-24-s");
+    require(p.saveSlotPreset(preset, error), "Save preview test slot");
+    require(p.prepareLibrarySlotPreview(preset, error), "Publish library preview");
+    p.requestLibraryPreviewToggle(); process(p, audio, midi);
+    require(p.isLibraryPreviewPlaying(), "Library snapshot and toggle wake idle");
+    p.requestLibraryPreviewStop(); process(p, audio, midi);
+    require(!p.isLibraryPreviewPlaying(), "Library preview stop processed");
+
+    auto entered = std::make_shared<juce::WaitableEvent>();
+    auto release = std::make_shared<juce::WaitableEvent>();
+    auto finished = std::make_shared<juce::WaitableEvent>();
+    auto separateThread = std::make_shared<std::atomic<bool>>(false);
+    const auto caller = std::this_thread::get_id();
+    require(p.startFileTask([entered, release, finished, separateThread, caller](LSampler24AudioProcessor&) {
+        separateThread->store(std::this_thread::get_id() != caller);
+        entered->signal(); release->wait(5000);
+        finished->signal();
+        return LSampler24AudioProcessor::FileTaskResult { true, "Test completed" };
+    }, [](LSampler24AudioProcessor::FileTaskResult) {}), "Start file worker without waiting for disk job");
+    require(entered->wait(2000), "Worker starts");
+    require(separateThread->load(), "File task executes on another thread");
+    const bool duplicate = p.startFileTask([](LSampler24AudioProcessor&) {
+        return LSampler24AudioProcessor::FileTaskResult {};
+    }, [](LSampler24AudioProcessor::FileTaskResult) {});
+    release->signal();
+    require(!duplicate, "Second file operation cannot overlap the first");
+    require(finished->wait(2000), "Worker can finish independently of message dispatch");
+    process(p, audio, midi);
+    require(audio.getMagnitude(0, 128) == 0.0f, "Audio remains valid around file work");
+    std::cout << "PASS idle wakeups and file worker isolation\n";
+}
+
 void editorTests(const juce::File& folder) {
     LSampler24AudioProcessor p(folder.getChildFile("library"));
     auto editor=std::make_unique<LSampler24AudioProcessorEditor>(p);
@@ -253,7 +315,7 @@ int main() {
         juce::ScopedJuceInitialiser_GUI initialise;
         const auto folder=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("lsampler-regression","",false);folder.createDirectory();
         catalogTests();cleanAndBypassTests();voiceTests();pitchAndStereoTests();dspReferenceTests();loopAndEffectTests();
-        persistenceAndProcessorTests(folder);concurrentPublicationTest(folder);editorTests(folder);runSliceTests(folder);
+        persistenceAndProcessorTests(folder);concurrentPublicationTest(folder);idleAndFileWorkerTests(folder);editorTests(folder);runSliceTests(folder);
         require(realtimeAllocations==0&&realtimeDeletes==0,"Zero allocations and frees across all guarded render/note-on/process calls");
         folder.deleteRecursively();
         std::cout<<"PASS "<<checks<<" checks; zero guarded realtime allocations/deletions\n";return 0;

@@ -61,7 +61,33 @@ LSampler24AudioProcessor::LSampler24AudioProcessor(const juce::File& libraryRoot
     markAudioStateDirty();
 }
 
-LSampler24AudioProcessor::~LSampler24AudioProcessor() { voicePool.allNotesOff(); }
+LSampler24AudioProcessor::~LSampler24AudioProcessor()
+{
+    shuttingDown.store(true, std::memory_order_release);
+    // Finish the running disk operation before any processor-owned state is freed.
+    // Closing only the editor never waits for this worker.
+    while (!fileWorker.removeAllJobs(false, 1000)) {}
+    voicePool.allNotesOff();
+    libraryPreviewVoicePool.allNotesOff();
+}
+
+bool LSampler24AudioProcessor::startFileTask(FileTask task, std::function<void(FileTaskResult)> completion)
+{
+    bool expected = false;
+    if (shuttingDown.load() || !fileTaskRunning.compare_exchange_strong(expected, true)) return false;
+    fileWorker.addJob(std::function<void()>([this, task = std::move(task), completion = std::move(completion)]() mutable {
+        FileTaskResult result;
+        try { result = task(*this); }
+        catch (const std::exception& e) { result.message = "File operation failed: " + juce::String(e.what()); }
+        catch (...) { result.message = "File operation failed"; }
+        if (result.message.isEmpty()) result.message = result.ok ? "File operation completed" : "File operation stopped";
+        { const juce::ScopedLock lock(fileResultLock); lastFileTaskResult = result; }
+        fileTaskRunning.store(false, std::memory_order_release);
+        if (!shuttingDown.load(std::memory_order_acquire))
+            juce::MessageManager::callAsync([completion = std::move(completion), result]() mutable { completion(result); });
+    }));
+    return true;
+}
 
 void LSampler24AudioProcessor::prepareToPlay(double sampleRate, int)
 {
@@ -113,6 +139,8 @@ void LSampler24AudioProcessor::updateThresholdWindow(int slotIndex)
 
 void LSampler24AudioProcessor::markAudioStateDirty()
 {
+    const juce::ScopedLock lock(stateLock);
+    uiRevision.fetch_add(1, std::memory_order_release);
     // This function is called only by control/state threads. No audio-thread lock,
     // shared_ptr update, allocation, or destruction is needed to consume a state.
     // Called by control/state code while its caller owns stateLock. The initial
@@ -136,9 +164,10 @@ void LSampler24AudioProcessor::markAudioStateDirty()
 
 void LSampler24AudioProcessor::syncAudioStateFromSlots()
 {
-    if ((middleSnapshot.load(std::memory_order_acquire) & 4) != 0)
+    if ((middleSnapshot.load(std::memory_order_acquire) & 4) != 0) {
         readerSnapshot = middleSnapshot.exchange(readerSnapshot, std::memory_order_acq_rel) & 3;
-    voicePool.setStates(&snapshots[size_t(readerSnapshot)].states);
+        voicePool.setStates(&snapshots[size_t(readerSnapshot)].states);
+    }
 }
 
 void LSampler24AudioProcessor::applyOutputStage(juce::AudioBuffer<float>& buffer, const std::array<int, 25>& routes) noexcept
@@ -279,6 +308,37 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
     syncAudioStateFromSlots();
+    if (resetOutputEnvelope.load(std::memory_order_acquire) && resetOutputEnvelope.exchange(false)) outputGlueEnvelope = 0.0;
+    if ((libraryPreviewMiddle.load(std::memory_order_acquire) & 4) != 0) {
+        // Stop old voices before handing their snapshot back to the publisher.
+        libraryPreviewVoicePool.stopPreviewVoices();
+        libraryPreviewReader = libraryPreviewMiddle.exchange(libraryPreviewReader, std::memory_order_acq_rel) & 3;
+        libraryPreviewStates[0] = (*libraryPreviewSnapshots)[size_t(libraryPreviewReader)].state;
+        libraryPreviewVoicePool.setStates(&libraryPreviewStates);
+        libraryPreviewPlaying = false;
+        libraryPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
+    }
+    // Only sleep when no musical work or control command can be lost. MIDI CC,
+    // sustain, bend, every preview command and new preview data wake this block.
+    if (midi.isEmpty() && voicePool.activeVoiceCount() == 0
+        && libraryPreviewVoicePool.activeVoiceCount() == 0 && !importPreviewPlaying
+        && !previewPlaying && !libraryPreviewPlaying && slicePreviewKind.load() == 0
+        && stopVoicesMask.load() == 0 && slicePreviewCommand.load() < 0
+        && !previewToggleRequested.load() && !previewStartRequested.load()
+        && !previewStopRequested.load() && !previewRestartRequested.load() && !previewAuditionRequested.load()
+        && !libraryPreviewToggleRequested.load() && !libraryPreviewStopRequested.load()
+        && !importPreviewToggleRequested.load() && !importPreviewStopRequested.load()
+        && !importPreviewSeekRequested.load() && (importPreviewMiddle.load() & 4) == 0)
+    {
+        // Same zero-input release equation as the output stage, evaluated once
+        // per silent block. The output has no delay/reverb tail to truncate.
+        if (outputGlueEnvelope > 0.0 && getGlobalOutputParameter(GlobalP::output_stage) >= 0.5) {
+            const double release = juce::jmax(1.0, 0.020 * preparedSampleRate);
+            outputGlueEnvelope *= std::pow(1.0 - 1.0 / release, buffer.getNumSamples());
+            if (outputGlueEnvelope < 1.0e-20) outputGlueEnvelope = 0.0;
+        }
+        return;
+    }
     if ((importPreviewMiddle.load(std::memory_order_acquire) & 4) != 0)
     {
         importPreviewReader = importPreviewMiddle.exchange(importPreviewReader, std::memory_order_acq_rel) & 3;
@@ -571,6 +631,7 @@ juce::AudioProcessorEditor* LSampler24AudioProcessor::createEditor()
 void LSampler24AudioProcessor::setCurrentSlot(int slotIndex)
 {
     currentSlot = juce::jlimit(0, slotCount - 1, slotIndex);
+    uiRevision.fetch_add(1, std::memory_order_release);
 }
 
 juce::String LSampler24AudioProcessor::getSlotLabel(int slotIndex) const
@@ -592,6 +653,7 @@ juce::String LSampler24AudioProcessor::getSlotName(int slotIndex) const
 
 void LSampler24AudioProcessor::setSlotName(int slotIndex, const juce::String& name)
 {
+    uiRevision.fetch_add(1, std::memory_order_release);
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
     const auto clean = name.trim();
     const juce::ScopedLock lock(stateLock);
@@ -600,17 +662,23 @@ void LSampler24AudioProcessor::setSlotName(int slotIndex, const juce::String& na
 
 bool LSampler24AudioProcessor::loadSample(const juce::File& file, juce::String& error)
 {
+    return loadSampleToSlot(file, getCurrentSlot(), error);
+}
+
+bool LSampler24AudioProcessor::loadSampleToSlot(const juce::File& file, int slotIndex, juce::String& error)
+{
+    slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
     auto loaded = SamplePool::instance().load(file, error);
     if (!loaded)
     {
         const juce::ScopedLock lock(stateLock);
-        slots[static_cast<size_t>(currentSlot.load())].status = error;
+        slots[static_cast<size_t>(slotIndex)].status = error;
         return false;
     }
 
     {
         const juce::ScopedLock lock(stateLock);
-        auto& s = slots[static_cast<size_t>(currentSlot.load())];
+        auto& s = slots[static_cast<size_t>(slotIndex)];
         s.slice = SliceState{};
         s.sample = std::move(loaded);
         s.sampleFile = file;
@@ -618,7 +686,7 @@ bool LSampler24AudioProcessor::loadSample(const juce::File& file, juce::String& 
         s.presetFile = {};
         s.sampleAudioModified = false;
         s.status = "Loaded: " + file.getFileName();
-        updateThresholdWindow(currentSlot.load());
+        updateThresholdWindow(slotIndex);
         markAudioStateDirty();
     }
     return true;
@@ -709,6 +777,7 @@ bool LSampler24AudioProcessor::prepareImportPreview(const juce::File& file, juce
 {
     auto loaded = SamplePool::instance().load(file, error);
     if (!loaded) return false;
+    const juce::ScopedLock lock(stateLock);
     auto& target = importPreviewSnapshots[static_cast<size_t>(importPreviewWriter)];
     target.owner = std::move(loaded);
     target.sample = target.owner.get();
@@ -741,6 +810,7 @@ void LSampler24AudioProcessor::setGlobalOutputParameter(lsampler::GlobalP parame
 {
     const auto& d = lsampler::globalParameters[size_t(parameter)];
     globalOutputParameters[size_t(parameter)].store(lsampler::sanitise(d, value), std::memory_order_relaxed);
+    uiRevision.fetch_add(1, std::memory_order_release);
 }
 
 double LSampler24AudioProcessor::getSlotParameter(int index, int loop) const {
@@ -1083,8 +1153,8 @@ juce::String LSampler24AudioProcessor::getSampleStatus() const
 juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slotIndex, const juce::String& type) const
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
-    const juce::ScopedLock lock(stateLock);
-    const auto& s = slots[static_cast<size_t>(slotIndex)];
+    SlotState s;
+    { const juce::ScopedLock lock(stateLock); s = slots[static_cast<size_t>(slotIndex)]; }
     juce::ValueTree tree(type);
     tree.setProperty("format", "LSampler-24 Slot", nullptr);
     tree.setProperty("formatVersion", 4, nullptr);
@@ -1165,8 +1235,7 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
     }
 
     {
-        const juce::ScopedLock lock(stateLock);
-        auto& slot = slots[static_cast<size_t>(slotIndex)];
+        SlotState slot;
         slot.parameters = SlotParameters{};
         slot.parameters[P::low] = lowKey;
         slot.parameters[P::high] = highKey;
@@ -1192,7 +1261,10 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
         slot.slotName = tree.getProperty("slotName").toString().trim();
         slot.sampleAudioModified = editedAudio.isValid()&&bool(slot.sample);
         slot.status = statusText;
-        updateThresholdWindow(slotIndex);
+        const auto window = lsampler::calculateThresholdWindow(slot.parameters, slot.sample.get());
+        slot.thresholdStartFrame = window.start; slot.thresholdEndFrame = window.end;
+        const juce::ScopedLock lock(stateLock);
+        slots[static_cast<size_t>(slotIndex)] = std::move(slot);
         markAudioStateDirty();
     }
 
@@ -1238,6 +1310,9 @@ bool LSampler24AudioProcessor::materialiseSlotSample(int slotIndex, juce::String
 
         const juce::ScopedLock lock(stateLock);
         auto& slot = slots[static_cast<size_t>(slotIndex)];
+        if (slot.sample != currentSample || slot.sampleFile != source) {
+            error = "Slot changed during save; please save again"; return false;
+        }
         slot.sample = std::move(aliased);
         slot.sampleFile = local;
         slot.sampleAudioModified = false;
@@ -1261,6 +1336,9 @@ bool LSampler24AudioProcessor::materialiseSlotSample(int slotIndex, juce::String
 
         const juce::ScopedLock lock(stateLock);
         auto& slot = slots[static_cast<size_t>(slotIndex)];
+        if (slot.sample != currentSample || slot.sampleFile != source) {
+            error = "Slot changed during save; please save again"; return false;
+        }
         slot.sample = std::move(loaded);
         slot.sampleFile = local;
         slot.sampleAudioModified = false;
@@ -1294,7 +1372,12 @@ juce::ValueTree LSampler24AudioProcessor::readPreset(const juce::File& file, juc
 
 bool LSampler24AudioProcessor::saveSlotPreset(const juce::File& presetFile, juce::String& error)
 {
-    const int slotIndex = currentSlot.load(std::memory_order_relaxed);
+    return saveSlotPresetAt(presetFile, getCurrentSlot(), error);
+}
+
+bool LSampler24AudioProcessor::saveSlotPresetAt(const juce::File& presetFile, int slotIndex, juce::String& error)
+{
+    slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
     if (!materialiseSlotSample(slotIndex, error))
         return false;
     if (!writePreset(presetFile, makeSlotState(slotIndex, "LSampler24Slot"), error))
@@ -1415,18 +1498,12 @@ bool LSampler24AudioProcessor::prepareLibrarySlotPreview(const juce::File& prese
     tree.setProperty("sampleHash", library.makeSampleHash(file), nullptr);
     { juce::String ignored; writePreset(presetFile, tree, ignored); }
 
-    libraryPreviewVoicePool.stopPreviewVoices();
-    libraryPreviewOwners.fill({});
-    libraryPreviewStates = {};
-    libraryPreviewOwners[0] = loaded;
-    libraryPreviewStates[0] = lsampler::prepareSlotAudioState(params, loaded.get(), preparedSampleRate, ++nextRevision);
-    libraryPreviewStates[0].slice=prepareSliceAudio(SliceState::fromTree(tree.getChildWithName("Slice")),libraryPreviewStates[0].length);
-    libraryPreviewVoicePool.setStates(&libraryPreviewStates);
-    // Browser/grid preview always auditions MIDI C4. Original Pitch therefore changes
-    // the heard tuning deterministically instead of moving the preview note with the root.
-    libraryPreviewNote = 60;
-    libraryPreviewPlaying = false;
-    libraryPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
+    const juce::ScopedLock lock(stateLock);
+    auto& target = (*libraryPreviewSnapshots)[size_t(libraryPreviewWriter)];
+    target.owner = std::move(loaded);
+    target.state = lsampler::prepareSlotAudioState(params, target.owner.get(), preparedSampleRate, ++nextRevision);
+    target.state.slice = prepareSliceAudio(SliceState::fromTree(tree.getChildWithName("Slice")), target.state.length);
+    libraryPreviewWriter = libraryPreviewMiddle.exchange(libraryPreviewWriter | 4, std::memory_order_acq_rel) & 3;
     return true;
 }
 
@@ -1482,7 +1559,7 @@ bool LSampler24AudioProcessor::loadBankPreset(const juce::File& presetFile, juce
     for (int i = 0; i < globalParameterCount; ++i)
         if (bank.hasProperty(globalParameters[size_t(i)].key))
             setGlobalOutputParameter(static_cast<GlobalP>(i), double(bank.getProperty(globalParameters[size_t(i)].key)));
-    outputGlueEnvelope = 0.0;
+    resetOutputEnvelope.store(true, std::memory_order_release);
     markAudioStateDirty();
     error = firstError;
     return ok;
@@ -1501,6 +1578,7 @@ bool LSampler24AudioProcessor::importFilesToLibrary(const juce::Array<juce::File
     bool foundSupportedAudio = false;
     for (const auto& source : sourceFiles)
     {
+        if (shouldStopFileTask()) { error = "Import stopped"; return false; }
         if (!source.existsAsFile() || !SamplePool::instance().canReadFile(source))
             continue;
 
@@ -1601,6 +1679,7 @@ bool LSampler24AudioProcessor::importFolderToLibrary(const juce::File& sourceFol
 
     for (const auto& source : files)
     {
+        if (shouldStopFileTask()) { error = "Import stopped"; return false; }
         if (!source.existsAsFile() || !SamplePool::instance().canReadFile(source))
             continue;
 
@@ -1696,6 +1775,7 @@ bool LSampler24AudioProcessor::exportLibraryArchive(const juce::File& requestedT
 
     for (const auto& slotFile : slotFiles)
     {
+        if (shouldStopFileTask()) { error = "Export stopped"; return false; }
         juce::String readError;
         auto tree = readPreset(slotFile, readError);
         if (!tree.hasType("LSampler24Slot"))
@@ -1729,11 +1809,7 @@ bool LSampler24AudioProcessor::exportLibraryArchive(const juce::File& requestedT
         target = target.getSiblingFile(target.getFileNameWithoutExtension() + ".lsampler-24.ls24");
 
     target.getParentDirectory().createDirectory();
-    if (target.existsAsFile() && !target.deleteFile())
-    {
-        error = "Could not replace export file";
-        return false;
-    }
+    juce::TemporaryFile temporary(target);
 
     juce::ZipFile::Builder builder;
     for (const auto& pair : valid)
@@ -1749,7 +1825,7 @@ bool LSampler24AudioProcessor::exportLibraryArchive(const juce::File& requestedT
         }
     }
 
-    auto stream = target.createOutputStream();
+    auto stream = temporary.getFile().createOutputStream();
     if (stream == nullptr)
     {
         error = "Could not create export file";
@@ -1759,11 +1835,13 @@ bool LSampler24AudioProcessor::exportLibraryArchive(const juce::File& requestedT
     if (!builder.writeToStream(*stream, nullptr))
     {
         error = "Could not write LSampler-24 library export";
-        target.deleteFile();
         return false;
     }
 
     stream->flush();
+    if (stream->getStatus().failed()) { error = "Could not flush library export"; return false; }
+    stream.reset();
+    if (!temporary.overwriteTargetFileWithTemporary()) { error = "Could not replace export file"; return false; }
     return true;
 }
 
@@ -1822,6 +1900,7 @@ bool LSampler24AudioProcessor::importLibraryArchive(const juce::File& archiveFil
 
     for (const auto& sourceSlot : slotFiles)
     {
+        if (shouldStopFileTask()) { error = "Import stopped"; return false; }
         juce::String localError;
         auto tree = readPreset(sourceSlot, localError);
         if (!tree.hasType("LSampler24Slot"))
@@ -1940,7 +2019,7 @@ void LSampler24AudioProcessor::setStateInformation(const void* data, int sizeInB
             for (int i = 0; i < globalParameterCount; ++i)
                 if (state.hasProperty(globalParameters[size_t(i)].key))
                     setGlobalOutputParameter(static_cast<GlobalP>(i), double(state.getProperty(globalParameters[size_t(i)].key)));
-            outputGlueEnvelope = 0.0;
+            resetOutputEnvelope.store(true, std::memory_order_release);
             markAudioStateDirty();
         }
         else

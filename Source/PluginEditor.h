@@ -15,6 +15,7 @@ public:
 
     void setSlotText(const juce::String& newText)
     {
+        if (slotText == newText) return;
         slotText = newText;
         setTitle(slotText);
         setName({});
@@ -25,6 +26,7 @@ public:
     const juce::String& getSlotText() const noexcept { return slotText; }
 
     void setVisualState(int number, const juce::String& name, bool loaded, bool selected) {
+        if (visualNumber == number && visualName == name && visualLoaded == loaded && visualSelected == selected) return;
         visualNumber=number; visualName=name; visualLoaded=loaded; visualSelected=selected; repaint();
     }
     void paint(juce::Graphics& g) override {
@@ -323,6 +325,15 @@ private:
     int categoryEnd(int index) const;
 
     void timerCallback() override;
+    using FileTaskResult = LSampler24AudioProcessor::FileTaskResult;
+    void runFileTask(const juce::String&, LSampler24AudioProcessor::FileTask,
+                     std::function<void(const FileTaskResult&, bool)> completion = {});
+    void setFileUiBusy(bool);
+    void refreshMeters();
+    bool fileUiBusy = false, fileTaskOwned = false;
+    uint64_t lastUiRevision = 0;
+    juce::Component::SafePointer<juce::Component> fileReturnFocus;
+    std::vector<std::pair<juce::Component::SafePointer<juce::Component>, bool>> fileDisabledComponents;
     void chooseSample();
     void enterImportBrowser();
     void leaveImportBrowser(bool announceSlot, bool resetPreviewPosition = false);

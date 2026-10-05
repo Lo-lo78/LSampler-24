@@ -1,0 +1,71 @@
+LSampler-24 - TEST58 - Idle e operazioni sui file in background
+Base: sorgente completo TEST57 allegato. Nessuna compilazione eseguita.
+
+MODIFICHE
+- Riposo audio: quando non ci sono voci, MIDI o comandi pendenti, il processore
+  azzera le uscite e salta routing, interrogazione del tempo, rendering, scansione
+  meter e trattamento campione per campione dello stadio di uscita.
+- Il rilascio residuo del Bus Glue viene mantenuto con la stessa equazione
+  a ingresso zero, calcolata per blocco. I blocchi con suono conservano il DSP.
+- Gli snapshot audio vengono applicati soltanto quando cambiano. I conteggi
+  globali delle voci e delle anteprime non richiedono piu scansioni a riposo.
+- L'interfaccia non ricostruisce piu tutta la griglia dei parametri dieci volte
+  al secondo quando e invariata. Aggiornamenti su modifica; meter separati,
+  con stop dei repaint quando il livello visualizzato e tornato a zero.
+- Worker dedicato a bassa priorita per Import File, Import Folder, Import Library,
+  Export Library, caricamento dei campioni/selezioni e caricamento/salvataggio
+  di slot e banchi. Un'operazione per istanza alla volta.
+- I comandi del plugin sono temporaneamente disabilitati durante il lavoro.
+  NVDA riceve inizio e risultato quando il plugin ha il focus. Alt+Tab resta
+  disponibile; il completamento non deve riportare il focus dalla DAW al plugin.
+- Chiudere la sola finestra non attende il worker. Il lavoro appartiene al
+  processore e prosegue; callback su editor distrutti vengono ignorate.
+- Dati dell'anteprima della libreria pubblicati tramite snapshot: le sue voci
+  sono fermate/aggiornate dal thread audio, non direttamente dall'interfaccia.
+- Hash e serializzazione audio dei preset fuori dal lock dello stato vivo.
+- L'esportazione scrive un file temporaneo e sostituisce il precedente soltanto
+  dopo il completamento e il controllo degli errori di scrittura.
+- Corretto un AudioFormatReader non distrutto nel controllo canReadFile.
+  Il browser elenca per estensione senza aprire tutti i file audio della cartella;
+  file danneggiati vengono rifiutati quando si tenta di usarli.
+- Formato di preset/progetti, DSP con audio attivo e configurazione GitHub
+  Actions/CMake mantenuti. Progetto completo, non solo i file modificati.
+
+VERIFICHE EFFETTUATE SENZA COMPILARE
+- Revisione del confronto con TEST57, delimitatori lessicali C++ e chiamate
+  dell'interfaccia per le operazioni pesanti ora indirizzate al worker.
+- Confronto numerico indipendente del rilascio del glue: frequenze da 8 a 192 kHz,
+  blocchi da 1 a 2048 campioni e vari livelli iniziali. Differenza massima circa
+  1.72e-13 rispetto all'equazione iterata campione per campione.
+- Aggiunti test sorgente in Tests/SamplerTests.cpp per buffer silenziosi, prima
+  nota con offset MIDI, anteprime, contatori e isolamento del worker.
+  Questi test C++ NON sono stati compilati o eseguiti in questa consegna.
+- Nessuna misura CPU reale e nessuna verifica NVDA/REAPER eseguita qui.
+
+PROVA IN REAPER DOPO LA COMPILAZIONE
+1. Confrontare TEST57/TEST58 a identico sample rate, buffer, numero di uscite
+   e numero di istanze. Provare vuoto e con campioni caricati, finestra aperta
+   sugli slot, sui parametri e chiusa. Attendere qualche secondo dopo lo stop.
+2. Dopo il riposo, suonare il primo attacco MIDI; provare sustain e pitch bend,
+   anteprima slot, browser, Slice e ripresa del sequencer.
+3. Avviare Import Folder su una cartella consistente mentre REAPER riproduce.
+   Passare con Alt+Tab a un'altra applicazione e verificare la risposta di NVDA.
+   Tornare al plugin e controllare risultato e riattivazione dei comandi.
+4. Ripetere per export/import della libreria e per slot/banchi. Ricaricare uno
+   slot ritagliato per controllare che contenga ancora il taglio corretto.
+5. Chiudere e riaprire la sola finestra durante un'importazione.
+
+LIMITI PRECISI
+- Un thread separato non significa un core fisso: la distribuzione dei core
+  e gestita dal sistema operativo. Il valore CPU effettivo va misurato in REAPER.
+- La selezione nelle finestre native resta sul thread dell'interfaccia, come
+  richiesto da JUCE. Lettura, copia, hash e compressione delle operazioni elencate
+  partono dopo la conferma sul worker.
+- La preparazione delle anteprime del browser e ancora sincrona: la prima
+  decodifica di un campione molto grande puo ancora dare un'attesa navigando.
+  Anche enumerare cartelle lente/rete e il salvataggio dello stato richiesto
+  direttamente dalla DAW mantengono il proprio percorso sincrono.
+- Chiudere la finestra e diverso dal rimuovere completamente il plugin:
+  la distruzione del processore attende la fine del lavoro in corso per non
+  lasciare thread con riferimenti a memoria distrutta. Gli import controllano
+  la chiusura tra gli elementi; un singolo trasferimento/ZIP puo ancora finire.

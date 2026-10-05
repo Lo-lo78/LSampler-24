@@ -92,10 +92,18 @@ bool SamplePool::canReadFile(const juce::File& file)
 {
     if (!file.existsAsFile() || formats.findFormatForFileExtension(file.getFileExtension()) == nullptr)
         return false;
-    return formats.createReaderFor(file) != nullptr;
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
+    return reader != nullptr;
 }
 
 juce::String SamplePool::getSupportedAudioWildcard() const
 {
     return formats.getWildcardForAllFormats();
+}
+
+// Browser enumeration must not open every audio file merely to list its name.
+// Actual readability is checked by load/canReadFile when the file is used.
+bool SamplePool::hasSupportedExtension(const juce::File& file) const
+{
+    return formats.findFormatForFileExtension(file.getFileExtension()) != nullptr;
 }

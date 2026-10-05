@@ -77,6 +77,7 @@ private:
     std::array<double,16> bend {},wheel {};
     std::array<std::array<double,2>,slotCount> freePhase {};
     std::array<int,slotCount> activePerSlot {};
+    int activeTotal = 0, previewTotal = 0;
     std::array<int,25> outputRoutes {};
     const std::array<lsampler::SlotAudioState,slotCount>* states=nullptr;
     double hostSampleRate=44100,bpm=120;

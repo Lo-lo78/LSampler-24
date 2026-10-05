@@ -24,6 +24,7 @@ public:
     void pruneExpired();
     std::shared_ptr<SharedSample> aliasFile(const juce::File&, std::shared_ptr<SharedSample>);
     bool canReadFile(const juce::File& file);
+    bool hasSupportedExtension(const juce::File& file) const;
     juce::String getSupportedAudioWildcard() const;
 
 private:

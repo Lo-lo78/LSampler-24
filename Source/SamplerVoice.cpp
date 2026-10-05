@@ -54,6 +54,7 @@ void GlobalVoicePool::setStates(const std::array<SlotAudioState,slotCount>* next
 void GlobalVoicePool::stop(Voice& v) noexcept {
     if(v.active) {
         --activePerSlot[size_t(v.slotIndex)];
+        --activeTotal; if (v.preview) --previewTotal;
         v.active=false;
         v.sample->voiceReferences.fetch_sub(1,std::memory_order_release);
         v.sample=nullptr;
@@ -63,8 +64,8 @@ void GlobalVoicePool::release(Voice& v) noexcept {v.amp.release();v.lpEnvelope.r
 void GlobalVoicePool::allNotesOff() {for(auto& v:voices)stop(v);held={};pedal={};}
 void GlobalVoicePool::stopSlotVoices(int slot) {for(auto& v:voices)if(v.active&&v.slotIndex==slot)stop(v);}
 void GlobalVoicePool::stopPreviewVoices(int slot) {for(auto& v:voices)if(v.active&&v.preview&&(slot<0||v.slotIndex==slot))stop(v);}
-bool GlobalVoicePool::hasPreviewVoices(int slot) const noexcept {for(const auto& v:voices)if(v.active&&v.preview&&(slot<0||v.slotIndex==slot))return true;return false;}
-int GlobalVoicePool::activeVoiceCount() const noexcept {int n=0;for(auto i:activePerSlot)n+=i;return n;}
+bool GlobalVoicePool::hasPreviewVoices(int slot) const noexcept {if(previewTotal==0)return false;for(const auto& v:voices)if(v.active&&v.preview&&(slot<0||v.slotIndex==slot))return true;return false;}
+int GlobalVoicePool::activeVoiceCount() const noexcept {return activeTotal;}
 int GlobalVoicePool::activeVoiceCount(int slot) const noexcept {return activePerSlot[size_t(slot)];}
 GlobalVoicePool::Voice& GlobalVoicePool::chooseVoice(int slot,int cap) {
     Voice* oldest=nullptr;
@@ -168,6 +169,7 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
     auto& v=chooseVoice(slot,mono?1:int(p[P::slot_polyphony]));stop(v);v=Voice{};
     v.active=true;v.preview=preview;v.slotIndex=slot;v.note=note;v.channel=channel;v.velocity=velocity;
     v.sample=s.sample;v.sample->voiceReferences.fetch_add(1,std::memory_order_relaxed);++activePerSlot[size_t(slot)];
+    ++activeTotal; if (preview) ++previewTotal;
     v.age=++ageCounter;v.randomState=uint32_t(v.age*747796405u+uint64_t(note)*2891336453u+1);
     v.effectiveNote=note;v.velocityGain=velocityGain(velocity,p[P::vel_volume_depth]);v.velocitySmooth=v.velocityGain;
     if(!mono&&p[P::poly_drift]>0) {
