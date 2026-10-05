@@ -58,6 +58,7 @@ public:
     bool loadSample(const juce::File& file, juce::String& error);
     bool loadSampleToSlot(const juce::File& file, int slot, juce::String& error);
     bool loadSampleSetEntryToSlot(const juce::File& file, int slot, int sampleIndex, juce::String& error);
+    bool loadSampleSetEntryFromSlotPreset(const juce::File& presetFile, int slot, int sampleIndex, juce::String& error);
     void clearSampleSetEntry(int slot, int sampleIndex);
     SampleSetEntryInfo getSampleSetEntry(int slot, int sampleIndex) const;
     juce::File getSampleSetEntryFile(int slot, int sampleIndex) const;

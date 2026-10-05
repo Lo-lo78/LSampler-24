@@ -1,0 +1,16 @@
+LSampler-24 TEST64 - Browser Bank interno
+
+- Alt+B non apre più il FileChooser di Windows: apre il browser interno accessibile.
+- Il browser è radicato in Documents\LSampler-24\Library\Banks e non può risalire sopra Banks.
+- Freccia Su/Giù: elemento precedente/successivo.
+- Freccia Destra o Invio su una cartella: entra nella cartella.
+- Freccia Sinistra o Backspace: risale di una cartella; alla radice Banks non fa nulla.
+- Page Up/Down, Home/End e ricerca/ciclo alfanumerico seguono la logica del browser Slot.
+- Invio su un file .lsampler-24-b carica il Bank.
+- Esc chiude senza caricare.
+- Spazio non esegue anteprima: i Bank non hanno preview audio.
+- La posizione del browser Bank viene ricordata separatamente da quella del browser Slot.
+- Anche il pulsante Load Bank usa il nuovo browser interno.
+- Alt+Shift+B / Save Bank resta invariato.
+
+Nessuna compilazione locale eseguita.

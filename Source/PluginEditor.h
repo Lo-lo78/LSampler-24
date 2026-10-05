@@ -382,7 +382,7 @@ private:
     void chooseImportFolder();
     void chooseExportLibrary();
     void chooseImportLibrary();
-    void enterSlotLibraryBrowser();
+    void enterSlotLibraryBrowser(bool forSampleSet = false, bool forBank = false);
     void leaveSlotLibraryBrowser(bool announceSlot);
     void refreshSlotLibraryEntries();
     void selectSlotLibraryEntry(int index, bool announce);
@@ -502,6 +502,8 @@ private:
     int slotLibraryEntryIndex = 0;
     int slotLibraryStartSlot = 0;
     bool slotLibraryActive = false;
+    bool slotLibraryForSampleSet = false;
+    bool slotLibraryForBank = false;
     bool slotLibraryPreviewEnabled = false;
     bool slotLibraryShiftSelectionActive = false;
     juce::juce_wchar slotLibraryLastInitial = 0;

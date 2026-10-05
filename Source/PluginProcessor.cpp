@@ -770,6 +770,51 @@ bool LSampler24AudioProcessor::loadSampleSetEntryToSlot(const juce::File& file, 
     return true;
 }
 
+
+bool LSampler24AudioProcessor::loadSampleSetEntryFromSlotPreset(const juce::File& presetFile, int slotIndex, int sampleIndex, juce::String& error)
+{
+    auto tree = readPreset(presetFile, error);
+    if (!tree.hasType("LSampler24Slot"))
+    {
+        error = "Not an LSampler-24 slot preset";
+        return false;
+    }
+
+    auto reference = tree.getProperty("sampleReference").toString();
+    auto hash = tree.getProperty("sampleHash").toString();
+    if (reference.isEmpty())
+        reference = tree.getProperty("samplePath").toString();
+
+    if (reference.isEmpty())
+    {
+        const auto sampleSet = tree.getChildWithName("SampleSet");
+        if (sampleSet.isValid())
+            for (int i = 0; i < sampleSet.getNumChildren(); ++i)
+            {
+                const auto entry = sampleSet.getChild(i);
+                if (int(entry.getProperty("index", i)) != 0) continue;
+                reference = entry.getProperty("sampleReference").toString();
+                hash = entry.getProperty("sampleHash").toString();
+                break;
+            }
+    }
+
+    if (reference.isEmpty())
+    {
+        error = "Selected slot has no sample";
+        return false;
+    }
+
+    const auto sampleFile = library.resolveSampleReference(reference, hash);
+    if (!sampleFile.existsAsFile())
+    {
+        error = "Sample missing: " + juce::File(reference).getFileName();
+        return false;
+    }
+
+    return loadSampleSetEntryToSlot(sampleFile, slotIndex, sampleIndex, error);
+}
+
 void LSampler24AudioProcessor::clearSampleSetEntry(int slotIndex, int sampleIndex)
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);

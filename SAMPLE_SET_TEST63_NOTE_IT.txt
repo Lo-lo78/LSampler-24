@@ -1,0 +1,31 @@
+LSampler-24 - SAMPLE SET TEST63
+
+Modifiche rispetto a TEST62 FIX1
+
+1. Sample Set Editor (Alt+M)
+- Alt+S non apre piu' il browser dal Sample Set Editor.
+- Sulla voce Sample del sotto-slot corrente, Enter apre il browser basato sul normale browser Alt+S degli Slot.
+- Il browser resta nella Library degli Slot e usa la stessa navigazione del normale Alt+S.
+- Quando viene aperto dal Sample Set, Enter su un preset Slot NON carica l'intero Slot:
+  prende soltanto il Sample 1 del preset scelto e lo assegna al Sample 1..16 corrente.
+- Filtro, envelope, LFO e gli altri parametri sonori dello Slot corrente restano invariati.
+- Se si sostituisce Sample 1, lo stato Slice viene azzerato come nel normale caricamento di un nuovo campione, per non lasciare slice riferite al vecchio audio.
+- Esc torna al Sample Set Editor e mantiene il sotto-slot corrente.
+
+2. Navigazione cartelle uniforme
+Nel browser Alt+S normale, nel browser aperto con Enter da Alt+M e nel browser Alt+O:
+- Freccia destra su una cartella = entra nella cartella.
+- Freccia sinistra = torna alla cartella superiore.
+- Enter continua a entrare nella cartella / confermare il file.
+- Backspace continua a tornare alla cartella superiore.
+
+3. Alt+O
+- Le frecce sinistra/destra semplici ora sono dedicate alla navigazione delle cartelle.
+- Le combinazioni Ctrl/Alt+freccia gia' presenti per le funzioni di editing del browser restano invariate.
+
+4. Accessibilita'
+- Aprendo il browser da Alt+M, i file Slot vengono annunciati come sorgenti per il Sample corrente, ad esempio:
+  "Sample 3 source, Snare Soft".
+- Le operazioni multiple del browser Slot (selezione multipla, copia/taglia/incolla, destinazione Slot) non vengono attivate nel contesto Sample Set.
+
+Nessuna compilazione locale eseguita.
