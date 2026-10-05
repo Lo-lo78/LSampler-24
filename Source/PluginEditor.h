@@ -195,7 +195,12 @@ class LSamplerPropertiesPanel final : public juce::Component
 public:
     LSamplerPropertiesPanel()
     {
-        setAccessible(false);
+        // Properties is a real accessible modal surface.  The panel itself is a
+        // named container while the two read-only TextEditors are the keyboard
+        // focus targets that NVDA can inspect line by line.
+        setAccessible(true);
+        setTitle("Properties");
+        setDescription("Sample and slot configuration properties");
         setWantsKeyboardFocus(false);
         auto setup = [this](juce::TextEditor& editor, const juce::String& name)
         {

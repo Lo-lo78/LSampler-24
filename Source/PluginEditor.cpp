@@ -363,20 +363,18 @@ void LSampler24AudioProcessorEditor::returnToCurrentSlotAndAnnounce()
     const int slot = processor.getCurrentSlot();
     refreshSlotCells();
 
+    // Moving keyboard/accessibility focus to the slot already makes NVDA announce
+    // the slot title.  Do not send a second explicit announcement here: doing both
+    // caused the same slot message to overlap itself after Alt+L and after closing
+    // modal pages such as Properties.
     juce::Timer::callAfterDelay(60,
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), slot]
         {
             if (safeThis == nullptr) return;
             auto& cell = safeThis->slotCells[static_cast<size_t>(slot)];
             cell.grabKeyboardFocus();
-
-            juce::Timer::callAfterDelay(90,
-                [safeThis, slot]
-                {
-                    if (safeThis == nullptr) return;
-                    auto& currentCell = safeThis->slotCells[static_cast<size_t>(slot)];
-                    lsampler::announceToActiveScreenReader(currentCell, safeThis->processor.getSlotLabel(slot));
-                });
+            if (auto* handler = cell.getAccessibilityHandler())
+                handler->grabFocus();
         });
 }
 
@@ -391,8 +389,17 @@ void LSampler24AudioProcessorEditor::openProperties()
     propertiesPanel.toFront(false);
     resized();
     propertiesPanel.sampleInfo.grabKeyboardFocus();
-    lsampler::announceToActiveScreenReader(propertiesPanel.sampleInfo,
-        "Properties. Audio file information. " + processor.getCurrentSamplePropertiesText().replace("\n", ". "));
+    // Give the read-only text editor real accessibility focus.  Its accessible
+    // name identifies the first column and NVDA can then read/navigate the actual
+    // property text with the normal cursor keys without an overlapping synthetic
+    // announcement.
+    juce::Timer::callAfterDelay(1,
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+        {
+            if (safeThis == nullptr || !safeThis->propertiesOpen) return;
+            if (auto* handler = safeThis->propertiesPanel.sampleInfo.getAccessibilityHandler())
+                handler->grabFocus();
+        });
 }
 
 void LSampler24AudioProcessorEditor::closeProperties()

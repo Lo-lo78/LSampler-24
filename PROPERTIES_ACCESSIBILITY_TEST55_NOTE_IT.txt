@@ -1,0 +1,9 @@
+LSampler-24 TEST55 - Properties accessibility and slot announcements
+
+- Alt+L dai pulsanti/zone che tornano agli slot usa un solo annuncio: il focus accessibile dello slot. Rimosso il secondo annuncio sintetico sovrapposto.
+- Anche Esc da Properties torna allo slot attraverso lo stesso singolo canale di focus/annuncio.
+- Properties non e' piu' nascosto all'albero accessibile: il pannello e' un contenitore accessibile nominato "Properties".
+- Le due colonne restano TextEditor read-only reali e focusabili: "Audio file information" e "Slot configuration information".
+- All'apertura Alt+Enter il focus tastiera e accessibile viene dato alla prima colonna; NVDA puo' quindi leggere e navigare il testo con le normali frecce.
+- Tab continua a passare tra le due colonne; Esc chiude; Ctrl+Su/Giu continua a cambiare slot caricati secondo la logica TEST54.
+- Nessuna modifica DSP. Nessuna build locale eseguita.
