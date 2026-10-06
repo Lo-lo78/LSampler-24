@@ -269,6 +269,10 @@ void GlobalVoicePool::noteOff(int note,int channel) {
             if(last>=0){v.channel=lastChannel;retarget(v,last,held[size_t(lastChannel)][size_t(last)].velocity,s,p[P::legato]==0);continue;}
         }
         v.keyDown=false;
+        // A true one-shot is independent of Note Off: let the read head reach
+        // Sample End and stop there. Calling release() here would set
+        // loopsReleased and previously allowed the main window to wrap.
+        if(int(p[P::global_one_shot])==1){v.sustained=false;continue;}
         if(p[P::sustain_pedal]!=0&&pedal[size_t(channel)])v.sustained=true;
         else release(v);
     }
@@ -458,8 +462,11 @@ void GlobalVoicePool::advanceLoops(Voice& v,const SlotAudioState& s,double incre
     v.position+=increment;
     const double cycle=g.length*s.stretchFactor;
     const int oneShot=int(s.params[P::global_one_shot]);
-    if(v.position>=cycle && oneShot!=0 && !v.loopsReleased) {
-        if(oneShot==1){stop(v);return;}
+    // One Shot always terminates at the end of the main Sample Start/End
+    // window, even if another path has already marked the voice released.
+    // On Release keeps the legacy release/wrap policy as a distinct mode.
+    if(v.position>=cycle && oneShot==1){stop(v);return;}
+    if(v.position>=cycle && oneShot==2 && !v.loopsReleased) {
         release(v);v.position=wrap(v.position,cycle);v.stage=-1;v.repeat=0;v.skipStage=-1;
     }
     if(g.stageCount>0) {

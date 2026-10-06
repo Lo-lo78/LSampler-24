@@ -1,0 +1,10 @@
+LSampler-24 TEST67 - Main Playback Mode
+
+- Rinominato il parametro persistente global_one_shot da "Global One Shot" a "Main Playback Mode".
+- Valori visualizzati: Main Loop | One Shot | On Release.
+- Le chiavi persistenti e i valori numerici 0/1/2 restano invariati, quindi i preset rimangono compatibili.
+- Corretto One Shot: il Note Off non manda la voce nel release normale; il campione continua fino a Sample End e poi si arresta.
+- Corretto il caso in cui una voce One Shot fosse gia' marcata released: a Sample End si arresta comunque e non puo' riavvolgersi all'inizio.
+- On Release mantiene il comportamento distinto preesistente.
+- Aggiunto test di regressione sorgente per One Shot + Note Off + Sample End.
+- Nessuna compilazione eseguita.
