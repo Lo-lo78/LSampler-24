@@ -14,7 +14,7 @@ public:
     void setStates(const std::array<lsampler::SlotAudioState, slotCount>* states) noexcept;
     void setTempo(double tempo) noexcept { bpm = tempo; }
     void setOutputRoutes(const std::array<int,25>& routes) noexcept { outputRoutes=routes; }
-    void noteOn(int slotIndex,int note,float velocity,int channel=0,bool preview=false,double previewStartPercent=-1.0,int sliceRequest=-1,bool sliceMidiPad=false);
+    void noteOn(int slotIndex,int note,float velocity,int channel=0,bool preview=false,double previewStartPercent=-1.0,int sliceRequest=-1,bool sliceMidiPad=false,int previewSampleIndex=-1);
     void noteOff(int note,int channel=0);
     void controller(int channel,int number,int value);
     void pitchBend(int channel,int value) noexcept;

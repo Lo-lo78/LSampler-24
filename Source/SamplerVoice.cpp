@@ -181,12 +181,14 @@ void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudio
     if(s.params[P::portamento]==0)v.effectiveNote=note;
     updateVoice(v,s);
 }
-void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool preview,double previewStartPercent,int sliceRequest,bool sliceMidiPad) {
+void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool preview,double previewStartPercent,int sliceRequest,bool sliceMidiPad,int previewSampleIndex) {
     if(!states||slot<0||slot>=slotCount||note<0||note>127||channel<0||channel>15)return;
     const auto& s=(*states)[size_t(slot)];const auto& p=s.params;
     const bool slicePlayback=sliceMidiPad||sliceRequest!=-1||int(s.slice.state[SliceG::mode])!=0;
-    const int sampleIndex=slicePlayback?(s.sampleSet[0]?0:-1)
-        :chooseSampleIndex(slot,s,std::clamp(int(std::round(velocity*127.0f)),1,127),preview);
+    const int sampleIndex = (preview && previewSampleIndex >= 0 && previewSampleIndex < SlotAudioState::sampleSetSize)
+        ? (s.sampleSet[size_t(previewSampleIndex)] ? previewSampleIndex : -1)
+        : (slicePlayback ? (s.sampleSet[0] ? 0 : -1)
+                         : chooseSampleIndex(slot, s, std::clamp(int(std::round(velocity * 127.0f)), 1, 127), preview));
     if(sampleIndex<0)return;
     const auto& g=s.playback[size_t(sampleIndex)];
     if(!g.sample||g.length<1||g.sample->peak<1e-12)return;

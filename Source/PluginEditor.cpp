@@ -268,6 +268,10 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
 
 LSampler24AudioProcessorEditor::~LSampler24AudioProcessorEditor()
 {
+    processor.requestPreviewStop();
+    processor.requestImportPreviewStop();
+    processor.requestLibraryPreviewStop();
+    processor.stopSlicePreview();
     if(sliceEditor){sliceEditor->exitModalState(0);sliceEditor.reset();}
     parameterValue.setLookAndFeel(nullptr);
     setLookAndFeel(nullptr);
@@ -2082,6 +2086,23 @@ void LSampler24AudioProcessorEditor::timerCallback()
         status.setText(result.message, juce::dontSendNotification);
         if (focus) lsampler::announceToActiveScreenReader(*this, result.message);
     }
+    const bool editorFocused = hasKeyboardFocus(true);
+    if (editorFocused)
+    {
+        editorFocusSeen = true;
+        editorHadKeyboardFocus = true;
+    }
+    else if (editorFocusSeen && editorHadKeyboardFocus)
+    {
+        // Leaving the plugin window must never leave an audition running in the DAW.
+        // Child-to-child focus moves still report true above, so this only fires when
+        // keyboard focus actually leaves the editor (for example back to REAPER).
+        processor.requestPreviewStop();
+        processor.requestImportPreviewStop();
+        processor.requestLibraryPreviewStop();
+        processor.stopSlicePreview();
+        editorHadKeyboardFocus = false;
+    }
     if (!isShowing()) return;
     const auto revision = processor.getUiRevision();
     if (revision != lastUiRevision) {
@@ -2302,19 +2323,18 @@ void LSampler24AudioProcessorEditor::changeSampleSetValue(int direction, bool co
 
 void LSampler24AudioProcessorEditor::previewSampleSetEntry()
 {
-    const auto info = processor.getSampleSetEntry(processor.getCurrentSlot(), sampleSetIndex);
-    if (!info.loaded || !info.file.existsAsFile())
+    const int slot = processor.getCurrentSlot();
+    const auto info = processor.getSampleSetEntry(slot, sampleSetIndex);
+    if (!info.loaded)
     {
-        lsampler::announceToActiveScreenReader(sampleSetCell, info.loaded ? "Preview unavailable until sample is saved" : "Empty sample");
+        lsampler::announceToActiveScreenReader(sampleSetCell, "Empty sample");
         return;
     }
-    juce::String error;
-    if (!processor.prepareImportPreview(info.file, error))
-    {
-        lsampler::announceToActiveScreenReader(sampleSetCell, error.isNotEmpty() ? error : "Cannot preview");
-        return;
-    }
-    processor.requestImportPreviewToggle();
+    // Audition the selected Sample Set entry through the configured slot engine,
+    // not as a raw file. This keeps Original Pitch, Start/End, ADSR and the other
+    // slot playback settings identical to the sound the region will actually play.
+    processor.requestImportPreviewStop();
+    processor.requestSampleSetPreview(slot, sampleSetIndex);
 }
 
 void LSampler24AudioProcessorEditor::enterSampleSetBrowser()

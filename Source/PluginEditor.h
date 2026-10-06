@@ -313,6 +313,8 @@ private:
     // is used: Space auditions the configured slot until Alt+P hands it back.
     bool slotPreviewMode = false;
     bool gridPreviewMode = true;
+    bool editorFocusSeen = false;
+    bool editorHadKeyboardFocus = false;
     juce::Component::SafePointer<juce::Component> propertiesReturnFocus;
     juce::Component::SafePointer<juce::Component> sliceReturnFocus;
     void openSliceEditor(bool sequencer);

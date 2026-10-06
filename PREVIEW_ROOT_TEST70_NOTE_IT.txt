@@ -1,0 +1,14 @@
+LSampler-24 TEST70 - Preview Original Pitch e stop uscita plugin
+
+Modifiche:
+- Tutte le anteprime legate a uno slot usano l'Original Pitch dello slot invece della nota fissa C4/60.
+- Anteprima principale, restart/scrub, Slice preview e preview dei preset slot rispettano la root corrente.
+- La preview Sample Set (Sample 1..16) passa ora dal motore dello slot e forza il campione selezionato: rispetta Original Pitch, Start/End, ADSR e gli altri parametri di playback.
+- Spazio sullo stesso Sample Set continua a fare toggle; cambiando sample viene sostituita la preview con quello selezionato.
+- Se Original Pitch cambia mentre una preview e' attiva, la preview viene riavviata mantenendo il campione Sample Set selezionato.
+- Quando il focus tastiera lascia la finestra del plugin, tutte le anteprime vengono fermate (slot, import, library, slice). Anche la chiusura dell'editor invia gli stop.
+- L'Import Browser resta in riproduzione neutra/raw perche' il file non appartiene ancora a una regione e non ha un Original Pitch configurato.
+
+Controlli:
+- Nessuna compilazione eseguita.
+- Tools/verify-test59-reference.py: PASS.

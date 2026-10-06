@@ -130,6 +130,12 @@ public:
         previewToggleRequested.store(true);
     }
     void requestPreviewStop() noexcept { previewStopRequested.store(true); }
+    void requestSampleSetPreview(int slotIndex, int sampleIndex) noexcept
+    {
+        previewTargetSlot.store(juce::jlimit(0, slotCount - 1, slotIndex), std::memory_order_relaxed);
+        previewTargetSampleIndex.store(juce::jlimit(0, sampleSetSize - 1, sampleIndex), std::memory_order_relaxed);
+        previewSampleSetRequested.store(true, std::memory_order_release);
+    }
     // Start the current slot preview unconditionally. Unlike Toggle, this always
     // replaces any previous preview voice and is used by the main-slot
     // Alt+P audition mode when selection moves between slots.
@@ -235,14 +241,17 @@ private:
     std::atomic<bool> previewStopRequested { false };
     std::atomic<bool> previewRestartRequested { false };
     std::atomic<bool> previewAuditionRequested { false };
+    std::atomic<bool> previewSampleSetRequested { false };
     std::atomic<double> previewAuditionStartPercent { 0.0 };
     std::atomic<int> previewTargetSlot { 0 };
+    std::atomic<int> previewTargetSampleIndex { 0 };
     std::atomic<uint32_t> stopVoicesMask { 0 };
     std::atomic<int> slicePreviewCommand {-1};
     std::atomic<int> slicePreviewKind {0};
     int slicePreviewSlot=-1,slicePreviewItem=-1;
     bool previewPlaying = false;
     int previewPlayingSlot = -1;
+    int previewPlayingSampleIndex = -1;
 
     struct ImportPreviewSnapshot {
         std::shared_ptr<SharedSample> owner;
