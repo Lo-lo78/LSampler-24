@@ -1,0 +1,20 @@
+LSampler-24 TEST72 - Stretch grain smoothing
+
+Base: TEST70 (PREVIEW ROOT). TEST71 time/pitch experiment is intentionally discarded.
+
+Goal:
+- Keep the existing parameters and ranges unchanged:
+  * Stretch Amount
+  * Stretch Frequency
+- Improve the existing granular stretch sound instead of replacing it with a time-stretcher/pitch-shifter.
+
+DSP change:
+- The previous position remap hard-wrapped at every grain boundary, producing discontinuities/clicks/buzz as Stretch Amount increased.
+- Consecutive grains now use a lightweight 50% overlap-add.
+- The overlap is crossfaded with a smoothstep interpolation whose two weights sum to 1, avoiding abrupt grain edges and avoiding the correlated-signal gain bump of an equal-power crossfade.
+- Stretch Frequency still defines grain size.
+- Stretch Amount still defines the analysis spacing/stretch factor.
+- LFO Sample Move and FM sample-position modulation are applied coherently to both overlapping read heads.
+- Stretch Amount = 0 completely bypasses the new overlap path and preserves the existing fast/original path.
+
+No CMake/build/local compilation was run.

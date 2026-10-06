@@ -587,14 +587,47 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         }
         bool sliceSilent=false;
         double pos=(!BasicRead&&v.slice.active)?v.slice.position(sliceSilent):v.position;
-        if(!BasicRead&&!v.slice.active&&p[P::stretch_amount]>0)pos=std::floor(pos/(g.grain*s.stretchFactor))*g.grain+wrap(pos,g.grain);
-        else if(!BasicRead&&!v.slice.active&&p[P::stretch_amount]<0)pos=std::floor(pos/g.grain)*(g.grain/s.stretchFactor)+wrap(pos,g.grain);
+        // Legacy Stretch Amount/Frequency are intentionally kept as the user-facing
+        // controls.  The old implementation hard-wrapped the read position at every
+        // grain boundary, which made large Stretch Amount values click/buzz because
+        // adjacent grains were never blended.  Use a lightweight 50% overlap-add
+        // instead: Stretch Frequency still defines the grain length and Stretch
+        // Amount still defines the time-domain analysis spacing, but neighbouring
+        // grains are crossfaded with a smoothstep window.  At Stretch Amount == 0
+        // this block is bypassed completely, preserving the original fast path.
+        bool stretchOverlap=false;
+        double stretchOtherPos=0.0,stretchCurrentWeight=1.0;
+        if(!BasicRead&&!v.slice.active&&p[P::stretch_amount]!=0) {
+            const double grain=std::max(16.0,g.grain);
+            const double hop=grain*.5;
+            const double grainNumber=std::floor(v.position/hop);
+            const double local=v.position-grainNumber*hop;
+            const double analysisHop=hop/std::max(1.0e-9,s.stretchFactor);
+            pos=grainNumber*analysisHop+local;
+            if(grainNumber>0) {
+                // Previous and current grains overlap for the complete synthesis hop.
+                // Their linear weights sum to one; smoothstep removes the slope
+                // discontinuity at both ends without the gain bump of equal-power
+                // windows on highly correlated material.
+                stretchOtherPos=(grainNumber-1.0)*analysisHop+local+hop;
+                const double t=clamp(local/hop,0.0,1.0);
+                stretchCurrentWeight=t*t*(3.0-2.0*t);
+                stretchOverlap=true;
+            }
+        }
         pos=clamp(pos,0,double(g.length-1));
-        if(!Simple&&(s.lfo[0].move!=0||s.lfo[1].move!=0))pos=clamp(pos+(l1*s.lfo[0].move+l2*s.lfo[1].move)*.01*g.length,0,double(g.length-1));
+        if(stretchOverlap)stretchOtherPos=clamp(stretchOtherPos,0,double(g.length-1));
+        if(!Simple&&(s.lfo[0].move!=0||s.lfo[1].move!=0)) {
+            const double move=(l1*s.lfo[0].move+l2*s.lfo[1].move)*.01*g.length;
+            pos=clamp(pos+move,0,double(g.length-1));
+            if(stretchOverlap)stretchOtherPos=clamp(stretchOtherPos+move,0,double(g.length-1));
+        }
         if(!BasicRead&&s.fm) {
             ++diagnostics.fm;v.fmPhase=wrap(v.fmPhase+v.fmIncrement,1);
             v.fmFeedback=oscillator(v,v.fmPhase+v.fmFeedback*p[P::fm_feedback]*.0095,int(p[P::fm_wave]));
-            pos=clamp(pos+v.fmFeedback*p[P::fm_amount]*.01*std::min(2048.0,std::max(1.0,g.length*.025)),0,double(g.length-1));
+            const double fmMove=v.fmFeedback*p[P::fm_amount]*.01*std::min(2048.0,std::max(1.0,g.length*.025));
+            pos=clamp(pos+fmMove,0,double(g.length-1));
+            if(stretchOverlap)stretchOtherPos=clamp(stretchOtherPos+fmMove,0,double(g.length-1));
         }
         double left, right;
         if constexpr (BasicRead) {
@@ -610,6 +643,13 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         } else {
             left=read(v,s,pos-g.delayL,0);
             right=sharedRead?left:read(v,s,pos-g.delayR,1);
+            if(stretchOverlap) {
+                const double previousWeight=1.0-stretchCurrentWeight;
+                const double otherLeft=read(v,s,stretchOtherPos-g.delayL,0);
+                const double otherRight=sharedRead?otherLeft:read(v,s,stretchOtherPos-g.delayR,1);
+                left=otherLeft*previousWeight+left*stretchCurrentWeight;
+                right=otherRight*previousWeight+right*stretchCurrentWeight;
+            }
         }
         if(!BasicRead && v.slice.active) {
             const auto& q=v.slice;
