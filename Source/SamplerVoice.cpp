@@ -597,19 +597,36 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         // this block is bypassed completely, preserving the original fast path.
         bool stretchOverlap=false;
         double stretchOtherPos=0.0,stretchCurrentWeight=1.0;
-        if(!BasicRead&&!v.slice.active&&p[P::stretch_amount]!=0) {
-            const double grain=std::max(16.0,g.grain);
-            const double hop=grain*.5;
-            const double grainNumber=std::floor(v.position/hop);
-            const double local=v.position-grainNumber*hop;
+        if(!BasicRead&&p[P::stretch_amount]!=0) {
+            // Stretch is a slot-level Sample Window processor, so Slice playback
+            // must use it too.  Work in a forward, slice-local clock and map the
+            // result back to the source coordinates afterwards.  This keeps the
+            // overlap continuous inside the currently selected slice and also
+            // preserves Reverse/Sequencer direction without ever borrowing audio
+            // from an adjacent slice.
+            const double domainStart=v.slice.active?v.slice.begin:0.0;
+            const double domainLength=v.slice.active?std::max(1.0,v.slice.length):double(g.length);
+            const double domainEnd=domainStart+domainLength-1.0;
+            const bool domainReverse=v.slice.active&&v.slice.reverse;
+            const double clock=v.slice.active
+                ? (domainReverse?domainEnd-pos:pos-domainStart)
+                : v.position;
+            const double grain=std::max(2.0,std::min(std::max(16.0,g.grain),domainLength));
+            const double hop=std::max(1.0,grain*.5);
+            const double grainNumber=std::floor(std::max(0.0,clock)/hop);
+            const double local=std::max(0.0,clock)-grainNumber*hop;
             const double analysisHop=hop/std::max(1.0e-9,s.stretchFactor);
-            pos=grainNumber*analysisHop+local;
+            const auto sourcePosition=[&](double localPosition) noexcept {
+                localPosition=clamp(localPosition,0.0,domainLength-1.0);
+                return domainReverse?domainEnd-localPosition:domainStart+localPosition;
+            };
+            pos=sourcePosition(grainNumber*analysisHop+local);
             if(grainNumber>0) {
                 // Previous and current grains overlap for the complete synthesis hop.
                 // Their linear weights sum to one; smoothstep removes the slope
                 // discontinuity at both ends without the gain bump of equal-power
                 // windows on highly correlated material.
-                stretchOtherPos=(grainNumber-1.0)*analysisHop+local+hop;
+                stretchOtherPos=sourcePosition((grainNumber-1.0)*analysisHop+local+hop);
                 const double t=clamp(local/hop,0.0,1.0);
                 stretchCurrentWeight=t*t*(3.0-2.0*t);
                 stretchOverlap=true;

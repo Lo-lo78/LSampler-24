@@ -1,0 +1,12 @@
+LSampler-24 TEST74 — Stretch smoothing anche in Alt+E / Slice Sequencer
+
+Base: TEST73.
+
+- Stretch Amount e Stretch Frequency restano invariati come parametri e range.
+- Il crossfade overlap-add introdotto in TEST72/73 ora viene applicato anche quando il motore Slice è attivo.
+- In Alt+E / Slice Sequencer lo Stretch lavora esclusivamente dentro i confini della slice sorgente corrente: non legge mai dalla slice precedente o successiva.
+- Reverse viene rispettato lavorando prima su un clock locale sempre crescente e rimappando poi la posizione nella direzione reale della slice.
+- Le slice molto corte limitano automaticamente la dimensione del grain alla loro lunghezza.
+- Stretch Amount = 0 continua a bypassare completamente il percorso Stretch.
+- Nessuna modifica ai parametri persistenti o al riferimento DSP congelato TEST59.
+- Nessuna compilazione locale eseguita.
