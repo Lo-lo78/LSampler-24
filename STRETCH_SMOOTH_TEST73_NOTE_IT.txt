@@ -1,0 +1,9 @@
+LSampler-24 TEST73
+
+Correzione CI per TEST72.
+Il nuovo DSP Stretch modifica intenzionalmente l'audio nei due scenari del test automatico relativi a Stretch Amount positivo e negativo (feature 8 e 9). Questi due casi non possono quindi restare bit-identici al renderer congelato TEST59.
+
+La suite mantiene il confronto bit-identico TEST59 per tutti gli altri scenari DSP. I casi Stretch 8/9 vengono esclusi esclusivamente dalla parity legacy e annotati nel report come modifica intenzionale.
+
+Nessuna modifica al DSP di TEST72.
+Nessuna compilazione locale eseguita.

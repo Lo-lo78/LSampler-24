@@ -285,6 +285,15 @@ int main(int argc,char** argv) {
             auto m=compare(c,report);comparisons+=m.samples;specialised+=m.specialised;general+=m.general;plain+=m.plain;++cases;
         }
         for(int feature=1;feature<=26;++feature) {
+            // TEST72 intentionally changes the legacy Stretch DSP (features 8/9)
+            // from hard grain wraps to overlapped crossfades. Those two cases must
+            // no longer be bit-identical to frozen TEST59; all other features stay
+            // under the exact-float parity gate.
+            if(feature==8||feature==9) {
+                report<<"SKIP intentional Stretch parity case feature="<<feature
+                      <<" | TEST72 smooth overlap replaces TEST59 hard grain wrap\n";
+                continue;
+            }
             Case c;c.filters=3;c.voices=16;c.feature=feature;c.blockSize=128;
             c.name="live_fast_general_transition_"+std::to_string(feature);
             auto m=compare(c,report);comparisons+=m.samples;specialised+=m.specialised;general+=m.general;plain+=m.plain;++cases;
