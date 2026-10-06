@@ -1,0 +1,40 @@
+LSampler-24 - SAMPLE SET GRID TEST65
+
+Modifiche Alt+M / Sample Set:
+
+- Separati i due blocchi di navigazione:
+  1. elenco Sample 1-16;
+  2. griglia parametri Sample Set.
+- Tab e Shift+Tab ciclano tra elenco Sample e griglia parametri.
+- Freccia Su/Giu cambia il Sample soltanto quando il focus e' nell'elenco Sample.
+- Nella griglia, Su/Giu naviga i parametri senza cambiare Sample.
+- Griglia predisposta con 8 righe per colonna, come la logica usata nelle altre griglie del plugin.
+- Parametri attuali della griglia:
+  Velocity Low
+  Velocity High
+  Variation Mode
+- Alt+Su/Giu modifica il valore del parametro selezionato.
+- Alt+PageUp/PageDown modifica in modo grossolano le velocity.
+- Alt+Home/Alt+End imposta massimo/minimo coerente col parametro.
+- Invio o Alt+V passa a Value; Invio/Alt+V torna alla griglia.
+- In Value, Su/Giu modifica il valore senza cambiare Sample.
+- Delete e Space agiscono sul Sample soltanto nell'elenco Sample.
+- Invio nell'elenco Sample continua ad aprire il browser per caricare/sostituire il Sample selezionato.
+
+Pulizia NVDA:
+- NVDA+Freccia Su sull'elenco Sample espone una riga compatta del tipo:
+  Sample 1 of 16, 101_Drums_23, Velocity 80 to 127
+- Muovendosi tra i Sample con Su/Giu l'annuncio e' corto:
+  Sample 1, 101_Drums_23
+- Nella griglia la riga corrente e' compatta, per esempio:
+  Velocity Low, 80
+- Entrando nella griglia viene annunciato "Grid" una sola volta; entrando in Value viene annunciato "Value".
+
+Nessuna modifica al DSP, al round robin/random, al caricamento dei campioni o alla struttura del Sample Set.
+Il progetto NON e' stato compilato.
+
+TEST66 - coerenza completa con griglia principale
+- Freccia Sinistra/Destra nella griglia Sample Set naviga per colonne da 8 (gia' predisposta; diventa effettiva quando esiste una seconda colonna).
+- Alt+Freccia Sinistra/Destra seleziona lo Step globale 1/5/10/15/20 come nella griglia principale.
+- Alt+Freccia Su/Giu su Velocity Low/High usa lo Step selezionato.
+- Alt+PageUp/PageDown applica anche il moltiplicatore coarse come nella griglia principale.

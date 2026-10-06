@@ -340,7 +340,10 @@ private:
     void refreshSampleSetCell(bool announce = false);
     void moveSampleSetEntry(int direction);
     void moveSampleSetField(int direction);
+    void moveSampleSetGridColumn(int direction);
+    void setSampleSetBoundary(bool maximum);
     void changeSampleSetValue(int direction, bool coarse = false);
+    juce::String sampleSetParameterText() const;
     void previewSampleSetEntry();
     void enterSampleSetBrowser();
     void enterImportBrowser();
@@ -455,7 +458,9 @@ private:
     bool sampleSetActive = false;
     bool sampleSetReturnWasParameterPage = false;
     int sampleSetIndex = 0;
-    int sampleSetField = 0; // Sample, Velocity Low, Velocity High, Variation Mode
+    int sampleSetField = 0; // Parameter grid: Velocity Low, Velocity High, Variation Mode
+    bool sampleSetGridFocus = false;
+    bool sampleSetValueFocus = false;
     juce::Component::SafePointer<juce::Component> sampleSetReturnFocus;
     bool importForSampleSet = false;
     int importSampleSetSlot = 0;

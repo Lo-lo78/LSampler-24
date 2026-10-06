@@ -1326,56 +1326,149 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (sampleSetActive)
     {
-        if (code == juce::KeyPress::escapeKey
-            || (mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown() && ch == 'm'))
+        if (code == juce::KeyPress::escapeKey)
+        {
+            if (sampleSetValueFocus)
+            {
+                sampleSetValueFocus = false;
+                refreshSampleSetCell(false);
+                lsampler::announceToActiveScreenReader(sampleSetCell, "Grid. " + sampleSetParameterText());
+            }
+            else
+            {
+                leaveSampleSetEditor();
+            }
+            return true;
+        }
+        if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown() && ch == 'm')
         {
             leaveSampleSetEditor();
             return true;
         }
-        if (code == juce::KeyPress::returnKey && sampleSetField == 0
-            && !mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown() && !mods.isCommandDown())
-        {
-            enterSampleSetBrowser();
-            return true;
-        }
         if (code == juce::KeyPress::tabKey && !mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown())
         {
-            moveSampleSetField(mods.isShiftDown() ? -1 : 1);
+            sampleSetValueFocus = false;
+            sampleSetGridFocus = !sampleSetGridFocus;
+            refreshSampleSetCell(false);
+            if (sampleSetGridFocus)
+                lsampler::announceToActiveScreenReader(sampleSetCell, "Grid. " + sampleSetParameterText());
+            else
+            {
+                const auto info = processor.getSampleSetEntry(processor.getCurrentSlot(), sampleSetIndex);
+                const auto sampleName = info.loaded ? (info.name.isNotEmpty() ? info.name : juce::String("Loaded")) : juce::String("Empty");
+                lsampler::announceToActiveScreenReader(sampleSetCell,
+                    "Sample " + juce::String(sampleSetIndex + 1) + " of " + juce::String(LSampler24AudioProcessor::sampleSetSize)
+                    + ", " + sampleName + ", Velocity " + juce::String(info.velocityLow) + " to " + juce::String(info.velocityHigh));
+            }
             return true;
         }
+        if (sampleSetGridFocus && mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown() && ch == 'v')
+        {
+            sampleSetValueFocus = !sampleSetValueFocus;
+            refreshSampleSetCell(false);
+            lsampler::announceToActiveScreenReader(sampleSetCell,
+                sampleSetValueFocus ? "Value. " + sampleSetParameterText() : "Grid. " + sampleSetParameterText());
+            return true;
+        }
+        if (code == juce::KeyPress::returnKey && !mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown() && !mods.isCommandDown())
+        {
+            if (!sampleSetGridFocus)
+            {
+                enterSampleSetBrowser();
+            }
+            else
+            {
+                sampleSetValueFocus = !sampleSetValueFocus;
+                refreshSampleSetCell(false);
+                lsampler::announceToActiveScreenReader(sampleSetCell,
+                    sampleSetValueFocus ? "Value. " + sampleSetParameterText() : "Grid. " + sampleSetParameterText());
+            }
+            return true;
+        }
+
+        if (sampleSetGridFocus && mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
+        {
+            if (code == juce::KeyPress::upKey)       { changeSampleSetValue(1, false); return true; }
+            if (code == juce::KeyPress::downKey)     { changeSampleSetValue(-1, false); return true; }
+            if (code == juce::KeyPress::leftKey)     { changeStepWidth(-1); return true; }
+            if (code == juce::KeyPress::rightKey)    { changeStepWidth(1); return true; }
+            if (code == juce::KeyPress::pageUpKey)   { changeSampleSetValue(1, true); return true; }
+            if (code == juce::KeyPress::pageDownKey) { changeSampleSetValue(-1, true); return true; }
+            if (code == juce::KeyPress::homeKey)     { setSampleSetBoundary(true); return true; }
+            if (code == juce::KeyPress::endKey)      { setSampleSetBoundary(false); return true; }
+        }
+
         if (!mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown() && !mods.isCommandDown())
         {
-            if (code == juce::KeyPress::upKey) { moveSampleSetEntry(-1); return true; }
-            if (code == juce::KeyPress::downKey) { moveSampleSetEntry(1); return true; }
-            if (code == juce::KeyPress::leftKey) { changeSampleSetValue(-1, false); return true; }
-            if (code == juce::KeyPress::rightKey) { changeSampleSetValue(1, false); return true; }
-            if (code == juce::KeyPress::pageUpKey) { changeSampleSetValue(1, true); return true; }
-            if (code == juce::KeyPress::pageDownKey) { changeSampleSetValue(-1, true); return true; }
-            if (code == juce::KeyPress::homeKey)
+            if (!sampleSetGridFocus)
             {
-                const int slot=processor.getCurrentSlot();auto info=processor.getSampleSetEntry(slot,sampleSetIndex);
-                if(sampleSetField==1)processor.setSampleSetVelocityRange(slot,sampleSetIndex,1,info.velocityHigh);
-                else if(sampleSetField==2)processor.setSampleSetVelocityRange(slot,sampleSetIndex,info.velocityLow,info.velocityLow);
-                else if(sampleSetField==3)processor.setVariationMode(slot,LSampler24AudioProcessor::variationOff);
-                refreshSampleSetCell(true);return true;
+                if (code == juce::KeyPress::upKey)   { moveSampleSetEntry(-1); return true; }
+                if (code == juce::KeyPress::downKey) { moveSampleSetEntry(1); return true; }
+                if (code == juce::KeyPress::homeKey)
+                {
+                    if (sampleSetIndex != 0)
+                    {
+                        processor.requestImportPreviewStop();
+                        sampleSetIndex = 0;
+                        refreshSampleSetCell(true);
+                    }
+                    return true;
+                }
+                if (code == juce::KeyPress::endKey)
+                {
+                    const int last = LSampler24AudioProcessor::sampleSetSize - 1;
+                    if (sampleSetIndex != last)
+                    {
+                        processor.requestImportPreviewStop();
+                        sampleSetIndex = last;
+                        refreshSampleSetCell(true);
+                    }
+                    return true;
+                }
+                if (code == juce::KeyPress::deleteKey)
+                {
+                    processor.requestImportPreviewStop();
+                    processor.clearSampleSetEntry(processor.getCurrentSlot(), sampleSetIndex);
+                    refreshSlotCells(); refreshSampleSetCell(true); return true;
+                }
+                if (code == juce::KeyPress::spaceKey) { previewSampleSetEntry(); return true; }
             }
-            if (code == juce::KeyPress::endKey)
+            else if (sampleSetValueFocus)
             {
-                const int slot=processor.getCurrentSlot();auto info=processor.getSampleSetEntry(slot,sampleSetIndex);
-                if(sampleSetField==1)processor.setSampleSetVelocityRange(slot,sampleSetIndex,info.velocityHigh,info.velocityHigh);
-                else if(sampleSetField==2)processor.setSampleSetVelocityRange(slot,sampleSetIndex,info.velocityLow,127);
-                else if(sampleSetField==3)processor.setVariationMode(slot,LSampler24AudioProcessor::variationRandomNoRepeat);
-                refreshSampleSetCell(true);return true;
+                if (code == juce::KeyPress::upKey)       { changeSampleSetValue(1, false); return true; }
+                if (code == juce::KeyPress::downKey)     { changeSampleSetValue(-1, false); return true; }
+                if (code == juce::KeyPress::pageUpKey)   { changeSampleSetValue(1, true); return true; }
+                if (code == juce::KeyPress::pageDownKey) { changeSampleSetValue(-1, true); return true; }
+                if (code == juce::KeyPress::homeKey)     { setSampleSetBoundary(true); return true; }
+                if (code == juce::KeyPress::endKey)      { setSampleSetBoundary(false); return true; }
             }
-            if (code == juce::KeyPress::deleteKey)
+            else
             {
-                processor.requestImportPreviewStop();
-                processor.clearSampleSetEntry(processor.getCurrentSlot(), sampleSetIndex);
-                refreshSlotCells();refreshSampleSetCell(true);return true;
+                if (code == juce::KeyPress::upKey)       { moveSampleSetField(-1); return true; }
+                if (code == juce::KeyPress::downKey)     { moveSampleSetField(1); return true; }
+                if (code == juce::KeyPress::leftKey)     { moveSampleSetGridColumn(-1); return true; }
+                if (code == juce::KeyPress::rightKey)    { moveSampleSetGridColumn(1); return true; }
+                if (code == juce::KeyPress::pageUpKey)   { moveSampleSetGridColumn(-1); return true; }
+                if (code == juce::KeyPress::pageDownKey) { moveSampleSetGridColumn(1); return true; }
+                if (code == juce::KeyPress::homeKey)
+                {
+                    constexpr int rows = 8;
+                    const int columnStart = (sampleSetField / rows) * rows;
+                    if (sampleSetField != columnStart) { sampleSetField = columnStart; refreshSampleSetCell(true); }
+                    return true;
+                }
+                if (code == juce::KeyPress::endKey)
+                {
+                    constexpr int rows = 8;
+                    constexpr int total = 3;
+                    const int columnStart = (sampleSetField / rows) * rows;
+                    const int columnEnd = juce::jmin(total - 1, columnStart + rows - 1);
+                    if (sampleSetField != columnEnd) { sampleSetField = columnEnd; refreshSampleSetCell(true); }
+                    return true;
+                }
             }
-            if (code == juce::KeyPress::spaceKey) { previewSampleSetEntry(); return true; }
         }
-        return true; // modal editor: never leak shortcuts to REAPER
+        return true; // Sample Set is modal: never leak shortcuts to REAPER.
     }
 
     if (!mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown()
@@ -2019,6 +2112,8 @@ void LSampler24AudioProcessorEditor::enterSampleSetEditor()
     sampleSetReturnFocus = juce::Component::getCurrentlyFocusedComponent();
     sampleSetIndex = juce::jlimit(0, LSampler24AudioProcessor::sampleSetSize - 1, sampleSetIndex);
     sampleSetField = 0;
+    sampleSetGridFocus = false;
+    sampleSetValueFocus = false;
     sampleSetActive = true;
     for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
     loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
@@ -2081,32 +2176,40 @@ void LSampler24AudioProcessorEditor::refreshSampleSetCell(bool announce)
 {
     const int slot = processor.getCurrentSlot();
     const auto info = processor.getSampleSetEntry(slot, sampleSetIndex);
-    const auto mode = processor.getVariationMode(slot);
     const auto sampleName = info.loaded ? (info.name.isNotEmpty() ? info.name : juce::String("Loaded")) : juce::String("Empty");
-    const char* fields[] { "Sample", "Velocity Low", "Velocity High", "Variation Mode" };
-    juce::String text = "Sample Set, Slot " + juce::String(slot + 1)
-        + ", Sample " + juce::String(sampleSetIndex + 1) + " of " + juce::String(LSampler24AudioProcessor::sampleSetSize)
-        + ", " + sampleName + ", Velocity " + juce::String(info.velocityLow) + " to " + juce::String(info.velocityHigh)
-        + ", " + LSampler24AudioProcessor::variationModeName(mode)
-        + ", " + fields[juce::jlimit(0,3,sampleSetField)];
-    sampleSetCell.setBrowserText(text);
-    if (!announce) return;
-    juce::String spoken;
-    switch (sampleSetField)
+
+    if (!sampleSetGridFocus)
     {
-        case 1: spoken = "Velocity Low, " + juce::String(info.velocityLow); break;
-        case 2: spoken = "Velocity High, " + juce::String(info.velocityHigh); break;
-        case 3: spoken = "Variation Mode, " + LSampler24AudioProcessor::variationModeName(mode); break;
-        default:
-            spoken = "Sample " + juce::String(sampleSetIndex + 1) + " of " + juce::String(LSampler24AudioProcessor::sampleSetSize)
-                + ", " + sampleName + ", Velocity " + juce::String(info.velocityLow) + " to " + juce::String(info.velocityHigh);
-            break;
+        sampleSetCell.setBrowserText("Sample " + juce::String(sampleSetIndex + 1) + " of "
+            + juce::String(LSampler24AudioProcessor::sampleSetSize) + ", " + sampleName
+            + ", Velocity " + juce::String(info.velocityLow) + " to " + juce::String(info.velocityHigh));
+
+        if (announce)
+            lsampler::announceToActiveScreenReader(sampleSetCell,
+                "Sample " + juce::String(sampleSetIndex + 1) + ", " + sampleName);
+        return;
     }
-    lsampler::announceToActiveScreenReader(sampleSetCell, spoken);
+
+    sampleSetCell.setBrowserText(sampleSetParameterText());
+    if (announce)
+        lsampler::announceToActiveScreenReader(sampleSetCell, sampleSetParameterText());
+}
+
+juce::String LSampler24AudioProcessorEditor::sampleSetParameterText() const
+{
+    const int slot = processor.getCurrentSlot();
+    const auto info = processor.getSampleSetEntry(slot, sampleSetIndex);
+    switch (juce::jlimit(0, 2, sampleSetField))
+    {
+        case 0: return "Velocity Low, " + juce::String(info.velocityLow);
+        case 1: return "Velocity High, " + juce::String(info.velocityHigh);
+        default: return "Variation Mode, " + LSampler24AudioProcessor::variationModeName(processor.getVariationMode(slot));
+    }
 }
 
 void LSampler24AudioProcessorEditor::moveSampleSetEntry(int direction)
 {
+    if (sampleSetGridFocus) return;
     const int next = juce::jlimit(0, LSampler24AudioProcessor::sampleSetSize - 1, sampleSetIndex + (direction < 0 ? -1 : 1));
     if (next == sampleSetIndex) return;
     processor.requestImportPreviewStop();
@@ -2116,28 +2219,70 @@ void LSampler24AudioProcessorEditor::moveSampleSetEntry(int direction)
 
 void LSampler24AudioProcessorEditor::moveSampleSetField(int direction)
 {
-    sampleSetField += direction < 0 ? -1 : 1;
-    if (sampleSetField < 0) sampleSetField = 3;
-    if (sampleSetField > 3) sampleSetField = 0;
+    if (!sampleSetGridFocus || sampleSetValueFocus) return;
+    constexpr int rows = 8;
+    constexpr int total = 3;
+    const int column = sampleSetField / rows;
+    const int columnStart = column * rows;
+    const int columnEnd = juce::jmin(total - 1, columnStart + rows - 1);
+    const int next = sampleSetField + (direction < 0 ? -1 : 1);
+    if (next < columnStart || next > columnEnd) return;
+    sampleSetField = next;
+    refreshSampleSetCell(true);
+}
+
+void LSampler24AudioProcessorEditor::moveSampleSetGridColumn(int direction)
+{
+    if (!sampleSetGridFocus || sampleSetValueFocus) return;
+    constexpr int rows = 8;
+    constexpr int total = 3;
+    const int next = sampleSetField + (direction < 0 ? -rows : rows);
+    if (next < 0 || next >= total) return;
+    sampleSetField = next;
+    refreshSampleSetCell(true);
+}
+
+void LSampler24AudioProcessorEditor::setSampleSetBoundary(bool maximum)
+{
+    if (!sampleSetGridFocus) return;
+    const int slot = processor.getCurrentSlot();
+    const auto info = processor.getSampleSetEntry(slot, sampleSetIndex);
+    if (sampleSetField == 0)
+    {
+        processor.setSampleSetVelocityRange(slot, sampleSetIndex,
+            maximum ? info.velocityHigh : 1, info.velocityHigh);
+    }
+    else if (sampleSetField == 1)
+    {
+        processor.setSampleSetVelocityRange(slot, sampleSetIndex, info.velocityLow,
+            maximum ? 127 : info.velocityLow);
+    }
+    else
+    {
+        processor.setVariationMode(slot, maximum
+            ? LSampler24AudioProcessor::variationRandomNoRepeat
+            : LSampler24AudioProcessor::variationOff);
+    }
     refreshSampleSetCell(true);
 }
 
 void LSampler24AudioProcessorEditor::changeSampleSetValue(int direction, bool coarse)
 {
+    if (!sampleSetGridFocus) return;
     const int slot = processor.getCurrentSlot();
     auto info = processor.getSampleSetEntry(slot, sampleSetIndex);
-    const int amount = coarse ? 10 : 1;
-    if (sampleSetField == 1)
+    const int amount = stepWidths[static_cast<size_t>(stepWidthIndex)] * (coarse ? valuePageStep : 1);
+    if (sampleSetField == 0)
     {
         const int next = juce::jlimit(1, info.velocityHigh, info.velocityLow + (direction < 0 ? -amount : amount));
         processor.setSampleSetVelocityRange(slot, sampleSetIndex, next, info.velocityHigh);
     }
-    else if (sampleSetField == 2)
+    else if (sampleSetField == 1)
     {
         const int next = juce::jlimit(info.velocityLow, 127, info.velocityHigh + (direction < 0 ? -amount : amount));
         processor.setSampleSetVelocityRange(slot, sampleSetIndex, info.velocityLow, next);
     }
-    else if (sampleSetField == 3)
+    else
     {
         const int current = processor.getVariationMode(slot);
         processor.setVariationMode(slot, juce::jlimit<int>(LSampler24AudioProcessor::variationOff,
