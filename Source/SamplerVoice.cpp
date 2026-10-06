@@ -269,10 +269,9 @@ void GlobalVoicePool::noteOff(int note,int channel) {
             if(last>=0){v.channel=lastChannel;retarget(v,last,held[size_t(lastChannel)][size_t(last)].velocity,s,p[P::legato]==0);continue;}
         }
         v.keyDown=false;
-        // A true one-shot is independent of Note Off: let the read head reach
-        // Sample End and stop there. Calling release() here would set
-        // loopsReleased and previously allowed the main window to wrap.
-        if(int(p[P::global_one_shot])==1){v.sustained=false;continue;}
+        // Main Playback Mode = One Shot controls only the read-head looping
+        // policy. Note Off must still drive the normal ADSR release. If the
+        // envelope is longer than the remaining sample, Sample End wins.
         if(p[P::sustain_pedal]!=0&&pedal[size_t(channel)])v.sustained=true;
         else release(v);
     }

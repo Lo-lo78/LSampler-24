@@ -1,0 +1,10 @@
+LSampler-24 TEST69 - One Shot con ADSR corretto
+
+- La UI/accessibilità continua a presentare global_one_shot come Main Playback Mode.
+- Valori mostrati: Main Loop | One Shot | On Release.
+- One Shot controlla solo il comportamento del cursore di lettura: nessun wrap del loop principale.
+- Il Note Off continua a pilotare normalmente l’ADSR e quindi entra nel Release.
+- Se l’ADSR Release termina prima di Sample End, la voce termina con l’inviluppo.
+- Se Sample End arriva prima della fine dell’ADSR Release, la voce si arresta comunque a Sample End.
+- On Release resta una modalità distinta.
+- Source/Parameters.h resta invariato rispetto al riferimento congelato TEST59.

@@ -128,7 +128,7 @@ void loopAndEffectTests() {
     r.set(0,p);r.on();r.render(50);
     for(int i=0;i<40;++i)require(near(r.output.getSample(0,i),double(i%10)/100),"Loop counted repeats");
     for(int i=40;i<50;++i)require(near(r.output.getSample(0,i),double(50+i-40)/100),"Next loop jumps to absolute start");
-    r.pool.allNotesOff();p=SlotParameters{};p[P::global_one_shot]=1;r.set(0,p);r.on();r.render(25);r.pool.noteOff(60);r.render(200);require(r.pool.activeVoiceCount()==0,"One Shot ignores Note Off and stops at sample end without wrapping");
+    r.pool.allNotesOff();p=SlotParameters{};p[P::global_one_shot]=1;r.set(0,p);r.on();r.render(25);r.pool.noteOff(60);r.render(200);require(r.pool.activeVoiceCount()==0,"One Shot follows ADSR Note Off release and stops no later than sample end without wrapping");
     r.pool.allNotesOff();p=SlotParameters{};p[P::global_one_shot]=0;p[P::machine_character]=7;p[P::character_depth]=10000;
     p[P::comp_on]=p[P::gate_on]=p[P::lp_on]=p[P::hp_on]=1;p[P::fm_amount]=80;p[P::ring_mode]=2;p[P::ring_amount]=1;
     p[P::degrade_amount]=80;p[P::transient_shape]=-80;p[P::drive_type]=2;p[P::drive_amount]=80;p[P::lfo2_pitch_depth]=2;
