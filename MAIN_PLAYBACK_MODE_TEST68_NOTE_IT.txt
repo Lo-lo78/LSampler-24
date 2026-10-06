@@ -1,0 +1,8 @@
+LSampler-24 TEST68 - Main Playback Mode CI fix
+
+- Mantiene Source/Parameters.h identico al riferimento congelato TEST59, così il verificatore CI non fallisce.
+- La UI/accessibilità presenta global_one_shot come Main Playback Mode.
+- Valori mostrati: Main Loop | One Shot | On Release.
+- One Shot ignora il Note Off, prosegue fino a Sample End e si arresta senza wrap del loop principale.
+- On Release resta una modalità distinta con la logica precedente.
+- Nessuna compilazione locale eseguita.

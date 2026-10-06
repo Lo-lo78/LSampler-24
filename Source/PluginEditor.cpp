@@ -468,7 +468,8 @@ bool LSampler24AudioProcessorEditor::selectedRateIsSynced() const {
 }
 juce::String LSampler24AudioProcessorEditor::selectedParameterName() const {
     const auto& e=selectedEntry();
-    return (std::strcmp(e.category,"Loops")==0?"Loop "+juce::String(selectedLoop+1)+" ":juce::String())+descriptor(e).name;
+    const juce::String name = e.parameter == int(P::global_one_shot) ? "Main Playback Mode" : juce::String(descriptor(e).name);
+    return (std::strcmp(e.category,"Loops")==0?"Loop "+juce::String(selectedLoop+1)+" ":juce::String())+name;
 }
 double LSampler24AudioProcessorEditor::getSelectedParameterValue() const {return processor.getSlotParameter(selectedParameter,selectedLoop);}
 void LSampler24AudioProcessorEditor::setSelectedParameterValue(double value)
@@ -487,6 +488,10 @@ void LSampler24AudioProcessorEditor::setSelectedParameterValue(double value)
 juce::String LSampler24AudioProcessorEditor::formatParameter(int index,double value) const {
     const auto& e=lsampler::grid[size_t(index)];const auto& d=descriptor(e);
     if(d.kind==Kind::note)return value<0?juce::String("Off"):midiNoteText(juce::roundToInt(value));
+    if(e.parameter==int(P::global_one_shot)) {
+        static const juce::StringArray labels { "Main Loop", "One Shot", "On Release" };
+        return labels[juce::jlimit(0, labels.size()-1, juce::roundToInt(value-d.minimum))];
+    }
     if(d.kind==Kind::enumeration||d.kind==Kind::action) {
         const auto labels=juce::StringArray::fromTokens(d.labels,"|","");
         return labels[juce::jlimit(0,labels.size()-1,juce::roundToInt(value-d.minimum))];
@@ -512,7 +517,8 @@ juce::String LSampler24AudioProcessorEditor::selectedParameterValueText() const 
 juce::String LSampler24AudioProcessorEditor::parameterCellText(int index) const {
     const auto& e=lsampler::grid[size_t(index)];
     const juce::String prefix=std::strcmp(e.category,"Loops")==0?"Loop "+juce::String(selectedLoop+1)+" ":juce::String();
-    return prefix+descriptor(e).name+", "+formatParameter(index,processor.getSlotParameter(index,selectedLoop));
+    const juce::String name = e.parameter == int(P::global_one_shot) ? "Main Playback Mode" : juce::String(descriptor(e).name);
+    return prefix+name+", "+formatParameter(index,processor.getSlotParameter(index,selectedLoop));
 }
 void LSampler24AudioProcessorEditor::refreshParameterGrid() {
     const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
@@ -542,7 +548,10 @@ void LSampler24AudioProcessorEditor::configureValueForSelectedParameter() {
     parameterValue.textFromValueFunction=[this](double v){return formatParameter(selectedParameter,v);};
     parameterValue.valueFromTextFunction=[this](const juce::String& text) {
         const auto& desc=descriptor(selectedEntry());
-        if(desc.kind==Kind::enumeration||desc.kind==Kind::action) {
+        if(selectedEntry().parameter==int(P::global_one_shot)) {
+            static const juce::StringArray labels { "Main Loop", "One Shot", "On Release" };
+            const int found=labels.indexOf(text.trim(),true);if(found>=0)return desc.minimum+found;
+        } else if(desc.kind==Kind::enumeration||desc.kind==Kind::action) {
             const auto labels=juce::StringArray::fromTokens(desc.labels,"|","");
             const int found=labels.indexOf(text.trim(),true);if(found>=0)return desc.minimum+found;
         }

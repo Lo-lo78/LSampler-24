@@ -190,7 +190,7 @@ inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"start_threshold", "Start Threshold", "Sample Window", Kind::continuous, -60.0, -120.0, 0.0, 0.1, 1.0, "dB", 1, ""},
 {"end_threshold", "End Threshold", "Sample Window", Kind::continuous, -120.0, -120.0, 0.0, 0.1, 1.0, "dB", 1, ""},
 {"end_preview_length", "End Preview Length", "Sample Window", Kind::enumeration, 0.0, 0.0, 12.0, 1.0, 1.0, "", 0, "Auto|50 ms|100 ms|200 ms|300 ms|500 ms|750 ms|1000 ms|1500 ms|2000 ms|3000 ms|4000 ms|5000 ms"},
-{"global_one_shot", "Main Playback Mode", "Sample Window", Kind::enumeration, 1, 0.0, 2.0, 1.0, 1.0, "", 0, "Main Loop|One Shot|On Release"},
+{"global_one_shot", "Global One Shot", "Sample Window", Kind::enumeration, 1, 0.0, 2.0, 1.0, 1.0, "", 0, "Off|On|On Release"},
 {"start_end_fade", "Start End Fade", "Sample Window", Kind::continuous, 0.0, 0.0, 100.0, 0.01, 0.1, "ms", 2, ""},
 {"stereo_delay_left", "Stereo Delay Left", "Sample Window", Kind::continuous, 0.0, 0.0, 50.0, 0.01, 0.1, "ms", 2, ""},
 {"stereo_delay_right", "Stereo Delay Right", "Sample Window", Kind::continuous, 0.0, 0.0, 50.0, 0.01, 0.1, "ms", 2, ""},
