@@ -1,4 +1,5 @@
 #pragma once
+#include "HostParameter.h"
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "SamplePool.h"
 #include "SamplerVoice.h"
@@ -7,7 +8,7 @@
 #include <vector>
 #include <functional>
 
-class LSampler24AudioProcessor : public juce::AudioProcessor
+class LSampler24AudioProcessor : public juce::AudioProcessor, private juce::AsyncUpdater
 {
 public:
     static constexpr int slotCount = 24;
@@ -195,6 +196,12 @@ public:
     LibraryManager& getLibrary() noexcept { return library; }
 
 private:
+    void notifyHostControl(lsampler::HostParameter*);
+    void handleAsyncUpdate() override;
+    void createHostParameters();
+    void absorbHostValuesLocked() const;
+    void publishHostValuesLocked(bool notify = true, int forceSlot = -1);
+    void updateAutomatedAudio(bool snapshotChanged);
     struct SlotState
     {
         std::shared_ptr<SharedSample> sample;
@@ -213,6 +220,30 @@ private:
         lsampler::SliceState slice;
         juce::String status = "No sample loaded";
     };
+
+    struct HostSlot {
+        std::array<lsampler::HostParameter*,lsampler::parameterCount> values {};
+        std::array<std::array<lsampler::HostParameter*,lsampler::loopParameterCount>,lsampler::loopCount> loops {};
+        std::array<lsampler::HostParameter*,13> slice {};
+        lsampler::HostParameter* variation = nullptr;
+        std::array<lsampler::HostParameter*,sampleSetSize> velocityLow {}, velocityHigh {};
+        mutable lsampler::SlotParameters control;
+        mutable lsampler::SliceState controlSlice;
+        mutable int controlVariation = 0;
+        mutable std::array<int,sampleSetSize> controlLow {}, controlHigh {};
+    };
+    std::array<HostSlot,slotCount> hostSlots;
+    std::array<lsampler::HostParameter*,lsampler::globalParameterCount> hostGlobals {};
+    std::array<std::atomic<uint64_t>,slotCount> hostGenerations {};
+    std::atomic<uint64_t> globalHostGeneration {0};
+    mutable std::array<uint64_t,slotCount> controlHostGenerations {};
+    std::array<uint64_t,slotCount> audioHostGenerations {};
+    std::unique_ptr<std::array<lsampler::SlotAudioState,slotCount>> automatedAudioStorage =
+        std::make_unique<std::array<lsampler::SlotAudioState,slotCount>>();
+    std::array<lsampler::SlotAudioState,slotCount>& automatedAudio = *automatedAudioStorage;
+    uint64_t audioAutomationRevision = 0;
+    bool hostParametersReady = false;
+    bool restoringHostState = false; // accessed under stateLock only
 
     juce::ValueTree makeSlotState(int slotIndex, const juce::String& type) const;
     bool restoreSlotState(int slotIndex, const juce::ValueTree& tree, juce::String& error);

@@ -4,6 +4,14 @@ using namespace lsampler;
 namespace {
 constexpr std::array<int,5> sliceStepWidths {1,5,10,15,20};
 constexpr int slicePageStep = 40;
+class LiveSliceAccessibility final : public juce::AccessibilityHandler {
+public:
+    LiveSliceAccessibility(juce::Component& owner,std::function<juce::String()> reader)
+        : AccessibilityHandler(owner,juce::AccessibilityRole::list), read(std::move(reader)) {}
+    juce::String getTitle() const override {return read();}
+private:
+    std::function<juce::String()> read;
+};
 }
 SliceEditor::SliceEditor(LSampler24AudioProcessor& p,int s,bool sequencer):processor(p),slot(s) {
     page=sequencer?Page::steps:Page::globals;
@@ -22,7 +30,7 @@ SliceEditor::SliceEditor(LSampler24AudioProcessor& p,int s,bool sequencer):proce
 }
 SliceEditor::~SliceEditor(){processor.stopSlicePreview();}
 std::unique_ptr<juce::AccessibilityHandler> SliceEditor::createAccessibilityHandler() {
-    return std::make_unique<juce::AccessibilityHandler>(*this,juce::AccessibilityRole::list);
+    return std::make_unique<LiveSliceAccessibility>(*this,[this] {return currentLine();});
 }
 int SliceEditor::count() const {
     int start=0;double rate=0;return processor.getSliceLayout(slot,start,rate).count;

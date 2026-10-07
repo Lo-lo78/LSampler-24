@@ -58,11 +58,13 @@ LSampler24AudioProcessor::LSampler24AudioProcessor(const juce::File& libraryRoot
 {
     static_assert(std::atomic<int>::is_always_lock_free);
     static_assert(std::atomic<unsigned>::is_always_lock_free);
+    createHostParameters();
     markAudioStateDirty();
 }
 
 LSampler24AudioProcessor::~LSampler24AudioProcessor()
 {
+    cancelPendingUpdate();
     shuttingDown.store(true, std::memory_order_release);
     // Finish the running disk operation before any processor-owned state is freed.
     // Closing only the editor never waits for this worker.
@@ -96,7 +98,7 @@ void LSampler24AudioProcessor::prepareToPlay(double sampleRate, int)
     libraryPreviewVoicePool.setStates(&libraryPreviewStates);
     outputGlueEnvelope = 0.0;
     {
-        const juce::ScopedLock lock(stateLock);
+        const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         preparedSampleRate = sampleRate > 0 ? sampleRate : 44100;
         markAudioStateDirty();
     }
@@ -140,6 +142,7 @@ void LSampler24AudioProcessor::updateThresholdWindow(int slotIndex)
 void LSampler24AudioProcessor::markAudioStateDirty()
 {
     const juce::ScopedLock lock(stateLock);
+    publishHostValuesLocked(!restoringHostState);
     uiRevision.fetch_add(1, std::memory_order_release);
     // This function is called only by control/state threads. No audio-thread lock,
     // shared_ptr update, allocation, or destruction is needed to consume a state.
@@ -188,7 +191,9 @@ void LSampler24AudioProcessor::syncAudioStateFromSlots()
 {
     if ((middleSnapshot.load(std::memory_order_acquire) & 4) != 0) {
         readerSnapshot = middleSnapshot.exchange(readerSnapshot, std::memory_order_acq_rel) & 3;
-        voicePool.setStates(&snapshots[size_t(readerSnapshot)].states);
+        updateAutomatedAudio(true);
+    } else {
+        updateAutomatedAudio(false);
     }
 }
 
@@ -405,7 +410,7 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             importPreviewPlayingAtomic.store(importPreviewPlaying, std::memory_order_relaxed);
         }
     }
-    const auto& audio = snapshots[size_t(readerSnapshot)].states;
+    const auto& audio = automatedAudio;
     const auto slotHasAudio = [](const lsampler::SlotAudioState& state) noexcept
     {
         for (auto* sample : state.sampleSet) if (sample != nullptr) return true;
@@ -688,7 +693,7 @@ void LSampler24AudioProcessor::setCurrentSlot(int slotIndex)
 juce::String LSampler24AudioProcessor::getSlotLabel(int slotIndex) const
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     const auto& s = slots[static_cast<size_t>(slotIndex)];
     auto name = s.slotName.isNotEmpty() ? s.slotName : s.sampleFile.getFileNameWithoutExtension();
     if (name.isEmpty()) for (const auto& f : s.alternateSampleFiles) if (f.getFullPathName().isNotEmpty()) { name = f.getFileNameWithoutExtension(); break; }
@@ -698,7 +703,7 @@ juce::String LSampler24AudioProcessor::getSlotLabel(int slotIndex) const
 juce::String LSampler24AudioProcessor::getSlotName(int slotIndex) const
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     const auto& s = slots[static_cast<size_t>(slotIndex)];
     if (s.slotName.isNotEmpty()) return s.slotName;
     if (s.sampleFile.getFullPathName().isNotEmpty()) return s.sampleFile.getFileNameWithoutExtension();
@@ -711,7 +716,7 @@ void LSampler24AudioProcessor::setSlotName(int slotIndex, const juce::String& na
     uiRevision.fetch_add(1, std::memory_order_release);
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
     const auto clean = name.trim();
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     slots[static_cast<size_t>(slotIndex)].slotName = clean;
 }
 
@@ -726,13 +731,13 @@ bool LSampler24AudioProcessor::loadSampleToSlot(const juce::File& file, int slot
     auto loaded = SamplePool::instance().load(file, error);
     if (!loaded)
     {
-        const juce::ScopedLock lock(stateLock);
+        const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         slots[static_cast<size_t>(slotIndex)].status = error;
         return false;
     }
 
     {
-        const juce::ScopedLock lock(stateLock);
+        const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         auto& s = slots[static_cast<size_t>(slotIndex)];
         s.slice = SliceState{};
         s.sample = std::move(loaded);
@@ -771,7 +776,7 @@ bool LSampler24AudioProcessor::loadSampleSetEntryToSlot(const juce::File& file, 
     auto loaded = SamplePool::instance().load(file, error);
     if (!loaded) return false;
 
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     auto& slot = slots[size_t(slotIndex)];
     if (sampleIndex == 0)
     {
@@ -843,7 +848,7 @@ void LSampler24AudioProcessor::clearSampleSetEntry(int slotIndex, int sampleInde
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
     sampleIndex = juce::jlimit(0, sampleSetSize - 1, sampleIndex);
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     auto& slot = slots[size_t(slotIndex)];
     if (sampleIndex == 0)
     {
@@ -868,7 +873,7 @@ LSampler24AudioProcessor::SampleSetEntryInfo LSampler24AudioProcessor::getSample
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
     sampleIndex = juce::jlimit(0, sampleSetSize - 1, sampleIndex);
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     const auto& slot = slots[size_t(slotIndex)];
     SampleSetEntryInfo info;
     if (sampleIndex == 0)
@@ -903,7 +908,7 @@ void LSampler24AudioProcessor::setSampleSetVelocityRange(int slotIndex, int samp
     low = juce::jlimit(1, 127, low);
     high = juce::jlimit(1, 127, high);
     if (low > high) std::swap(low, high);
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     auto& slot = slots[size_t(slotIndex)];
     slot.sampleVelocityLow[size_t(sampleIndex)] = low;
     slot.sampleVelocityHigh[size_t(sampleIndex)] = high;
@@ -914,7 +919,7 @@ void LSampler24AudioProcessor::setSampleSetVelocityRange(int slotIndex, int samp
 int LSampler24AudioProcessor::getVariationMode(int slotIndex) const
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     return slots[size_t(slotIndex)].variationMode;
 }
 
@@ -922,7 +927,7 @@ void LSampler24AudioProcessor::setVariationMode(int slotIndex, int mode)
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
     mode = juce::jlimit<int>(variationOff, variationRandomNoRepeat, mode);
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     auto& slot = slots[size_t(slotIndex)];
     slot.variationMode = mode;
     slot.presetFile = {};
@@ -932,7 +937,7 @@ void LSampler24AudioProcessor::setVariationMode(int slotIndex, int mode)
 bool LSampler24AudioProcessor::isSlotOccupied(int slotIndex) const
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     const auto& slot = slots[static_cast<size_t>(slotIndex)];
     if (slot.sample != nullptr) return true;
     return std::any_of(slot.alternateSamples.begin(), slot.alternateSamples.end(), [](const auto& sample) { return sample != nullptr; });
@@ -987,7 +992,7 @@ bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int sl
     }
 
     {
-        const juce::ScopedLock lock(stateLock);
+        const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         auto& slot = slots[static_cast<size_t>(slotIndex)];
         slot.sample = std::move(loaded);
         slot.sampleFile = file;
@@ -1020,7 +1025,7 @@ bool LSampler24AudioProcessor::prepareImportPreview(const juce::File& file, juce
 {
     auto loaded = SamplePool::instance().load(file, error);
     if (!loaded) return false;
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     auto& target = importPreviewSnapshots[static_cast<size_t>(importPreviewWriter)];
     target.owner = std::move(loaded);
     target.sample = target.owner.get();
@@ -1035,30 +1040,37 @@ bool LSampler24AudioProcessor::prepareImportPreview(const juce::File& file, juce
     return true;
 }
 
-int LSampler24AudioProcessor::getLowKey() const noexcept { const juce::ScopedLock lock(stateLock); return int(slots[size_t(currentSlot.load())].parameters[P::low]); }
-int LSampler24AudioProcessor::getHighKey() const noexcept { const juce::ScopedLock lock(stateLock); return int(slots[size_t(currentSlot.load())].parameters[P::high]); }
-int LSampler24AudioProcessor::getRootNote() const noexcept { const juce::ScopedLock lock(stateLock); return int(slots[size_t(currentSlot.load())].parameters[P::root]); }
-float LSampler24AudioProcessor::getVolume() const noexcept { const juce::ScopedLock lock(stateLock); return float(std::pow(10.0,slots[size_t(currentSlot.load())].parameters[P::input_gain]/20.0)); }
-void LSampler24AudioProcessor::setLowKey(int n) { const juce::ScopedLock lock(stateLock); slots[size_t(currentSlot.load())].parameters[P::low]=juce::jlimit(0,127,n); markAudioStateDirty(); }
-void LSampler24AudioProcessor::setHighKey(int n) { const juce::ScopedLock lock(stateLock); slots[size_t(currentSlot.load())].parameters[P::high]=juce::jlimit(0,127,n); markAudioStateDirty(); }
+int LSampler24AudioProcessor::getLowKey() const noexcept { const juce::ScopedLock lock(stateLock); absorbHostValuesLocked(); return int(slots[size_t(currentSlot.load())].parameters[P::low]); }
+int LSampler24AudioProcessor::getHighKey() const noexcept { const juce::ScopedLock lock(stateLock); absorbHostValuesLocked(); return int(slots[size_t(currentSlot.load())].parameters[P::high]); }
+int LSampler24AudioProcessor::getRootNote() const noexcept { const juce::ScopedLock lock(stateLock); absorbHostValuesLocked(); return int(slots[size_t(currentSlot.load())].parameters[P::root]); }
+float LSampler24AudioProcessor::getVolume() const noexcept { const juce::ScopedLock lock(stateLock); absorbHostValuesLocked(); return float(std::pow(10.0,slots[size_t(currentSlot.load())].parameters[P::input_gain]/20.0)); }
+void LSampler24AudioProcessor::setLowKey(int n) { const juce::ScopedLock lock(stateLock); absorbHostValuesLocked(); slots[size_t(currentSlot.load())].parameters[P::low]=juce::jlimit(0,127,n); markAudioStateDirty(); }
+void LSampler24AudioProcessor::setHighKey(int n) { const juce::ScopedLock lock(stateLock); absorbHostValuesLocked(); slots[size_t(currentSlot.load())].parameters[P::high]=juce::jlimit(0,127,n); markAudioStateDirty(); }
 void LSampler24AudioProcessor::setRootNote(int n) {
     {
-        const juce::ScopedLock lock(stateLock);
+        const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         slots[size_t(currentSlot.load())].parameters[P::root]=juce::jlimit(0,127,n);
         markAudioStateDirty();
     }
     requestPreviewRestartIfPlaying();
 }
-void LSampler24AudioProcessor::setVolume(float v) { const juce::ScopedLock lock(stateLock); slots[size_t(currentSlot.load())].parameters[P::input_gain]=v>0?20*std::log10(juce::jlimit(.000001f,1.0f,v)):-120; markAudioStateDirty(); }
+void LSampler24AudioProcessor::setVolume(float v) { const juce::ScopedLock lock(stateLock); absorbHostValuesLocked(); slots[size_t(currentSlot.load())].parameters[P::input_gain]=v>0?20*std::log10(juce::jlimit(.000001f,1.0f,v)):-120; markAudioStateDirty(); }
 
 double LSampler24AudioProcessor::getGlobalOutputParameter(lsampler::GlobalP parameter) const noexcept
 {
-    return globalOutputParameters[size_t(parameter)].load(std::memory_order_relaxed);
+    return hostParametersReady ? hostGlobals[size_t(parameter)]->load()
+        : globalOutputParameters[size_t(parameter)].load(std::memory_order_relaxed);
 }
 
 void LSampler24AudioProcessor::setGlobalOutputParameter(lsampler::GlobalP parameter, double value) noexcept
 {
     const auto& d = lsampler::globalParameters[size_t(parameter)];
+    if (hostParametersReady) {
+        auto* host = hostGlobals[size_t(parameter)];
+        value = lsampler::sanitise(d,value);
+        host->storeReal(value);
+        notifyHostControl(host);
+    }
     globalOutputParameters[size_t(parameter)].store(lsampler::sanitise(d, value), std::memory_order_relaxed);
     uiRevision.fetch_add(1, std::memory_order_release);
 }
@@ -1067,7 +1079,7 @@ double LSampler24AudioProcessor::getSlotParameter(int index, int loop) const {
     const auto& e = grid[size_t(juce::jlimit(0,int(grid.size())-1,index))];
     if (e.global >= 0)
         return getGlobalOutputParameter(static_cast<GlobalP>(e.global));
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     return slots[size_t(currentSlot.load())].parameters.get(e,juce::jlimit(0,9,loop));
 }
 void LSampler24AudioProcessor::setSlotParameter(int index,double value,int loop) {
@@ -1079,11 +1091,11 @@ void LSampler24AudioProcessor::setSlotParameter(int index,double value,int loop)
     }
     const bool rootChanged = e.parameter == int(P::root);
     {
-        const juce::ScopedLock lock(stateLock);
+        const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         auto& p=slots[size_t(currentSlot.load())].parameters;
         p.set(e,juce::jlimit(0,9,loop),value);
         if (e.parameter == int(P::sample_start) || e.parameter == int(P::sample_end))
-            p[P::sample_play_start] = juce::jlimit(p[P::sample_start], p[P::sample_end], p[P::sample_play_start]);
+            p[P::sample_play_start] = juce::jlimit(p[P::sample_start], std::max(p[P::sample_start], p[P::sample_end]), p[P::sample_play_start]);
         if (e.parameter == int(P::sample_start) || e.parameter == int(P::sample_end)
             || e.parameter == int(P::start_threshold) || e.parameter == int(P::end_threshold))
             updateThresholdWindow(currentSlot.load());
@@ -1101,30 +1113,30 @@ void LSampler24AudioProcessor::resetSlotParameter(int index,int loop) {
     setSlotParameter(index,descriptor(grid[size_t(index)]).initial,loop);
 }
 double LSampler24AudioProcessor::getSamplePlayStart() const {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     return slots[size_t(currentSlot.load())].parameters[P::sample_play_start];
 }
 double LSampler24AudioProcessor::getSampleWindowStart() const {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     return slots[size_t(currentSlot.load())].parameters[P::sample_start];
 }
 double LSampler24AudioProcessor::getSampleWindowEnd() const {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     return slots[size_t(currentSlot.load())].parameters[P::sample_end];
 }
 void LSampler24AudioProcessor::setSamplePlayStart(double value) {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     auto& p = slots[size_t(currentSlot.load())].parameters;
     // Sample Play Start is an absolute position in the source sample.  The
     // editable Sample Start/End window is therefore also its legal scrub range.
-    p[P::sample_play_start] = juce::jlimit(p[P::sample_start], p[P::sample_end], value);
+    p[P::sample_play_start] = juce::jlimit(p[P::sample_start], std::max(p[P::sample_start], p[P::sample_end]), value);
     markAudioStateDirty();
 }
 void LSampler24AudioProcessor::requestSampleBoundaryAudition(bool endBoundary, bool latchPlayStart)
 {
     double startPercent = 0.0;
     {
-        const juce::ScopedLock lock(stateLock);
+        const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         auto& slot = slots[size_t(currentSlot.load())];
         if (!slot.sample || slot.sample->audio.getNumSamples() < 2)
             return;
@@ -1154,7 +1166,7 @@ void LSampler24AudioProcessor::requestSampleBoundaryAudition(bool endBoundary, b
         // anchor. Threshold and End Preview Length changes audition the result
         // but must not silently relocate Ctrl+Left/Right.
         if(latchPlayStart)
-            p[P::sample_play_start] = juce::jlimit(p[P::sample_start], p[P::sample_end], startPercent);
+            p[P::sample_play_start] = juce::jlimit(p[P::sample_start], std::max(p[P::sample_start], p[P::sample_end]), startPercent);
     }
     if(latchPlayStart) markAudioStateDirty();
     requestPreviewAuditionFromPercent(startPercent);
@@ -1162,7 +1174,7 @@ void LSampler24AudioProcessor::requestSampleBoundaryAudition(bool endBoundary, b
 
 void LSampler24AudioProcessor::applyZeroCrossing(bool loopWindow,int loopIndex) {
     // A native UI command: no audio-thread scan, bridge, pulse or request/result state.
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     auto& slot=slots[size_t(currentSlot.load())]; if(!slot.sample || slot.sample->audio.getNumSamples()<2)return;
     auto& p=slot.parameters; const auto& a=slot.sample->audio;
     const int count=a.getNumSamples();
@@ -1229,7 +1241,7 @@ void LSampler24AudioProcessor::applyZeroCrossing(bool loopWindow,int loopIndex) 
 
 bool LSampler24AudioProcessor::copyCurrentSlot()
 {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     slotClipboard = slots[static_cast<size_t>(currentSlot.load())];
     slotClipboardHasData = true;
     return true;
@@ -1237,7 +1249,7 @@ bool LSampler24AudioProcessor::copyCurrentSlot()
 
 bool LSampler24AudioProcessor::cutCurrentSlot()
 {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     slotClipboard = slots[static_cast<size_t>(currentSlot.load())];
     slotClipboardHasData = true;
     slots[static_cast<size_t>(currentSlot.load())] = SlotState{};
@@ -1248,7 +1260,7 @@ bool LSampler24AudioProcessor::cutCurrentSlot()
 
 bool LSampler24AudioProcessor::pasteCurrentSlot()
 {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     if (!slotClipboardHasData)
         return false;
     slots[static_cast<size_t>(currentSlot.load())] = slotClipboard;
@@ -1259,7 +1271,7 @@ bool LSampler24AudioProcessor::pasteCurrentSlot()
 
 void LSampler24AudioProcessor::clearCurrentSlot()
 {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     slots[static_cast<size_t>(currentSlot.load())] = SlotState{};
     markAudioStateDirty();
     stopVoicesMask.fetch_or(1u << currentSlot.load(std::memory_order_relaxed), std::memory_order_release);
@@ -1267,7 +1279,7 @@ void LSampler24AudioProcessor::clearCurrentSlot()
 
 void LSampler24AudioProcessor::clearBank()
 {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     for (auto& slot : slots)
         slot = SlotState{};
     markAudioStateDirty();
@@ -1277,7 +1289,7 @@ void LSampler24AudioProcessor::clearBank()
 bool LSampler24AudioProcessor::slotHasSample(int slotIndex) const
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     const auto& slot = slots[static_cast<size_t>(slotIndex)];
     if (slot.sample) return true;
     for (const auto& sample : slot.alternateSamples) if (sample) return true;
@@ -1298,19 +1310,19 @@ void LSampler24AudioProcessor::setSlotGridPosition(int slotIndex, int gridIndex)
 
 juce::File LSampler24AudioProcessor::getCurrentSampleFile() const
 {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     return slots[static_cast<size_t>(currentSlot.load())].sampleFile;
 }
 
 juce::File LSampler24AudioProcessor::getCurrentSlotPresetFile() const
 {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     return slots[static_cast<size_t>(currentSlot.load())].presetFile;
 }
 
 juce::String LSampler24AudioProcessor::getCurrentSamplePropertiesText() const
 {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     const int slotIndex = juce::jlimit(0, slotCount - 1, currentSlot.load());
     const auto& slot = slots[size_t(slotIndex)];
     if (!slot.sample)
@@ -1351,7 +1363,7 @@ juce::String LSampler24AudioProcessor::getCurrentSamplePropertiesText() const
 
 juce::String LSampler24AudioProcessor::getCurrentSlotPropertiesText() const
 {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     const int slotIndex = juce::jlimit(0, slotCount - 1, currentSlot.load());
     const auto& slot = slots[size_t(slotIndex)];
     const auto preset = slot.presetFile;
@@ -1403,7 +1415,7 @@ juce::String LSampler24AudioProcessor::getCurrentSlotPropertiesText() const
 
 juce::String LSampler24AudioProcessor::getSampleStatus() const
 {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     return slots[static_cast<size_t>(currentSlot.load())].status;
 }
 
@@ -1411,7 +1423,7 @@ juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slotIndex, const juc
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
     SlotState s;
-    { const juce::ScopedLock lock(stateLock); s = slots[static_cast<size_t>(slotIndex)]; }
+    { const juce::ScopedLock lock(stateLock); absorbHostValuesLocked(); s = slots[static_cast<size_t>(slotIndex)]; }
     juce::ValueTree tree(type);
     tree.setProperty("format", "LSampler-24 Slot", nullptr);
     tree.setProperty("formatVersion", 5, nullptr);
@@ -1572,8 +1584,11 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
         slot.status = statusText;
         const auto window = lsampler::calculateThresholdWindow(slot.parameters, slot.sample.get());
         slot.thresholdStartFrame = window.start; slot.thresholdEndFrame = window.end;
-        const juce::ScopedLock lock(stateLock);
+        const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         slots[static_cast<size_t>(slotIndex)] = std::move(slot);
+        const juce::ScopedValueSetter<bool> restoring(restoringHostState, true);
+        // Force every restored value, even one equal to the previous control mirror.
+        publishHostValuesLocked(false, slotIndex);
         markAudioStateDirty();
     }
 
@@ -1587,7 +1602,7 @@ bool LSampler24AudioProcessor::materialiseSlotSample(int slotIndex, juce::String
     std::shared_ptr<SharedSample> currentSample;
     bool audioModified = false;
     {
-        const juce::ScopedLock lock(stateLock);
+        const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         const auto& slot = slots[static_cast<size_t>(slotIndex)];
         source = slot.sampleFile;
         currentSample = slot.sample;
@@ -1617,7 +1632,7 @@ bool LSampler24AudioProcessor::materialiseSlotSample(int slotIndex, juce::String
             return false;
         }
 
-        const juce::ScopedLock lock(stateLock);
+        const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         auto& slot = slots[static_cast<size_t>(slotIndex)];
         if (slot.sample != currentSample || slot.sampleFile != source) {
             error = "Slot changed during save; please save again"; return false;
@@ -1643,7 +1658,7 @@ bool LSampler24AudioProcessor::materialiseSlotSample(int slotIndex, juce::String
                                     : SamplePool::instance().load(local, error);
         if (!loaded) return false;
 
-        const juce::ScopedLock lock(stateLock);
+        const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         auto& slot = slots[static_cast<size_t>(slotIndex)];
         if (slot.sample != currentSample || slot.sampleFile != source) {
             error = "Slot changed during save; please save again"; return false;
@@ -1665,7 +1680,7 @@ bool LSampler24AudioProcessor::materialiseSampleSetExtras(int slotIndex, juce::S
         juce::File source;
         std::shared_ptr<SharedSample> currentSample;
         {
-            const juce::ScopedLock lock(stateLock);
+            const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
             const auto& slot = slots[size_t(slotIndex)];
             source = slot.alternateSampleFiles[size_t(sampleIndex - 1)];
             currentSample = slot.alternateSamples[size_t(sampleIndex - 1)];
@@ -1678,7 +1693,7 @@ bool LSampler24AudioProcessor::materialiseSampleSetExtras(int slotIndex, juce::S
         auto loaded = currentSample ? SamplePool::instance().aliasFile(local, currentSample)
                                     : SamplePool::instance().load(local, error);
         if (!loaded) return false;
-        const juce::ScopedLock lock(stateLock);
+        const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         auto& slot = slots[size_t(slotIndex)];
         if (slot.alternateSamples[size_t(sampleIndex - 1)] != currentSample
             || slot.alternateSampleFiles[size_t(sampleIndex - 1)] != source)
@@ -1729,7 +1744,7 @@ bool LSampler24AudioProcessor::saveSlotPresetAt(const juce::File& presetFile, in
         return false;
     if (!writePreset(presetFile, makeSlotState(slotIndex, "LSampler24Slot"), error))
         return false;
-    { const juce::ScopedLock lock(stateLock); slots[size_t(slotIndex)].presetFile = presetFile; }
+    { const juce::ScopedLock lock(stateLock); absorbHostValuesLocked(); slots[size_t(slotIndex)].presetFile = presetFile; }
     return true;
 }
 
@@ -1752,7 +1767,7 @@ bool LSampler24AudioProcessor::loadSlotPreset(const juce::File& presetFile, juce
     if (ok)
     {
         juce::File actual;
-        { const juce::ScopedLock lock(stateLock); slots[size_t(slotIndex)].presetFile = presetFile; actual = slots[size_t(slotIndex)].sampleFile; }
+        { const juce::ScopedLock lock(stateLock); absorbHostValuesLocked(); slots[size_t(slotIndex)].presetFile = presetFile; actual = slots[size_t(slotIndex)].sampleFile; }
         if (actual.existsAsFile())
         {
             tree.setProperty("sampleReference", library.makeSampleReference(actual), nullptr);
@@ -1782,7 +1797,7 @@ bool LSampler24AudioProcessor::loadSlotPresetToSlot(const juce::File& presetFile
     if (ok)
     {
         juce::File actual;
-        { const juce::ScopedLock lock(stateLock); slots[size_t(slotIndex)].presetFile = presetFile; actual = slots[size_t(slotIndex)].sampleFile; }
+        { const juce::ScopedLock lock(stateLock); absorbHostValuesLocked(); slots[size_t(slotIndex)].presetFile = presetFile; actual = slots[size_t(slotIndex)].sampleFile; }
         if (actual.existsAsFile())
         {
             tree.setProperty("sampleReference", library.makeSampleReference(actual), nullptr);
@@ -1845,7 +1860,7 @@ bool LSampler24AudioProcessor::prepareLibrarySlotPreview(const juce::File& prese
     tree.setProperty("sampleHash", library.makeSampleHash(file), nullptr);
     { juce::String ignored; writePreset(presetFile, tree, ignored); }
 
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     auto& target = (*libraryPreviewSnapshots)[size_t(libraryPreviewWriter)];
     target.owner = std::move(loaded);
     target.state = lsampler::prepareSlotAudioState(params, target.owner.get(), preparedSampleRate, ++nextRevision);
@@ -1869,7 +1884,7 @@ bool LSampler24AudioProcessor::saveBankPreset(const juce::File& presetFile, juce
     bank.setProperty("currentSlot", currentSlot.load(), nullptr);
     for (int i = 0; i < globalParameterCount; ++i)
         bank.setProperty(globalParameters[size_t(i)].key,
-                         globalOutputParameters[size_t(i)].load(std::memory_order_relaxed), nullptr);
+                         getGlobalOutputParameter(static_cast<GlobalP>(i)), nullptr);
 
     for (int i = 0; i < slotCount; ++i)
         bank.addChild(makeSlotState(i, "Slot"), -1, nullptr);
@@ -1899,7 +1914,7 @@ bool LSampler24AudioProcessor::loadBankPreset(const juce::File& presetFile, juce
         }
     }
     {
-        const juce::ScopedLock lock(stateLock);
+        const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         for (int i = count; i < slotCount; ++i)
             slots[static_cast<size_t>(i)] = SlotState{};
     }
@@ -2373,7 +2388,7 @@ void LSampler24AudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     state.setProperty("currentSlot", currentSlot.load(), nullptr);
     for (int i = 0; i < globalParameterCount; ++i)
         state.setProperty(globalParameters[size_t(i)].key,
-                          globalOutputParameters[size_t(i)].load(std::memory_order_relaxed), nullptr);
+                          getGlobalOutputParameter(static_cast<GlobalP>(i)), nullptr);
     for (int i = 0; i < slotCount; ++i)
         state.addChild(makeSlotState(i, "Slot"), -1, nullptr);
 
@@ -2399,7 +2414,11 @@ void LSampler24AudioProcessor::setStateInformation(const void* data, int sizeInB
             currentSlot = juce::jlimit(0, slotCount - 1, static_cast<int>(state.getProperty("currentSlot", 0)));
             for (int i = 0; i < globalParameterCount; ++i)
                 if (state.hasProperty(globalParameters[size_t(i)].key))
-                    setGlobalOutputParameter(static_cast<GlobalP>(i), double(state.getProperty(globalParameters[size_t(i)].key)));
+                {
+                    const auto value=sanitise(globalParameters[size_t(i)],double(state.getProperty(globalParameters[size_t(i)].key)));
+                    hostGlobals[size_t(i)]->storeReal(value);
+                    globalOutputParameters[size_t(i)].store(value);
+                }
             resetOutputEnvelope.store(true, std::memory_order_release);
             markAudioStateDirty();
         }
@@ -2419,16 +2438,16 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 }
 
 lsampler::SliceState LSampler24AudioProcessor::getSliceState(int slot) const {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     return slots[size_t(juce::jlimit(0,slotCount-1,slot))].slice;
 }
 void LSampler24AudioProcessor::setSliceState(int slot,const lsampler::SliceState& state) {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     auto& target=slots[size_t(juce::jlimit(0,slotCount-1,slot))];
     target.slice=state;target.slice.sanitise();markAudioStateDirty();
 }
 lsampler::SliceAudioState LSampler24AudioProcessor::getSliceLayout(int slot,int& absoluteStart,double& rate) const {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     const auto& s=slots[size_t(juce::jlimit(0,slotCount-1,slot))];
     const auto audio=prepareSlotAudioState(s.parameters,s.sample.get(),preparedSampleRate,0,
                                            s.thresholdStartFrame,s.thresholdEndFrame);
@@ -2436,7 +2455,7 @@ lsampler::SliceAudioState LSampler24AudioProcessor::getSliceLayout(int slot,int&
     return prepareSliceAudio(s.slice,audio.length);
 }
 bool LSampler24AudioProcessor::moveSliceBoundary(int slot,int boundary,int direction,int frames) {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     auto& s=slots[size_t(juce::jlimit(0,slotCount-1,slot))];
     if(!s.sample||direction==0)return false;
     const auto audio=prepareSlotAudioState(s.parameters,s.sample.get(),preparedSampleRate,0,
@@ -2465,8 +2484,224 @@ void LSampler24AudioProcessor::requestSlicePreview(int slot,int kind,int item,bo
 
 LSampler24AudioProcessor::VisualSlotState LSampler24AudioProcessor::getVisualSlotState(int slot) const
 {
-    const juce::ScopedLock lock(stateLock);
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     const auto& source = slots[size_t(juce::jlimit(0, slotCount - 1, slot))];
     return { source.sample, source.parameters, source.slice,
              source.thresholdStartFrame, source.thresholdEndFrame, source.slotName };
+}
+
+
+void LSampler24AudioProcessor::createHostParameters()
+{
+    static_assert(std::atomic<double>::is_always_lock_free, "Automation requires lock-free real values");
+    const auto add = [&](const juce::String& id,const juce::String& name,Descriptor d,std::atomic<uint64_t>& revision) {
+        auto* p=new HostParameter(id,name,d,revision,uiRevision);
+        addParameter(p); // AudioProcessor owns this fixed lifetime parameter.
+        return p;
+    };
+    for(int i=0;i<globalParameterCount;++i)
+        hostGlobals[size_t(i)]=add("global_"+juce::String(globalParameters[size_t(i)].key),
+            globalParameters[size_t(i)].name,globalParameters[size_t(i)],globalHostGeneration);
+    for(int slot=0;slot<slotCount;++slot) {
+        auto& h=hostSlots[size_t(slot)];auto& revision=hostGenerations[size_t(slot)];
+        const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
+        const juce::String name="Slot "+juce::String(slot+1)+" - ";
+        for(int i=0;i<parameterCount;++i) if(hostAutomatable(static_cast<P>(i))) {
+            const auto& d=parameters[size_t(i)];juce::String title=d.name;
+            if(i==int(P::input_gain)) title="Volume";
+            if(i==int(P::lp_cutoff)) title="Filter Cutoff";
+            if(i==int(P::lp_resonance)) title="Filter Resonance";
+            h.values[size_t(i)]=add(id+d.key,name+title,d,revision);
+        }
+        for(int lfo=0;lfo<2;++lfo) {
+            auto* rate=h.values[size_t(lfo?P::lfo2_rate:P::lfo1_rate)];
+            auto* sync=h.values[size_t(lfo?P::lfo2_bpm_sync:P::lfo1_bpm_sync)];
+            rate->syncParameter=sync;sync->syncedRate=rate;
+        }
+        for(int j=0;j<loopCount;++j)for(int i=0;i<loopParameterCount;++i) {
+            const auto& d=loopParameters[size_t(i)];
+            h.loops[size_t(j)][size_t(i)]=add(id+"loop"+juce::String(j+1).paddedLeft('0',2)+"_"+d.key,
+                name+"Loop "+juce::String(j+1)+" - "+d.name,d,revision);
+        }
+        for(int i=0;i<int(sliceGlobals.size());++i) {
+            const auto& d=sliceGlobals[size_t(i)];
+            Descriptor converted{d.key,d.name,"Slice",d.step==1?Kind::integer:Kind::continuous,
+                d.initial,d.min,d.max,d.step,d.step,"",d.step==1?0:2,d.labels};
+            h.slice[size_t(i)]=add(id+"slice_"+d.key,name+d.name,converted,revision);
+        }
+        Descriptor variation{"variation_mode","Variation Mode","Sample Set",Kind::enumeration,0,0,3,1,1,"",0,
+            "Off|Round Robin|Random|Random No Repeat"};
+        h.variation=add(id+variation.key,name+variation.name,variation,revision);
+        for(int j=0;j<sampleSetSize;++j) {
+            const auto sampleId=id+"sample"+juce::String(j+1).paddedLeft('0',2)+"_";
+            const auto sampleName=name+"Sample "+juce::String(j+1)+" - ";
+            Descriptor low{"velocity_low","Velocity Low","Sample Set",Kind::integer,1,1,127,1,1,"",0,""};
+            Descriptor high{"velocity_high","Velocity High","Sample Set",Kind::integer,127,1,127,1,1,"",0,""};
+            h.velocityLow[size_t(j)]=add(sampleId+low.key,sampleName+low.name,low,revision);
+            h.velocityHigh[size_t(j)]=add(sampleId+high.key,sampleName+high.name,high,revision);
+            h.controlLow[size_t(j)]=1;h.controlHigh[size_t(j)]=127;
+        }
+    }
+    hostParametersReady=true;
+}
+
+// Control threads only, with stateLock held. Materialise the canonical host
+// values before reads/edits/preset saves. This never notifies the DAW.
+void LSampler24AudioProcessor::absorbHostValuesLocked() const
+{
+    if(!hostParametersReady)return;
+    for(int k=0;k<slotCount;++k) {
+        const auto generation=hostGenerations[size_t(k)].load(std::memory_order_acquire);
+        if(controlHostGenerations[size_t(k)]==generation)continue;
+        controlHostGenerations[size_t(k)]=generation;
+        auto& s=slots[size_t(k)];const auto& h=hostSlots[size_t(k)];
+        const double previousStart=s.parameters[P::sample_start],previousEnd=s.parameters[P::sample_end];
+        for(int i=0;i<parameterCount;++i)if(auto* p=h.values[size_t(i)])
+            s.parameters.values[size_t(i)]=h.control.values[size_t(i)]=p->load();
+        for(int j=0;j<loopCount;++j)for(int i=0;i<loopParameterCount;++i)
+            s.parameters.loops[size_t(j)][size_t(i)]=h.control.loops[size_t(j)][size_t(i)]=h.loops[size_t(j)][size_t(i)]->load();
+        for(int i=0;i<int(sliceGlobals.size());++i) {
+            const auto x=h.slice[size_t(i)]->load();
+            if(i==int(SliceG::division)&&s.slice.globals[size_t(i)]!=x)s.slice.setDivision(int(x));
+            s.slice.globals[size_t(i)]=h.controlSlice.globals[size_t(i)]=x;
+        }
+        if(s.sample&&(previousStart!=s.parameters[P::sample_start]||previousEnd!=s.parameters[P::sample_end])) {
+            const int n=s.sample->audio.getNumSamples();
+            if(n>=2) {
+                s.thresholdStartFrame=std::clamp(int(std::floor(n*s.parameters[P::sample_start]*.01)),0,n-2);
+                s.thresholdEndFrame=std::clamp(int(std::floor(n*s.parameters[P::sample_end]*.01)),s.thresholdStartFrame+1,n);
+            }
+        }
+        s.variationMode=h.controlVariation=int(h.variation->load());
+        for(int j=0;j<sampleSetSize;++j) {
+            s.sampleVelocityLow[size_t(j)]=h.controlLow[size_t(j)]=int(h.velocityLow[size_t(j)]->load());
+            s.sampleVelocityHigh[size_t(j)]=h.controlHigh[size_t(j)]=int(h.velocityHigh[size_t(j)]->load());
+        }
+    }
+}
+
+void LSampler24AudioProcessor::publishHostValuesLocked(bool notify, int forceSlot)
+{
+    if(!hostParametersReady)return;
+    const auto publish=[&](HostParameter* p,double value,double previous,bool force) {
+        if(p && (force || value!=previous)) {
+            p->storeReal(value);
+            if(notify) notifyHostControl(p);
+        }
+    };
+    for(int k=0;k<slotCount;++k) {
+        auto& h=hostSlots[size_t(k)];auto& s=slots[size_t(k)];
+        for(int i=0;i<parameterCount;++i)publish(h.values[size_t(i)],s.parameters.values[size_t(i)],h.control.values[size_t(i)],k==forceSlot);
+        for(int j=0;j<loopCount;++j)for(int i=0;i<loopParameterCount;++i)
+            publish(h.loops[size_t(j)][size_t(i)],s.parameters.loops[size_t(j)][size_t(i)],h.control.loops[size_t(j)][size_t(i)],k==forceSlot);
+        for(int i=0;i<int(sliceGlobals.size());++i)publish(h.slice[size_t(i)],s.slice.globals[size_t(i)],h.controlSlice.globals[size_t(i)],k==forceSlot);
+        publish(h.variation,s.variationMode,h.controlVariation,k==forceSlot);
+        for(int j=0;j<sampleSetSize;++j) {
+            publish(h.velocityLow[size_t(j)],s.sampleVelocityLow[size_t(j)],h.controlLow[size_t(j)],k==forceSlot);
+            publish(h.velocityHigh[size_t(j)],s.sampleVelocityHigh[size_t(j)],h.controlHigh[size_t(j)],k==forceSlot);
+        }
+        h.control=s.parameters;h.controlSlice=s.slice;h.controlVariation=s.variationMode;
+        h.controlLow=s.sampleVelocityLow;h.controlHigh=s.sampleVelocityHigh;
+        if(k==forceSlot)controlHostGenerations[size_t(k)]=~uint64_t(0);
+    }
+    // Read back coupled sanitisation (e.g. synced LFO rate), and concurrent
+    // host writes, before publishing DSP/preset state. Do not leave a mirror
+    // containing the unsanitised input of an otherwise unchanged host value.
+    absorbHostValuesLocked();
+}
+
+void LSampler24AudioProcessor::notifyHostControl(HostParameter* p)
+{
+    if(shuttingDown.load(std::memory_order_acquire))return;
+    if(auto* manager=juce::MessageManager::getInstanceWithoutCreating(); manager&&manager->isThisTheMessageThread()) {
+        p->beginChangeGesture();
+        // Equivalent to setValueNotifyingHost, without converting the original
+        // double value through float and back or recursively invoking setValue.
+        p->sendValueChangedMessageToListeners(p->getValue());
+        p->endChangeGesture();
+    } else {
+        p->notificationPending.store(true,std::memory_order_release);
+        triggerAsyncUpdate();
+    }
+}
+
+void LSampler24AudioProcessor::handleAsyncUpdate()
+{
+    // UI/control writes only schedule this callback. Audio/host callbacks never
+    // post messages. Notify the latest canonical value; a delayed notification
+    // must never replay an old UI value over more recent DAW automation.
+    for(auto* base:getParameters()) {
+        auto* p=static_cast<HostParameter*>(base);
+        if(p->notificationPending.exchange(false,std::memory_order_acq_rel)) {
+            p->beginChangeGesture();
+            p->sendValueChangedMessageToListeners(p->getValue());
+            p->endChangeGesture();
+        }
+    }
+}
+
+void LSampler24AudioProcessor::updateAutomatedAudio(bool snapshotChanged)
+{
+    const auto& base=snapshots[size_t(readerSnapshot)].states;
+    bool changed=snapshotChanged;
+    for(int k=0;k<slotCount;++k) {
+        const auto generation=hostGenerations[size_t(k)].load(std::memory_order_acquire);
+        if(!snapshotChanged && generation==audioHostGenerations[size_t(k)])continue;
+        audioHostGenerations[size_t(k)]=generation;
+        auto& out=automatedAudio[size_t(k)];const auto& original=base[size_t(k)];
+        out=original;auto p=original.params;const auto& h=hostSlots[size_t(k)];
+        for(int i=0;i<parameterCount;++i)if(auto* parameter=h.values[size_t(i)])p.values[size_t(i)]=parameter->load();
+        for(int j=0;j<loopCount;++j)for(int i=0;i<loopParameterCount;++i)
+            p.loops[size_t(j)][size_t(i)]=h.loops[size_t(j)][size_t(i)]->load();
+        // Crossed envelopes have a deterministic safe window; host values remain
+        // independent. Playback always clamps to at least one valid frame.
+        p[P::sample_end]=std::max(p[P::sample_start],p[P::sample_end]);
+        p[P::sample_play_start]=std::clamp(p[P::sample_play_start],p[P::sample_start],p[P::sample_end]);
+        for(int lfo=0;lfo<2;++lfo) {
+            const auto sync=lfo?P::lfo2_bpm_sync:P::lfo1_bpm_sync;
+            const auto rate=lfo?P::lfo2_rate:P::lfo1_rate;
+            if(p[sync]!=0)p[rate]=std::clamp(std::round(p[rate]*8)/8,.125,512.0);
+        }
+        bool parameterChanged=p.values!=original.params.values || p.loops!=original.params.loops;
+        if(parameterChanged) {
+            // Explicit cached bounds avoid calculateThresholdWindow's sample scan.
+            // Automated start/end use raw non-destructive playback boundaries;
+            // other controls keep the threshold-derived window exactly as loaded.
+            const bool windowChanged=p[P::sample_start]!=original.params[P::sample_start]
+                ||p[P::sample_end]!=original.params[P::sample_end];
+            const auto bounds=[&](int j) {
+                const auto& old=original.playback[size_t(j)];auto* sample=original.sampleSet[size_t(j)];
+                std::array<int,2> result {old.start,old.start+old.length};
+                if(windowChanged&&sample&&sample->audio.getNumSamples()>=2) {
+                    const int n=sample->audio.getNumSamples();
+                    result[0]=std::clamp(int(std::floor(n*p[P::sample_start]*.01)),0,n-2);
+                    result[1]=std::clamp(int(std::floor(n*p[P::sample_end]*.01)),result[0]+1,n);
+                }
+                return result;
+            };
+            const auto first=bounds(0);
+            out=prepareSlotAudioState(p,original.sample,preparedSampleRate,0,first[0],first[1]);
+            out.sampleSet=original.sampleSet;
+            for(int j=1;j<sampleSetSize;++j) {
+                const auto b=bounds(j);
+                out.playback[size_t(j)]=prepareSamplePlaybackState(p,original.sampleSet[size_t(j)],preparedSampleRate,b[0],b[1]);
+            }
+            out.slice=original.slice;
+        }
+        auto slice=original.slice.state;bool sliceChanged=false;
+        for(int i=0;i<int(sliceGlobals.size());++i) {
+            const double x=h.slice[size_t(i)]->load();sliceChanged|=slice.globals[size_t(i)]!=x;
+            if(i==int(SliceG::division)&&slice.globals[size_t(i)]!=x)slice.setDivision(int(x));
+            slice.globals[size_t(i)]=x;
+        }
+        if(sliceChanged||out.length!=original.length)out.slice=prepareSliceAudio(slice,out.length);
+        out.variationMode=int(h.variation->load());
+        for(int j=0;j<sampleSetSize;++j) {
+            const int low=int(h.velocityLow[size_t(j)]->load()),high=int(h.velocityHigh[size_t(j)]->load());
+            out.sampleVelocityLow[size_t(j)]=uint8_t(std::min(low,high));
+            out.sampleVelocityHigh[size_t(j)]=uint8_t(std::max(low,high));
+        }
+        out.revision=++audioAutomationRevision;changed=true;
+    }
+    if(changed)voicePool.setStates(&automatedAudio);
 }

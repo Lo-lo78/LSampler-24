@@ -1,0 +1,18 @@
+{
+  "host_parameters": 6629,
+  "duplicate_ids": 0,
+  "vst3_hash_collisions": 0,
+  "changed_files": [
+    "VST3_AUTOMATION_PARAMETERS.md",
+    "VST3_AUTOMATION_MANIFEST.json",
+    "VST3_AUTOMATION_STATIC_AUDIT.json",
+    "Tools/verify-vst3-automation-source.py",
+    "Source/SliceState.h",
+    "Source/HostParameter.h",
+    "Source/PluginProcessor.cpp",
+    "Source/PluginProcessor.h",
+    "Source/SliceEditor.cpp"
+  ],
+  "compiled": false,
+  "runtime_tested": false
+}
