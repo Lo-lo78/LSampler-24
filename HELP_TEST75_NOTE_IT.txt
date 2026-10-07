@@ -1,0 +1,18 @@
+LSampler-24 HELP TEST75 — Help multilingua accessibile
+
+Base: STRETCH_SLICE_TEST74.
+
+- Aggiunto il pulsante "Help  Alt+H" alla pagina principale, nello stesso gruppo di Load/Save.
+- Il pulsante partecipa alla normale navigazione da tastiera e alle protezioni degli action button:
+  Frecce, Home, End, Page Up e Page Down vengono intercettati e non fanno uscire dal plugin.
+- Alt+L, quando il focus è su Help, ritorna allo Slot corrente come per gli altri action button.
+- Alt+H apre direttamente il menu lingua dell'Help.
+- Menu accessibile con titolo UIA "Choose Help language".
+- Lingue: English, Italiano, Español, Português, Français, Русский, 中文, 日本語.
+- Se il menu viene annullato, il focus torna al controllo da cui era stato aperto.
+- La guida HTML è incorporata nel VST3 tramite juce_add_binary_data.
+- Dopo la scelta della lingua viene estratta nella cartella temporanea "LSampler-24 Help" e aperta nel browser predefinito.
+- L'HTML mantiene anche i collegamenti fra tutte le lingue.
+- La guida documenta Slot, action button, browser Load/Save, griglia parametri, Sample Set, Slice Editor e shortcut principali correnti.
+- Nessuna modifica al DSP, alla persistenza dei preset, al Sample Set engine o allo Slice engine.
+- Nessuna compilazione locale eseguita.

@@ -435,6 +435,8 @@ private:
 
     static juce::String midiNoteText(int note);
     bool handleKeyPress(const juce::KeyPress& key, juce::Component* source);
+    void showHelpLanguageMenu();
+    void openHelp(const juce::String& languageCode);
     bool isActionButton(const juce::Component* component) const;
     int slotCellIndex(const juce::Component* component) const;
 
@@ -448,11 +450,13 @@ private:
     juce::TextButton saveSlot { "Save Slot" };
     juce::TextButton loadBank { "Load Bank" };
     juce::TextButton saveBank { "Save Bank" };
+    juce::TextButton help { "Help" };
     juce::Label status;
 
     LSamplerParameterComboBox parameterSelector;
     LSamplerValueSlider parameterValue;
     std::unique_ptr<juce::LookAndFeel_V4> valueLookAndFeel;
+    std::unique_ptr<juce::LookAndFeel_V4> helpMenuLookAndFeel;
 
     std::unique_ptr<juce::FileChooser> chooser;
 

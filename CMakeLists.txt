@@ -17,6 +17,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(JUCE)
 
+
+juce_add_binary_data(LSampler24HelpData
+    SOURCES
+        "Help/LSampler24Help.html"
+)
+
 juce_add_plugin(LSampler24
     COMPANY_NAME "Lo-lo"
     BUNDLE_ID "org.lolo.lsampler24"
@@ -66,6 +72,7 @@ target_compile_definitions(LSampler24 PUBLIC
     JUCE_USE_MP3AUDIOFORMAT=1
 )
 target_link_libraries(LSampler24 PRIVATE
+    LSampler24HelpData
     juce::juce_audio_utils
     juce::juce_cryptography
     juce::juce_recommended_config_flags

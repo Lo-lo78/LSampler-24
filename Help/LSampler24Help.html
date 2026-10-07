@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>LSampler-24 Help</title>
+<style>
+:root{color-scheme:dark;--bg:#20252a;--panel:#0c1713;--accent:#efb46e;--text:#e4e9e9;--muted:#a7b4b9;--green:#a3d6ae}
+body{margin:0;background:var(--bg);color:var(--text);font:18px/1.55 system-ui,sans-serif}
+main{max-width:920px;margin:2rem auto;padding:2rem;background:var(--panel);border:4px solid #49535b}
+h1,h2,h3{color:var(--accent)}a{color:var(--green)}kbd{border:1px solid var(--muted);border-radius:.25rem;padding:.08rem .35rem;background:#2b3239}
+table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding:.55rem;text-align:left;vertical-align:top}
+.languages{display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem}.manual[hidden]{display:none}
+@media(max-width:600px){main{margin:0;padding:1rem;border-width:2px}table{font-size:16px}}
+</style>
+</head>
+<body><main>
+<nav aria-label="Languages" class="languages">
+<a href="#en">English</a><a href="#it">Italiano</a><a href="#es">Español</a><a href="#pt">Português</a><a href="#fr">Français</a><a href="#ru">Русский</a><a href="#zh">中文</a><a href="#ja">日本語</a>
+</nav>
+
+<article class="manual" id="en" lang="en">
+<h1>LSampler-24: accessible guide</h1>
+<p>LSampler-24 is a 24-slot sampler. Each slot can hold a single sample or a Sample Set of up to 16 samples. The main editor, parameter grid, Sample Set editor, browsers and Slice editor are designed for keyboard use and screen readers.</p>
+<h2>Main slot page</h2>
+<p>Arrow keys move through the 24 slots in the 3-by-8 grid. Ctrl+Home and Ctrl+End jump to the first and last slot. Enter opens the selected slot parameters. Alt+Enter opens Properties. Alt+R renames the slot. Alt+C copies, Alt+X cuts and Alt+V pastes a slot. Delete clears the current slot; Alt+Delete clears the bank. Alt+P toggles slot audition mode; when enabled, moving between slots auditions the selected slot with Space assigned to preview rather than the DAW.</p>
+<p>The action buttons are Load Sample, Load Slot, Save Slot, Load Bank, Save Bank and Help. Tab/Shift+Tab move between focusable controls. Arrow, Home, End, Page Up and Page Down are consumed while a main action button has focus, so they do not escape from the plug-in. Alt+L returns from an action button to the current slot. Alt+H opens the Help language menu.</p>
+<h2>Loading, saving and library</h2>
+<p>Alt+O opens the sample import browser. Alt+S opens the Slot library. Alt+Shift+S saves the current Slot. Alt+B opens the Bank library and Alt+Shift+B saves a Bank. Browser navigation supports the keyboard and preview facilities exposed by the current browser. Escape closes a browser without applying an unwanted selection.</p>
+<h2>Parameter grid</h2>
+<p>Enter on a non-empty slot opens its parameter grid. Arrow keys navigate the grid. Alt+Shift+Left/Right changes parameter category/page. Alt+Up/Down changes the value; Alt+Page Up/Down changes it by the coarse step; Alt+Left/Right chooses the step width; Alt+Home/End goes to the parameter maximum/minimum. Alt+V moves to Value editing. Enter in the manual value editor commits and returns to the grid. Escape leaves the parameter editor and returns to the slot page. Ctrl+Left/Right scrubs Sample Play Start. Alt+L toggles the main loop through Main Playback Mode. Alt+G opens/closes Global parameters. Alt+P switches the grid between sample preview and DAW Space behaviour.</p>
+<h2>Sample Set</h2>
+<p>Alt+M opens the Sample Set editor for the current slot. A slot may contain up to 16 samples. Tab/Shift+Tab switch between the sample list and the Sample Set parameter grid. In the sample list, Up/Down select the sample, Enter loads/replaces it, Delete removes it and Space auditions it. In the parameter grid, Up/Down move between parameters, Left/Right move between columns, Alt+Up/Down edit values, Alt+Page Up/Down make coarse changes, Alt+Left/Right select the global edit step, and Enter or Alt+V switches between Grid and Value. Current parameters include Velocity Low, Velocity High and Variation Mode; variation choices include Off, Round Robin, Random and Random No Repeat.</p>
+<h2>Slice editor</h2>
+<p>Alt+E opens Slice Edit for the current sample. F1 selects Global Slice Settings; F2/F3 select Sequencer or Boundaries when Slice Mode permits them. Tab moves through available pages. The arrow keys, Home and End navigate the active page. Alt+Up/Down edits the current value, Alt+Page Up/Down makes coarse changes, Alt+Left/Right changes the edit step and Alt+Home/End selects maximum/minimum. Enter allows typed values. Space toggles normal preview; when preview is off, slice and step navigation can auto-audition. Escape closes the Slice editor. Stretch Amount and Stretch Frequency use overlap-add smoothing inside the current slice and respect Reverse.</p>
+<h2>Help</h2>
+<p>Press Alt+H or activate the Help button. Choose a language from the accessible menu titled “Choose Help language”. The guide is embedded in the plug-in, written to a temporary HTML file and opened in the default browser. The language links at the top of this page can switch language again.</p>
+</article>
+
+<article class="manual" id="it" lang="it">
+<h1>LSampler-24: guida accessibile</h1>
+<p>LSampler-24 è un campionatore a 24 Slot. Ogni Slot può contenere un singolo campione oppure un Sample Set fino a 16 campioni. Editor principale, griglia parametri, Sample Set, browser e Slice Editor sono pensati per tastiera e screen reader.</p>
+<h2>Pagina principale degli Slot</h2>
+<p>Le frecce si muovono tra i 24 Slot nella griglia 3 per 8. Ctrl+Home e Ctrl+End vanno al primo e all’ultimo Slot. Invio apre i parametri dello Slot selezionato. Alt+Invio apre Properties. Alt+R rinomina lo Slot. Alt+C copia, Alt+X taglia e Alt+V incolla uno Slot. Delete cancella lo Slot corrente; Alt+Delete cancella il banco. Alt+P attiva o disattiva l’ascolto degli Slot: quando è attivo, spostarsi tra gli Slot ascolta quello selezionato e Spazio viene usato per l’anteprima invece che dalla DAW.</p>
+<p>I pulsanti principali sono Load Sample, Load Slot, Save Slot, Load Bank, Save Bank e Help. Tab/Shift+Tab spostano il focus tra i controlli. Quando il focus è su uno di questi pulsanti, Frecce, Home, End, Page Up e Page Down vengono intercettati e non fanno uscire dal plugin. Alt+L ritorna dal pulsante allo Slot corrente. Alt+H apre il menu delle lingue dell’Help.</p>
+<h2>Caricamento, salvataggio e Library</h2>
+<p>Alt+O apre il browser di importazione campioni. Alt+S apre la Library degli Slot. Alt+Shift+S salva lo Slot corrente. Alt+B apre la Library dei Bank e Alt+Shift+B salva un Bank. I browser mantengono la navigazione da tastiera e le funzioni di anteprima previste. Escape chiude il browser senza applicare una selezione indesiderata.</p>
+<h2>Griglia parametri</h2>
+<p>Invio su uno Slot non vuoto apre la griglia dei parametri. Le frecce navigano la griglia. Alt+Shift+Freccia Sinistra/Destra cambia categoria/pagina. Alt+Su/Giù modifica il valore; Alt+Page Up/Down usa il passo grossolano; Alt+Sinistra/Destra sceglie lo Step; Alt+Home/End va al massimo/minimo del parametro. Alt+V passa a Value. Invio nell’editor manuale conferma e torna alla griglia. Escape esce dai parametri e ritorna agli Slot. Ctrl+Sinistra/Destra effettua lo scrub di Sample Play Start. Alt+L attiva/disattiva il loop principale tramite Main Playback Mode. Alt+G apre/chiude i parametri Global. Alt+P alterna nella griglia l’anteprima del campione e lo Spazio della DAW.</p>
+<h2>Sample Set</h2>
+<p>Alt+M apre il Sample Set dello Slot corrente. Uno Slot può contenere fino a 16 campioni. Tab/Shift+Tab alternano tra elenco Sample e griglia parametri Sample Set. Nell’elenco, Su/Giù sceglie il campione, Invio lo carica o sostituisce, Delete lo rimuove e Spazio lo ascolta. Nella griglia, Su/Giù naviga i parametri, Sinistra/Destra cambia colonna, Alt+Su/Giù modifica i valori, Alt+Page Up/Down fa variazioni grossolane, Alt+Sinistra/Destra seleziona il passo globale ed Invio o Alt+V alterna Grid e Value. I parametri comprendono Velocity Low, Velocity High e Variation Mode; le modalità sono Off, Round Robin, Random e Random No Repeat.</p>
+<h2>Slice Editor</h2>
+<p>Alt+E apre Slice Edit sul campione corrente. F1 seleziona Global Slice Settings; F2/F3 selezionano Sequencer o Boundaries quando Slice Mode lo permette. Tab passa tra le pagine disponibili. Frecce, Home ed End navigano la pagina attiva. Alt+Su/Giù modifica il valore, Alt+Page Up/Down usa variazioni grossolane, Alt+Sinistra/Destra cambia il passo e Alt+Home/End imposta massimo/minimo. Invio permette di digitare il valore. Spazio attiva/disattiva l’anteprima normale; quando è disattivata, la navigazione di slice e step può produrre auto-audition. Escape chiude lo Slice Editor. Stretch Amount e Stretch Frequency usano una sovrapposizione con crossfade confinata alla slice corrente e rispettano Reverse.</p>
+<h2>Help</h2>
+<p>Premi Alt+H oppure attiva il pulsante Help. Scegli la lingua dal menu accessibile intitolato “Choose Help language”. La guida è incorporata nel plugin, viene scritta come HTML temporaneo e aperta nel browser predefinito. I collegamenti in cima alla pagina permettono di cambiare nuovamente lingua.</p>
+</article>
+
+<article class="manual" id="es" lang="es">
+<h1>LSampler-24: guía accesible</h1>
+<p>LSampler-24 es un sampler de 24 ranuras. Cada ranura puede contener una muestra o un Sample Set de hasta 16 muestras. La interfaz principal, la rejilla de parámetros, Sample Set, los navegadores y Slice Editor están pensados para teclado y lectores de pantalla.</p>
+<h2>Página principal</h2><p>Las flechas recorren las 24 ranuras. Ctrl+Home/Ctrl+End van a la primera/última. Enter abre parámetros; Alt+Enter abre Properties. Alt+R renombra. Alt+C copia, Alt+X corta y Alt+V pega. Delete borra la ranura; Alt+Delete borra el banco. Alt+P conmuta la audición de ranuras.</p>
+<p>Los botones son Load Sample, Load Slot, Save Slot, Load Bank, Save Bank y Help. Tab/Shift+Tab cambia el foco. Con un botón enfocado, Flechas, Home, End, Page Up y Page Down no salen del plugin. Alt+L vuelve a la ranura actual. Alt+H abre el menú de idiomas.</p>
+<h2>Parámetros</h2><p>Enter abre la rejilla. Flechas navegan; Alt+Shift+Izquierda/Derecha cambia de categoría; Alt+Arriba/Abajo cambia el valor; Alt+Page Up/Down hace cambios grandes; Alt+Izquierda/Derecha selecciona el paso; Alt+Home/End lleva al máximo/mínimo. Alt+V abre Value. Escape vuelve a las ranuras. Ctrl+Izquierda/Derecha mueve Sample Play Start. Alt+L conmuta el bucle principal. Alt+G abre Global.</p>
+<h2>Sample Set y Slice</h2><p>Alt+M abre Sample Set, con hasta 16 muestras por ranura. Tab alterna lista y rejilla; Enter carga, Delete elimina y Space preescucha. Alt+E abre Slice Edit. F1/F2/F3 seleccionan sus páginas disponibles; Tab cambia de página, Alt+flechas editan y Space controla la preescucha. Escape cierra el editor.</p>
+<h2>Help</h2><p>Alt+H o el botón Help abre “Choose Help language”. La guía integrada se abre como HTML en el navegador predeterminado.</p>
+</article>
+
+<article class="manual" id="pt" lang="pt">
+<h1>LSampler-24: guia acessível</h1>
+<p>LSampler-24 é um sampler de 24 slots. Cada slot pode conter uma amostra ou um Sample Set com até 16 amostras. A interface foi concebida para teclado e leitores de ecrã.</p>
+<h2>Página principal</h2><p>As setas percorrem os 24 slots. Ctrl+Home/Ctrl+End vão ao primeiro/último. Enter abre os parâmetros; Alt+Enter abre Properties. Alt+R renomeia. Alt+C copia, Alt+X corta e Alt+V cola. Delete limpa o slot; Alt+Delete limpa o banco. Alt+P alterna a audição dos slots.</p>
+<p>Os botões são Load Sample, Load Slot, Save Slot, Load Bank, Save Bank e Help. Tab/Shift+Tab muda o foco. Com um botão focado, Setas, Home, End, Page Up e Page Down não saem do plugin. Alt+L regressa ao slot atual. Alt+H abre o menu de idiomas.</p>
+<h2>Parâmetros</h2><p>Enter abre a grelha. Setas navegam; Alt+Shift+Esquerda/Direita muda de categoria; Alt+Cima/Baixo altera o valor; Alt+Page Up/Down faz alterações grandes; Alt+Esquerda/Direita escolhe o passo; Alt+Home/End vai ao máximo/mínimo. Alt+V abre Value. Escape regressa aos slots. Ctrl+Esquerda/Direita move Sample Play Start. Alt+L alterna o loop principal. Alt+G abre Global.</p>
+<h2>Sample Set e Slice</h2><p>Alt+M abre Sample Set, com até 16 amostras por slot. Tab alterna entre lista e grelha; Enter carrega, Delete remove e Space pré-escuta. Alt+E abre Slice Edit. F1/F2/F3 selecionam as páginas disponíveis; Tab muda de página, Alt+setas editam e Space controla a pré-escuta. Escape fecha o editor.</p>
+<h2>Help</h2><p>Alt+H ou o botão Help abre “Choose Help language”. O guia integrado é aberto como HTML no navegador predefinido.</p>
+</article>
+
+<article class="manual" id="fr" lang="fr">
+<h1>LSampler-24 : guide accessible</h1>
+<p>LSampler-24 est un sampler à 24 slots. Chaque slot peut contenir un échantillon ou un Sample Set de 16 échantillons maximum. L’interface est conçue pour le clavier et les lecteurs d’écran.</p>
+<h2>Page principale</h2><p>Les flèches parcourent les 24 slots. Ctrl+Home/Ctrl+End vont au premier/dernier. Entrée ouvre les paramètres ; Alt+Entrée ouvre Properties. Alt+R renomme. Alt+C copie, Alt+X coupe et Alt+V colle. Delete efface le slot ; Alt+Delete efface la banque. Alt+P commute l’écoute des slots.</p>
+<p>Les boutons sont Load Sample, Load Slot, Save Slot, Load Bank, Save Bank et Help. Tab/Shift+Tab déplace le focus. Sur un bouton, Flèches, Home, End, Page Up et Page Down restent dans le plug-in. Alt+L revient au slot courant. Alt+H ouvre le menu des langues.</p>
+<h2>Paramètres</h2><p>Entrée ouvre la grille. Les flèches naviguent ; Alt+Shift+Gauche/Droite change de catégorie ; Alt+Haut/Bas modifie la valeur ; Alt+Page Up/Down effectue un grand pas ; Alt+Gauche/Droite choisit le pas ; Alt+Home/End va au maximum/minimum. Alt+V ouvre Value. Escape revient aux slots. Ctrl+Gauche/Droite déplace Sample Play Start. Alt+L commute la boucle principale. Alt+G ouvre Global.</p>
+<h2>Sample Set et Slice</h2><p>Alt+M ouvre Sample Set, avec jusqu’à 16 échantillons par slot. Tab alterne liste et grille ; Entrée charge, Delete retire et Space préécoute. Alt+E ouvre Slice Edit. F1/F2/F3 choisissent les pages disponibles ; Tab change de page, Alt+flèches édite et Space contrôle la préécoute. Escape ferme l’éditeur.</p>
+<h2>Help</h2><p>Alt+H ou le bouton Help ouvre “Choose Help language”. Le guide intégré s’ouvre en HTML dans le navigateur par défaut.</p>
+</article>
+
+<article class="manual" id="ru" lang="ru">
+<h1>LSampler-24: доступное руководство</h1>
+<p>LSampler-24 — сэмплер на 24 слота. В каждом слоте может быть один сэмпл или Sample Set до 16 сэмплов. Интерфейс рассчитан на клавиатуру и программы экранного доступа.</p>
+<h2>Главная страница</h2><p>Стрелки перемещаются по 24 слотам. Ctrl+Home/Ctrl+End переходят к первому/последнему. Enter открывает параметры; Alt+Enter — Properties. Alt+R переименовывает. Alt+C копирует, Alt+X вырезает, Alt+V вставляет. Delete очищает слот; Alt+Delete очищает банк. Alt+P переключает прослушивание слотов.</p>
+<p>Кнопки: Load Sample, Load Slot, Save Slot, Load Bank, Save Bank и Help. Tab/Shift+Tab перемещают фокус. Когда кнопка в фокусе, стрелки, Home, End, Page Up и Page Down не выводят фокус из плагина. Alt+L возвращает к текущему слоту. Alt+H открывает меню языков.</p>
+<h2>Параметры</h2><p>Enter открывает сетку. Стрелки перемещаются; Alt+Shift+Влево/Вправо меняет категорию; Alt+Вверх/Вниз меняет значение; Alt+Page Up/Down делает крупное изменение; Alt+Влево/Вправо выбирает шаг; Alt+Home/End задаёт максимум/минимум. Alt+V открывает Value. Escape возвращает к слотам. Ctrl+Влево/Вправо перемещает Sample Play Start. Alt+L переключает основной цикл. Alt+G открывает Global.</p>
+<h2>Sample Set и Slice</h2><p>Alt+M открывает Sample Set, до 16 сэмплов на слот. Tab переключает список и сетку; Enter загружает, Delete удаляет, Space прослушивает. Alt+E открывает Slice Edit. F1/F2/F3 выбирают доступные страницы; Tab меняет страницу, Alt+стрелки редактируют, Space управляет прослушиванием. Escape закрывает редактор.</p>
+<h2>Help</h2><p>Alt+H или кнопка Help открывает “Choose Help language”. Встроенное руководство открывается как HTML в браузере по умолчанию.</p>
+</article>
+
+<article class="manual" id="zh" lang="zh">
+<h1>LSampler-24：无障碍指南</h1>
+<p>LSampler-24 是一个 24 槽采样器。每个槽可包含一个采样，或最多 16 个采样的 Sample Set。主界面、参数网格、浏览器和 Slice Editor 均面向键盘与屏幕阅读器操作。</p>
+<h2>主槽页面</h2><p>方向键在 24 个槽之间移动。Ctrl+Home/Ctrl+End 到第一个/最后一个槽。Enter 打开参数，Alt+Enter 打开 Properties。Alt+R 重命名；Alt+C 复制、Alt+X 剪切、Alt+V 粘贴。Delete 清除当前槽，Alt+Delete 清除整个 Bank。Alt+P 切换槽试听。</p>
+<p>主要按钮为 Load Sample、Load Slot、Save Slot、Load Bank、Save Bank 和 Help。Tab/Shift+Tab 移动焦点。按钮获得焦点时，方向键、Home、End、Page Up、Page Down 会被插件拦截，不会把焦点带出插件。Alt+L 返回当前槽，Alt+H 打开帮助语言菜单。</p>
+<h2>参数</h2><p>Enter 打开参数网格。方向键导航；Alt+Shift+左/右切换分类；Alt+上/下调整数值；Alt+Page Up/Down 粗调；Alt+左/右选择步长；Alt+Home/End 到最大/最小。Alt+V 打开 Value。Escape 返回槽页面。Ctrl+左/右移动 Sample Play Start。Alt+L 切换主循环，Alt+G 打开 Global。</p>
+<h2>Sample Set 与 Slice</h2><p>Alt+M 打开 Sample Set，每槽最多 16 个采样。Tab 在列表和网格之间切换；Enter 加载，Delete 删除，Space 试听。Alt+E 打开 Slice Edit。F1/F2/F3 选择可用页面；Tab 切换页面，Alt+方向键编辑，Space 控制试听。Escape 关闭编辑器。</p>
+<h2>Help</h2><p>Alt+H 或 Help 按钮会打开 “Choose Help language”。内置指南会作为 HTML 在默认浏览器中打开。</p>
+</article>
+
+<article class="manual" id="ja" lang="ja">
+<h1>LSampler-24：アクセシブルガイド</h1>
+<p>LSampler-24 は24スロットのサンプラーです。各スロットには1つのサンプル、または最大16サンプルの Sample Set を入れられます。メイン画面、パラメーターグリッド、ブラウザー、Slice Editor はキーボードとスクリーンリーダー向けに設計されています。</p>
+<h2>メインスロットページ</h2><p>矢印キーで24スロットを移動します。Ctrl+Home/Ctrl+End は最初/最後のスロットへ移動します。Enter はパラメーター、Alt+Enter は Properties を開きます。Alt+R は名前変更、Alt+C はコピー、Alt+X はカット、Alt+V は貼り付けです。Delete は現在のスロット、Alt+Delete はバンクを消去します。Alt+P はスロット試聴を切り替えます。</p>
+<p>主なボタンは Load Sample、Load Slot、Save Slot、Load Bank、Save Bank、Help です。Tab/Shift+Tab でフォーカスを移動します。ボタンにフォーカスがある間、矢印、Home、End、Page Up、Page Down はプラグイン内で消費され、外へ抜けません。Alt+L は現在のスロットへ戻り、Alt+H はヘルプ言語メニューを開きます。</p>
+<h2>パラメーター</h2><p>Enter でグリッドを開きます。矢印で移動、Alt+Shift+左/右でカテゴリ変更、Alt+上/下で値変更、Alt+Page Up/Down で粗い変更、Alt+左/右でステップ幅選択、Alt+Home/End で最大/最小へ移動します。Alt+V は Value、Escape はスロット画面へ戻ります。Ctrl+左/右は Sample Play Start を移動します。Alt+L はメインループ、Alt+G は Global を切り替えます。</p>
+<h2>Sample Set と Slice</h2><p>Alt+M で Sample Set を開き、1スロット最大16サンプルを扱えます。Tab はリストとグリッドを切り替え、Enter は読み込み、Delete は削除、Space は試聴です。Alt+E は Slice Edit を開きます。F1/F2/F3 で利用可能なページを選び、Tab でページ移動、Alt+矢印で編集、Space で試聴します。Escape で閉じます。</p>
+<h2>Help</h2><p>Alt+H または Help ボタンで “Choose Help language” を開きます。内蔵ガイドは HTML として既定ブラウザーで開きます。</p>
+</article>
+
+<noscript><p>Select a language using the links at the top. Seleziona una lingua con i collegamenti in alto.</p></noscript>
+</main>
+<script>
+const supported=['en','it','es','pt','fr','ru','zh','ja'];
+function showLanguage(){const id=supported.includes(location.hash.slice(1))?location.hash.slice(1):'en';document.querySelectorAll('.manual').forEach(x=>x.hidden=x.id!==id);document.documentElement.lang=document.getElementById(id).lang;const title=document.getElementById(id).querySelector('h1');title.tabIndex=-1;title.focus();}
+addEventListener('hashchange',showLanguage);showLanguage();
+</script>
+</body></html>
