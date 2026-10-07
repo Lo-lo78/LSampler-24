@@ -1,0 +1,10 @@
+LSampler-24 HELP TEST76
+
+Correzione compilazione della guida introdotta in TEST75.
+
+- Aggiunto #include <BinaryData.h> a Source/PluginEditor.cpp.
+- Il target CMake LSampler24HelpData era già generato e collegato correttamente.
+- Nessuna modifica alla logica Help, alle lingue, al DSP o alla navigazione.
+- Corregge gli errori MSVC C2653/C3861 su BinaryData::getNamedResource e gli errori successivi derivati.
+
+Non compilato localmente.

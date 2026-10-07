@@ -2,6 +2,7 @@
 #include <limits>
 #include <algorithm>
 #include "ScreenReaderAnnouncer.h"
+#include <BinaryData.h>
 #include <cmath>
 #include <utility>
 #include <cstring>
