@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "HostSlicePreparation.h"
 #include <cmath>
 #include <set>
 #include <juce_cryptography/juce_cryptography.h>
@@ -2694,7 +2695,7 @@ void LSampler24AudioProcessor::updateAutomatedAudio(bool snapshotChanged)
             if(i==int(SliceG::division)&&slice.globals[size_t(i)]!=x)slice.setDivision(int(x));
             slice.globals[size_t(i)]=x;
         }
-        if(sliceChanged||out.length!=original.length)out.slice=prepareSliceAudio(slice,out.length);
+        if(sliceChanged||out.length!=original.length)out.slice=prepareAutomatedSliceAudio(slice,out.length);
         out.variationMode=int(h.variation->load());
         for(int j=0;j<sampleSetSize;++j) {
             const int low=int(h.velocityLow[size_t(j)]->load()),high=int(h.velocityHigh[size_t(j)]->load());

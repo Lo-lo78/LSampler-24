@@ -7,12 +7,15 @@
     "VST3_AUTOMATION_MANIFEST.json",
     "VST3_AUTOMATION_STATIC_AUDIT.json",
     "Tools/verify-vst3-automation-source.py",
-    "Source/SliceState.h",
+    "Source/HostSlicePreparation.h",
     "Source/HostParameter.h",
     "Source/PluginProcessor.cpp",
     "Source/PluginProcessor.h",
     "Source/SliceEditor.cpp"
   ],
   "compiled": false,
-  "runtime_tested": false
+  "runtime_tested": false,
+  "frozen_test59_reference": "PASS",
+  "automation_source_audit": "PASS",
+  "test_version": 79
 }

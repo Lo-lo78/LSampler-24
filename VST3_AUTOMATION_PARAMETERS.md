@@ -1,4 +1,4 @@
-# LSampler-24 VST3 automation contract (TEST78)
+# LSampler-24 VST3 automation contract (TEST79)
 
 Source-only implementation; no configure, compile, binary generation or runtime audio tests were performed.
 
@@ -14,7 +14,7 @@ Names differ from the internal UI where useful: input_gain = Volume; lp_cutoff =
 
 HostParameter holds the canonical real value in a lock-free atomic double. Host setValue only sanitises/publishes atomics and revision counters. It does not acquire stateLock, post messages, notify the host, touch samples, scan audio or call editor code. UI/state reads materialise changed host values under the existing control lock. UI setters use the existing paths; the publisher detects actual control changes against a mirror and notifies the host with beginChangeGesture / sendValueChangedMessageToListeners / endChangeGesture. This is the notification portion of setValueNotifyingHost without a lossy double→normalised float→double writeback. Message-thread controls notify immediately; worker changes use AsyncUpdater. Automation never schedules this updater. Deferred notifications read the latest canonical value and cannot replay an older UI edit over DAW automation.
 
-The audio thread checks 24 generation counters per block. Only changed Slots rebuild bounded scalar coefficients/loop settings and (when needed) Slice metadata in preallocated storage. Existing prepare functions and voice update logic are reused. Samples remain owned by the existing triple-buffer snapshots and retirement scheme; no audio-thread ownership/allocation/file operations are added. Changes are block-granular under the existing JUCE processBlock interface, not claimed sample-accurate. No new smoothing or DSP algorithms were added. Dense simultaneous automation requires later CPU testing.
+The audio thread checks 24 generation counters per block. HostSlicePreparation.h prepares already-sanitised Slice metadata without allocating JUCE Strings; frozen TEST59 shared sources remain byte-identical. Only changed Slots rebuild bounded scalar coefficients/loop settings and (when needed) Slice metadata in preallocated storage. Existing prepare functions and voice update logic are reused. Samples remain owned by the existing triple-buffer snapshots and retirement scheme; no audio-thread ownership/allocation/file operations are added. Changes are block-granular under the existing JUCE processBlock interface, not claimed sample-accurate. No new smoothing or DSP algorithms were added. Dense simultaneous automation requires later CPU testing.
 
 ## Position and sync semantics
 
