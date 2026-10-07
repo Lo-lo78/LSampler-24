@@ -75,7 +75,7 @@ void SliceEditor::refreshVisuals() {
 void SliceEditor::paint(juce::Graphics& g) {
     g.fillAll(rackgui::chassis);rackgui::caption(g,{20,14,getWidth()-40,32},"LSampler-24 / SLICE EDIT");
     g.setColour(rackgui::muted);g.setFont(14.0f);
-    g.drawFittedText("F1: Global | F2/F3: Sequencer/Boundaries when Slice Mode = Sequencer | Tab: available pages | Arrows/Home/End: navigate (page 1: 8-row grid) | Alt+Up/Down: value | Alt+PgUp/PgDn: coarse value\nAlt+Left/Right: value step | Alt+Home/End: max/min | Enter: type value\nSpace: normal preview On/Off; when Off, slice/step navigation and edits auto-audition | F4: help | Escape: close",20,getHeight()-76,getWidth()-40,64,juce::Justification::centredLeft,4);
+    g.drawFittedText("F1: Global | F2/F3: Sequencer/Boundaries when Slice Mode = Sequencer | Tab: available pages | Arrows/Home/End: navigate (page 1: 8-row grid) | Alt+Up/Down: value | Alt+PgUp/PgDn: coarse value\nAlt+Left/Right: value step | Alt+Home/End: max/min | Enter: type value\nSpace: normal preview On/Off; F1 parameter edits stay silent; when Off, F2/F3 slice/step navigation and edits auto-audition | F4: help | Escape: close",20,getHeight()-76,getWidth()-40,64,juce::Justification::centredLeft,4);
 }
 void SliceEditor::resized(){
     waveform.setBounds(20,58,getWidth()-40,260);
@@ -88,6 +88,12 @@ void SliceEditor::pushUndo() {
 }
 void SliceEditor::commit(SliceState& state) {processor.setSliceState(slot,state);auditionEdit();speak();}
 void SliceEditor::auditionEdit() {
+    // F1 / Global Slice Settings is intentionally silent while editing.
+    // Manual preview with Space remains available, but changing global slice
+    // parameters must not retrigger the sample. F2/F3 keep their existing
+    // automatic slice/step audition behaviour.
+    if(page==Page::globals)return;
+
     const int kind=processor.getSlicePreviewKind();
     // Match the final Lua/JSFX F6 behaviour: a running Space preview has
     // priority.  When no full preview is running, navigation and edits give
@@ -242,7 +248,7 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
     const auto c=juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
     if(code==juce::KeyPress::escapeKey) {processor.stopSlicePreview();if(onClose)onClose();return true;}
     if(code==juce::KeyPress::F4Key) {
-        announceToActiveScreenReader(*this,"Slice Edit. F1 opens Global Slice Settings. F2 and F3 open Slice Sequencer and Boundaries only when Slice Mode is Sequencer. Tab cycles the available pages. Plain arrows, Home and End navigate. Global Slice Settings uses an 8-row grid: Up/Down moves within a column and Left/Right changes column. On parameter pages a letter, number or punctuation character searches forward by parameter initial; Shift plus the same character searches backward. Alt Up and Alt Down change the current value. Alt Page Up and Alt Page Down change it coarsely. Alt Left and Alt Right select the value step. Alt Home sets maximum and Alt End sets minimum. Enter types a value. Z toggles boundary Zero Crossing. Space toggles the normal slot preview. While Space preview is off, moving between slices or steps and editing them automatically auditions the current slice or programmed step with its current parameters. Shift Up Down selects a step range. Shift Space toggles selection. Ctrl Delete clears selection. Ctrl C V copies and pastes steps. Ctrl Z Y undo and redo. Backspace resets current parameter. Escape closes and stops preview.");return true;
+        announceToActiveScreenReader(*this,"Slice Edit. F1 opens Global Slice Settings. F2 and F3 open Slice Sequencer and Boundaries only when Slice Mode is Sequencer. Tab cycles the available pages. Plain arrows, Home and End navigate. Global Slice Settings uses an 8-row grid: Up/Down moves within a column and Left/Right changes column. On parameter pages a letter, number or punctuation character searches forward by parameter initial; Shift plus the same character searches backward. Alt Up and Alt Down change the current value. Alt Page Up and Alt Page Down change it coarsely. Alt Left and Alt Right select the value step. Alt Home sets maximum and Alt End sets minimum. Enter types a value. Z toggles boundary Zero Crossing. Space toggles the normal slot preview. F1 Global Slice Settings stays silent while parameters are edited. While Space preview is off, F2 and F3 moving between slices or steps and editing them automatically auditions the current slice or programmed step with its current parameters. Shift Up Down selects a step range. Shift Space toggles selection. Ctrl Delete clears selection. Ctrl C V copies and pastes steps. Ctrl Z Y undo and redo. Backspace resets current parameter. Escape closes and stops preview.");return true;
     }
     if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isShiftDown()&&!mods.isCommandDown()) {
         if(code==juce::KeyPress::F1Key){setPage(Page::globals);return true;}
