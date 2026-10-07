@@ -1,0 +1,10 @@
+LSampler-24 ABOUT TEST77
+
+- Aggiunto pulsante About con shortcut Alt+A, seguendo l'implementazione accessibile di LJuno-116.
+- Versione mostrata: 0.99.1.
+- About modale con testo navigabile, Project, Contact e Close.
+- Esc e Alt+C chiudono About; Tab/Shift+Tab ciclano solo fra i controlli About.
+- Frecce, Home/End, PageUp/PageDown restano nel testo About e non raggiungono REAPER.
+- Il focus torna al controllo precedente alla chiusura.
+- Nessuna modifica DSP.
+- Sorgente non compilato localmente.

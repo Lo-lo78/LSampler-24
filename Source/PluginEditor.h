@@ -280,6 +280,27 @@ public:
     juce::StringArray sampleLines, configLines;
 };
 
+class LSamplerAboutTextEditor final : public juce::TextEditor
+{
+public:
+    using KeyHandler = std::function<bool(const juce::KeyPress&)>;
+
+    explicit LSamplerAboutTextEditor(const juce::String& name)
+        : juce::TextEditor(name) {}
+
+    void setKeyHandler(KeyHandler handlerToUse) { keyHandler = std::move(handlerToUse); }
+
+    bool keyPressed(const juce::KeyPress& key) override
+    {
+        if (keyHandler && keyHandler(key))
+            return true;
+        return juce::TextEditor::keyPressed(key);
+    }
+
+private:
+    KeyHandler keyHandler;
+};
+
 class LSampler24AudioProcessorEditor : public juce::AudioProcessorEditor,
                                        private juce::Timer,
                                        private juce::KeyListener
@@ -437,6 +458,12 @@ private:
     bool handleKeyPress(const juce::KeyPress& key, juce::Component* source);
     void showHelpLanguageMenu();
     void openHelp(const juce::String& languageCode);
+    void openAbout();
+    void closeAbout();
+    void openProjectPage();
+    void openContactEmail();
+    bool navigateAboutText(const juce::KeyPress& key);
+    void setMainControlsEnabled(bool enabled);
     bool isActionButton(const juce::Component* component) const;
     int slotCellIndex(const juce::Component* component) const;
 
@@ -451,6 +478,13 @@ private:
     juce::TextButton loadBank { "Load Bank" };
     juce::TextButton saveBank { "Save Bank" };
     juce::TextButton help { "Help" };
+    juce::TextButton aboutButton { "About" };
+    LSamplerAboutTextEditor aboutInfo { "About LSampler-24" };
+    juce::TextButton aboutProject { "Project" };
+    juce::TextButton aboutContact { "Contact" };
+    juce::TextButton aboutClose { "Close" };
+    bool aboutOpen = false;
+    juce::Component::SafePointer<juce::Component> aboutReturnFocus;
     juce::Label status;
 
     LSamplerParameterComboBox parameterSelector;

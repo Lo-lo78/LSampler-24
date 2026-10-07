@@ -12,6 +12,10 @@ namespace
 {
 constexpr std::array<int, 5> stepWidths { 1, 5, 10, 15, 20 };
 constexpr int valuePageStep = 40;
+constexpr auto lsamplerVersion = "0.99.1";
+constexpr auto lsamplerReleaseDate = "7 October 2026";
+constexpr auto lsamplerProjectUrl = "https://github.com/Lo-lo78/LSampler-24";
+constexpr auto lsamplerContactEmail = "vmanolo301@gmail.com";
 
 using ValueEditorShortcut = std::function<bool(const juce::KeyPress&, juce::Component*)>;
 
@@ -162,6 +166,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     addButton(loadBank, 5);
     addButton(saveBank, 6);
     addButton(help, 7);
+    addButton(aboutButton, 8);
     // Show keyboard equivalents directly on the mouse buttons so sighted users
     // discover the accessible workflow while exploring the interface.
     loadSample.setButtonText("Load Sample  Alt+O");
@@ -171,6 +176,63 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     saveBank.setButtonText("Save Bank  Alt+Shift+B");
     help.setButtonText("Help  Alt+H");
     help.onClick = [this] { showHelpLanguageMenu(); };
+    aboutButton.setButtonText("About  Alt+A");
+    aboutButton.setDescription("Alt+A");
+    aboutButton.onClick = [this] { openAbout(); };
+
+    const auto aboutText = juce::String("LSampler-24\nVersion: ") + lsamplerVersion
+        + "\nRelease date: " + lsamplerReleaseDate
+        + "\nProject: " + lsamplerProjectUrl
+        + "\nContact: " + lsamplerContactEmail;
+    aboutInfo.setTitle("About LSampler-24");
+    aboutInfo.setMultiLine(true, true);
+    aboutInfo.setReturnKeyStartsNewLine(false);
+    aboutInfo.setReadOnly(true);
+    aboutInfo.setScrollbarsShown(true);
+    aboutInfo.setCaretVisible(true);
+    aboutInfo.setPopupMenuEnabled(false);
+    aboutInfo.setTabKeyUsedAsCharacter(false);
+    aboutInfo.setText(aboutText, false);
+    aboutInfo.setDescription(aboutText);
+    aboutInfo.setJustification(juce::Justification::centredLeft);
+    aboutInfo.setFont(juce::Font(juce::FontOptions(18.0f)));
+    aboutInfo.setColour(juce::TextEditor::backgroundColourId, rackgui::screen);
+    aboutInfo.setColour(juce::TextEditor::textColourId, rackgui::text);
+    aboutInfo.setColour(juce::TextEditor::outlineColourId, rackgui::amber);
+    aboutInfo.setColour(juce::TextEditor::focusedOutlineColourId, rackgui::amber);
+    aboutInfo.setBorder(juce::BorderSize<int>(12));
+    aboutInfo.setWantsKeyboardFocus(true);
+    aboutInfo.setExplicitFocusOrder(1);
+    aboutInfo.setKeyHandler([this](const juce::KeyPress& key) { return keyPressed(key, &aboutInfo); });
+    aboutInfo.onEscapeKey = [this] { closeAbout(); };
+    addAndMakeVisible(aboutInfo);
+    aboutInfo.setVisible(false);
+
+    aboutProject.setButtonText(juce::String("Project: ") + lsamplerProjectUrl);
+    aboutProject.setDescription("LSampler-24 GitHub project URL. Press Enter to open in the default browser.");
+    aboutProject.setWantsKeyboardFocus(true);
+    aboutProject.setExplicitFocusOrder(2);
+    aboutProject.onClick = [this] { openProjectPage(); };
+    aboutProject.addKeyListener(this);
+    addAndMakeVisible(aboutProject);
+    aboutProject.setVisible(false);
+
+    aboutContact.setButtonText(juce::String("Contact: ") + lsamplerContactEmail);
+    aboutContact.setDescription("LSampler-24 contact email. Press Enter to open the default email application.");
+    aboutContact.setWantsKeyboardFocus(true);
+    aboutContact.setExplicitFocusOrder(3);
+    aboutContact.onClick = [this] { openContactEmail(); };
+    aboutContact.addKeyListener(this);
+    addAndMakeVisible(aboutContact);
+    aboutContact.setVisible(false);
+
+    aboutClose.setDescription("Closes About. Shortcut Alt+C");
+    aboutClose.setWantsKeyboardFocus(true);
+    aboutClose.setExplicitFocusOrder(4);
+    aboutClose.onClick = [this] { closeAbout(); };
+    aboutClose.addKeyListener(this);
+    addAndMakeVisible(aboutClose);
+    aboutClose.setVisible(false);
 
     status.setText(processor.getSampleStatus(), juce::dontSendNotification);
     status.setAccessible(false);
@@ -342,6 +404,20 @@ void LSampler24AudioProcessorEditor::resized()
     parameterValue.setBounds(398,540,getWidth()-428,30);
     const std::array<juce::TextButton*,6> buttons { &loadSample,&loadSlot,&saveSlot,&loadBank,&saveBank,&help };
     for(int i=0;i<6;++i)buttons[size_t(i)]->setBounds(16+(i%3)*118,574+(i/3)*36,114,32);
+    aboutButton.setBounds(370,610,114,32);
+
+    auto aboutArea = getLocalBounds().withSizeKeepingCentre(700, 430);
+    auto aboutCloseArea = aboutArea.removeFromBottom(42);
+    aboutArea.removeFromBottom(10);
+    auto aboutContactArea = aboutArea.removeFromBottom(38);
+    aboutArea.removeFromBottom(8);
+    auto aboutProjectArea = aboutArea.removeFromBottom(38);
+    aboutArea.removeFromBottom(10);
+    aboutInfo.setBounds(aboutArea);
+    aboutProject.setBounds(aboutProjectArea);
+    aboutContact.setBounds(aboutContactArea);
+    aboutClose.setBounds(aboutCloseArea.withSizeKeepingCentre(140, 36));
+
     sliceOverview.setBounds(16,650,540,126);
     masterOutput.setBounds(568,650,getWidth()-584,126);
     status.setBounds(16, getHeight()-18, getWidth()-32, 18);
@@ -682,7 +758,7 @@ void LSampler24AudioProcessorEditor::enterSlotParameters()
     parameterPage = true;
     for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
     loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false);
+    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
     parameterSelector.setVisible(true);
     parameterValue.setVisible(true);
     const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
@@ -716,7 +792,7 @@ void LSampler24AudioProcessorEditor::leaveSlotParameters()
     parameterValue.setVisible(false);
     for (auto& cell : slotCells) cell.setVisible(true);
     loadSample.setVisible(true); loadSlot.setVisible(true); saveSlot.setVisible(true);
-    loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true);
+    loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true);
     refreshSlotCells();
     resized();
 }
@@ -734,7 +810,7 @@ void LSampler24AudioProcessorEditor::openGlobal()
     parameterPage = true;
     for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
     loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false);
+    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
     parameterSelector.setVisible(true);
     parameterValue.setVisible(true);
     const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
@@ -777,7 +853,7 @@ void LSampler24AudioProcessorEditor::closeGlobal(bool accept)
         parameterValue.setVisible(false);
         for (auto& cell : slotCells) cell.setVisible(true);
         loadSample.setVisible(true); loadSlot.setVisible(true); saveSlot.setVisible(true);
-        loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true);
+        loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true);
         refreshSlotCells();
         resized();
         selectSlot(processor.getCurrentSlot(), true);
@@ -866,10 +942,115 @@ void LSampler24AudioProcessorEditor::setSelectedParameterBoundary(bool maximum)
     announceSelectedValue();
 }
 
+void LSampler24AudioProcessorEditor::setMainControlsEnabled(bool enabled)
+{
+    for (auto& cell : slotCells) cell.setEnabled(enabled);
+    for (auto* control : std::array<juce::Component*, 9> {
+             &loadSample, &loadSlot, &saveSlot, &loadBank, &saveBank, &help, &aboutButton,
+             &parameterSelector, &parameterValue })
+        control->setEnabled(enabled);
+}
+
+void LSampler24AudioProcessorEditor::openAbout()
+{
+    if (aboutOpen) return;
+    aboutReturnFocus = juce::Component::getCurrentlyFocusedComponent();
+    aboutOpen = true;
+    setMainControlsEnabled(false);
+    aboutInfo.setVisible(true);
+    aboutProject.setVisible(true);
+    aboutContact.setVisible(true);
+    aboutClose.setVisible(true);
+    aboutInfo.toFront(false);
+    aboutProject.toFront(false);
+    aboutContact.toFront(false);
+    aboutClose.toFront(false);
+    repaint();
+
+    aboutInfo.setCaretPosition(0);
+    juce::AccessibilityHandler::clearCurrentlyFocusedHandler();
+    aboutInfo.grabKeyboardFocus();
+    if (auto* handler = aboutInfo.getAccessibilityHandler()) handler->grabFocus();
+}
+
+void LSampler24AudioProcessorEditor::closeAbout()
+{
+    if (!aboutOpen) return;
+    aboutOpen = false;
+    aboutInfo.setVisible(false);
+    aboutProject.setVisible(false);
+    aboutContact.setVisible(false);
+    aboutClose.setVisible(false);
+    setMainControlsEnabled(true);
+    repaint();
+
+    auto* target = aboutReturnFocus.getComponent();
+    if (target == nullptr || !target->isShowing() || !target->isEnabled()) target = &aboutButton;
+    aboutReturnFocus = nullptr;
+    juce::AccessibilityHandler::clearCurrentlyFocusedHandler();
+    target->grabKeyboardFocus();
+    if (auto* handler = target->getAccessibilityHandler()) handler->grabFocus();
+}
+
+void LSampler24AudioProcessorEditor::openProjectPage()
+{
+    if (juce::URL(lsamplerProjectUrl).launchInDefaultBrowser())
+        lsampler::announceToActiveScreenReader(aboutProject, "Opening LSampler-24 GitHub project page");
+    else
+        lsampler::announceToActiveScreenReader(aboutProject, "Cannot open the LSampler-24 GitHub project page");
+}
+
+void LSampler24AudioProcessorEditor::openContactEmail()
+{
+    const auto mailUrl = juce::String("mailto:") + lsamplerContactEmail;
+    if (juce::URL(mailUrl).launchInDefaultBrowser())
+        lsampler::announceToActiveScreenReader(aboutContact, "Opening email to " + juce::String(lsamplerContactEmail));
+    else
+        lsampler::announceToActiveScreenReader(aboutContact, "Cannot open the email application");
+}
+
+bool LSampler24AudioProcessorEditor::navigateAboutText(const juce::KeyPress& key)
+{
+    const auto keyCode = key.getKeyCode();
+    const auto modifiers = key.getModifiers();
+    const bool selecting = modifiers.isShiftDown();
+    const bool byWordOrDocument = modifiers.isCtrlDown() || modifiers.isCommandDown();
+
+    if (keyCode == juce::KeyPress::leftKey)  { aboutInfo.moveCaretLeft(byWordOrDocument, selecting); return true; }
+    if (keyCode == juce::KeyPress::rightKey) { aboutInfo.moveCaretRight(byWordOrDocument, selecting); return true; }
+    if (keyCode == juce::KeyPress::upKey)
+    {
+        if (byWordOrDocument && selecting) aboutInfo.moveCaretToTop(true);
+        else aboutInfo.moveCaretUp(selecting);
+        return true;
+    }
+    if (keyCode == juce::KeyPress::downKey)
+    {
+        if (byWordOrDocument && selecting) aboutInfo.moveCaretToEnd(true);
+        else aboutInfo.moveCaretDown(selecting);
+        return true;
+    }
+    if (keyCode == juce::KeyPress::homeKey)
+    {
+        if (byWordOrDocument) aboutInfo.moveCaretToTop(selecting);
+        else aboutInfo.moveCaretToStartOfLine(selecting);
+        return true;
+    }
+    if (keyCode == juce::KeyPress::endKey)
+    {
+        if (byWordOrDocument) aboutInfo.moveCaretToEnd(selecting);
+        else aboutInfo.moveCaretToEndOfLine(selecting);
+        return true;
+    }
+    if (keyCode == juce::KeyPress::pageUpKey) { aboutInfo.pageUp(selecting); return true; }
+    if (keyCode == juce::KeyPress::pageDownKey) { aboutInfo.pageDown(selecting); return true; }
+    return false;
+}
+
 bool LSampler24AudioProcessorEditor::isActionButton(const juce::Component* component) const
 {
     return component == &loadSample || component == &loadSlot || component == &saveSlot
-        || component == &loadBank || component == &saveBank || component == &help;
+        || component == &loadBank || component == &saveBank || component == &help || component == &aboutButton;
 }
 
 int LSampler24AudioProcessorEditor::slotCellIndex(const juce::Component* component) const
@@ -893,6 +1074,61 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 {
     if (fileUiBusy || processor.isFileTaskRunning())
         return key.getKeyCode() != juce::KeyPress::escapeKey;
+
+    if (aboutOpen)
+    {
+        const auto aboutCharacter = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
+        const auto aboutCode = key.getKeyCode();
+        const auto aboutMods = key.getModifiers();
+        if (aboutCode == juce::KeyPress::escapeKey
+            || (aboutMods.isAltDown() && !aboutMods.isCtrlDown() && aboutCharacter == 'c'))
+        {
+            closeAbout();
+            return true;
+        }
+
+        if (aboutCode == juce::KeyPress::tabKey)
+        {
+            const bool backwards = aboutMods.isShiftDown();
+            juce::Component* target = nullptr;
+            if (!backwards)
+            {
+                if (source == &aboutInfo) target = &aboutProject;
+                else if (source == &aboutProject) target = &aboutContact;
+                else if (source == &aboutContact) target = &aboutClose;
+                else target = &aboutInfo;
+            }
+            else
+            {
+                if (source == &aboutInfo) target = &aboutClose;
+                else if (source == &aboutClose) target = &aboutContact;
+                else if (source == &aboutContact) target = &aboutProject;
+                else target = &aboutInfo;
+            }
+            juce::AccessibilityHandler::clearCurrentlyFocusedHandler();
+            target->grabKeyboardFocus();
+            if (auto* handler = target->getAccessibilityHandler()) handler->grabFocus();
+            return true;
+        }
+
+        if (source == &aboutInfo && navigateAboutText(key))
+            return true;
+
+        if (aboutCode == juce::KeyPress::returnKey && source == &aboutInfo)
+        {
+            closeAbout();
+            return true;
+        }
+
+        if (aboutCode == juce::KeyPress::returnKey || key.getTextCharacter() == ' ')
+        {
+            if (source == &aboutProject) { openProjectPage(); return true; }
+            if (source == &aboutContact) { openContactEmail(); return true; }
+            if (source == &aboutClose) { closeAbout(); return true; }
+        }
+        return true;
+    }
+
     // Modal editors own every key before main grid or host shortcut dispatch.
     if(sliceEditor!=nullptr){sliceEditor->keyPressed(key);return true;}
     const auto mods = key.getModifiers();
@@ -1592,6 +1828,13 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     }
 
     if (!mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown()
+        && mods.isAltDown() && ch == 'a')
+    {
+        openAbout();
+        return true;
+    }
+
+    if (!mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown()
         && mods.isAltDown() && ch == 'm')
     {
         enterSampleSetEditor();
@@ -2254,7 +2497,7 @@ void LSampler24AudioProcessorEditor::enterSampleSetEditor()
     sampleSetActive = true;
     for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
     loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false);
+    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
     parameterSelector.setVisible(false); parameterValue.setVisible(false);
     sampleSetCell.setVisible(true); sampleSetCell.setWantsKeyboardFocus(true);
     refreshSampleSetCell(false);
@@ -2280,7 +2523,7 @@ void LSampler24AudioProcessorEditor::leaveSampleSetEditor()
         parameterPage = true;
         for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
         loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-        loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false);
+        loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
         parameterSelector.setVisible(true); parameterValue.setVisible(true);
         refreshParameterGrid();
         resized();
@@ -2299,7 +2542,7 @@ void LSampler24AudioProcessorEditor::leaveSampleSetEditor()
         parameterSelector.setVisible(false); parameterValue.setVisible(false);
         for (auto& cell : slotCells) { cell.setVisible(true); cell.setWantsKeyboardFocus(true); }
         loadSample.setVisible(true); loadSlot.setVisible(true); saveSlot.setVisible(true);
-        loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true);
+        loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true);
         refreshSlotCells();
         resized();
         if (returnFocus != nullptr && returnFocus->isShowing() && returnFocus->isEnabled())
@@ -2485,7 +2728,7 @@ void LSampler24AudioProcessorEditor::enterImportBrowser()
 
     for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
     loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false);
+    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
     parameterSelector.setVisible(false); parameterValue.setVisible(false);
     sampleSetCell.setVisible(false); sampleSetCell.setWantsKeyboardFocus(false);
     importBrowserCell.setVisible(true);
@@ -2573,7 +2816,7 @@ void LSampler24AudioProcessorEditor::leaveImportBrowser(bool announceSlot, bool 
         importForSampleSet = false;
         for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
         loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-        loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false);
+        loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
         parameterSelector.setVisible(false); parameterValue.setVisible(false);
         sampleSetCell.setVisible(true); sampleSetCell.setWantsKeyboardFocus(true);
         resized();
@@ -2584,7 +2827,7 @@ void LSampler24AudioProcessorEditor::leaveImportBrowser(bool announceSlot, bool 
     importForSampleSet = false;
     for (auto& cell : slotCells) { cell.setVisible(true); cell.setWantsKeyboardFocus(true); }
     loadSample.setVisible(true); loadSlot.setVisible(true); saveSlot.setVisible(true);
-    loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true);
+    loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true);
     resized();
     if (announceSlot) returnToCurrentSlotAndAnnounce();
 }
@@ -3517,7 +3760,7 @@ void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser(bool forSampleSet, 
 
     for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
     loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false);
+    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
     parameterSelector.setVisible(false); parameterValue.setVisible(false);
     sampleSetCell.setVisible(false); sampleSetCell.setWantsKeyboardFocus(false);
     importBrowserCell.setVisible(false); importSourceCombo.setVisible(false);
@@ -3560,7 +3803,7 @@ void LSampler24AudioProcessorEditor::leaveSlotLibraryBrowser(bool announceSlot)
     {
         for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
         loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-        loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false);
+        loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
         parameterSelector.setVisible(false); parameterValue.setVisible(false);
         sampleSetCell.setVisible(true); sampleSetCell.setWantsKeyboardFocus(true);
         resized();
@@ -3577,7 +3820,7 @@ void LSampler24AudioProcessorEditor::leaveSlotLibraryBrowser(bool announceSlot)
         cell.setWantsKeyboardFocus(i == processor.getCurrentSlot());
     }
     loadSample.setVisible(true); loadSlot.setVisible(true); saveSlot.setVisible(true);
-    loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true);
+    loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true);
     parameterSelector.setVisible(false); parameterValue.setVisible(false);
     resized();
     if (announceSlot) returnToCurrentSlotAndAnnounce();
