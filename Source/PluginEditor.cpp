@@ -12,7 +12,7 @@ namespace
 {
 constexpr std::array<int, 5> stepWidths { 1, 5, 10, 15, 20 };
 constexpr int valuePageStep = 40;
-constexpr auto lsamplerVersion = "0.99.1";
+constexpr auto lsamplerVersion = "0.99.11";
 constexpr auto lsamplerReleaseDate = "7 October 2026";
 constexpr auto lsamplerProjectUrl = "https://github.com/Lo-lo78/LSampler-24";
 constexpr auto lsamplerContactEmail = "vmanolo301@gmail.com";
