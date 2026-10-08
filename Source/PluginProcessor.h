@@ -95,6 +95,7 @@ public:
     bool importFilesToLibrary(const juce::Array<juce::File>& sourceFiles, int& importedSlots, int& skippedFiles, juce::String& error);
     bool importFolderToLibrary(const juce::File& sourceFolder, int& importedSlots, int& skippedFiles, juce::String& error);
     bool exportLibraryArchive(const juce::File& targetFile, int& exportedSlots, int& exportedSamples, juce::String& error);
+    bool exportLibraryFolderArchive(const juce::File& slotFolder, const juce::File& targetFile, int& exportedSlots, int& exportedSamples, juce::String& error);
     bool importLibraryArchive(const juce::File& archiveFile, int& importedSlots, int& importedSamples, int& skippedItems, juce::String& error);
 
     bool copyCurrentSlot();
@@ -194,6 +195,9 @@ public:
     }
 
     LibraryManager& getLibrary() noexcept { return library; }
+    const LibraryManager& getLibrary() const noexcept { return library; }
+    void setLibraryRoot(const juce::File& root);
+    static juce::File defaultLibraryRoot();
 
 private:
     void notifyHostControl(lsampler::HostParameter*);

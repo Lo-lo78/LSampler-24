@@ -406,8 +406,19 @@ private:
     bool importSlotReserved(int slot) const;
     void chooseImportFiles();
     void chooseImportFolder();
+    void chooseExportFolder();
     void chooseExportLibrary();
     void chooseImportLibrary();
+    void showAdvancedMenu();
+    bool isLibraryAvailable() const;
+    juce::String unavailableLibraryMessage() const;
+    bool requireLibraryAvailable(juce::Component* focusTarget = nullptr, bool openAdvancedAfterOk = true);
+    void showStartupLibraryWarningIfNeeded();
+    void chooseLibraryFolder();
+    void restoreDefaultLibraryFolder();
+    void activateLibraryRoot(const juce::File& root, bool remember);
+    std::vector<juce::File> loadLibraryHistory() const;
+    void saveLibrarySettings(const juce::File& currentRoot, const std::vector<juce::File>& history) const;
     void enterSlotLibraryBrowser(bool forSampleSet = false, bool forBank = false);
     void leaveSlotLibraryBrowser(bool announceSlot);
     void refreshSlotLibraryEntries();
@@ -471,7 +482,8 @@ private:
     std::array<LSamplerSlotCell, LSampler24AudioProcessor::slotCount> slotCells;
     juce::TextButton loadSample { "Load Sample" };
     juce::ComboBox importSourceCombo;
-    juce::TextButton exportLibraryButton { "Export Library" };
+    juce::TextButton exportLibraryButton { "Export Folder" };
+    juce::TextButton exportAllLibraryButton { "Export All" };
     juce::TextButton importLibraryButton { "Import Library" };
     juce::TextButton loadSlot { "Load Slot" };
     juce::TextButton saveSlot { "Save Slot" };
@@ -479,6 +491,7 @@ private:
     juce::TextButton saveBank { "Save Bank" };
     juce::TextButton help { "Help" };
     juce::TextButton aboutButton { "About" };
+    juce::TextButton advancedButton { "Advanced" };
     LSamplerAboutTextEditor aboutInfo { "About LSampler-24" };
     juce::TextButton aboutProject { "Project" };
     juce::TextButton aboutContact { "Contact" };

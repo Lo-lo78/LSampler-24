@@ -7,6 +7,33 @@
 using namespace lsampler;
 
 namespace {
+
+static juce::File settingsFileForLibrary()
+{
+    auto dir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                   .getChildFile("Lo-lo78").getChildFile("LSampler-24");
+    return dir.getChildFile("settings.xml");
+}
+
+static juce::File configuredLibraryRoot(const juce::File& overrideRoot)
+{
+    if (overrideRoot.getFullPathName().isNotEmpty())
+        return overrideRoot;
+    auto fallback = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("LSampler-24");
+    auto file = settingsFileForLibrary();
+    if (!file.existsAsFile()) return fallback;
+    juce::XmlDocument doc(file);
+    auto xml = doc.getDocumentElement();
+    if (xml == nullptr || !xml->hasTagName("LSampler24Settings")) return fallback;
+    auto configured = juce::File(xml->getStringAttribute("libraryRoot"));
+    if (configured.getFullPathName().isEmpty()) return fallback;
+
+    // Keep the configured path even when an external drive is temporarily
+    // unavailable. Falling back silently to Documents could make load/save or
+    // import/export operations use the wrong Library without the user noticing.
+    // Availability is checked by the editor immediately before Library I/O.
+    return configured;
+}
 // Only destructively edited RAM audio needs an inline fallback in host state.
 // Slot/bank saving already materialises this buffer and clears its modified flag.
 // IEEE float samples use JUCE's little-endian stream encoding, with no quantisation.
@@ -55,7 +82,7 @@ LSampler24AudioProcessor::LSampler24AudioProcessor(const juce::File& libraryRoot
         for (int i = 1; i <= 24; ++i)
             buses = buses.withOutput("Out " + juce::String(2*i+1) + "/" + juce::String(2*i+2), juce::AudioChannelSet::stereo(), false);
         return buses;
-      }()), library(libraryRootOverride)
+      }()), library(configuredLibraryRoot(libraryRootOverride))
 {
     static_assert(std::atomic<int>::is_always_lock_free);
     static_assert(std::atomic<unsigned>::is_always_lock_free);
@@ -2122,17 +2149,25 @@ bool LSampler24AudioProcessor::importFolderToLibrary(const juce::File& sourceFol
     return true;
 }
 
-bool LSampler24AudioProcessor::exportLibraryArchive(const juce::File& requestedTarget,
-                                                     int& exportedSlots,
-                                                     int& exportedSamples,
-                                                     juce::String& error)
+bool LSampler24AudioProcessor::exportLibraryFolderArchive(const juce::File& slotFolder,
+                                                           const juce::File& requestedTarget,
+                                                           int& exportedSlots,
+                                                           int& exportedSamples,
+                                                           juce::String& error)
 {
     exportedSlots = 0;
     exportedSamples = 0;
     error.clear();
 
+    if (!slotFolder.isDirectory() || (slotFolder != library.slots() && !slotFolder.isAChildOf(library.slots())))
+    {
+        error = "Select a folder inside Library/Slots";
+        return false;
+    }
+
     juce::Array<juce::File> slotFiles;
-    library.slots().findChildFiles(slotFiles, juce::File::findFiles, true, "*" + juce::String(LibraryManager::slotExtension));
+    slotFolder.findChildFiles(slotFiles, juce::File::findFiles, true,
+                              "*" + juce::String(LibraryManager::slotExtension));
 
     struct ExportSample { juce::File file; juce::String archivePath; };
     struct ExportSlot { juce::File slot; juce::String slotPath; std::vector<ExportSample> samples; };
@@ -2182,19 +2217,16 @@ bool LSampler24AudioProcessor::exportLibraryArchive(const juce::File& requestedT
 
     if (valid.empty())
     {
-        error = "No LSampler-24 library items found";
+        error = "No valid LSampler-24 slots found in the selected folder";
         return false;
     }
 
     juce::File target = requestedTarget;
-    if (target.getFileExtension().toLowerCase() != ".ls24")
-        target = target.withFileExtension(".lsampler-24.ls24");
-    else if (!target.getFileName().endsWithIgnoreCase(".lsampler-24.ls24"))
+    if (!target.getFileName().endsWithIgnoreCase(".lsampler-24.ls24"))
         target = target.getSiblingFile(target.getFileNameWithoutExtension() + ".lsampler-24.ls24");
 
     target.getParentDirectory().createDirectory();
     juce::TemporaryFile temporary(target);
-
     juce::ZipFile::Builder builder;
     std::set<juce::String> seenSamples;
     for (const auto& item : valid)
@@ -2213,23 +2245,21 @@ bool LSampler24AudioProcessor::exportLibraryArchive(const juce::File& requestedT
     }
 
     auto stream = temporary.getFile().createOutputStream();
-    if (stream == nullptr)
-    {
-        error = "Could not create export file";
-        return false;
-    }
-
-    if (!builder.writeToStream(*stream, nullptr))
-    {
-        error = "Could not write LSampler-24 library export";
-        return false;
-    }
-
+    if (stream == nullptr) { error = "Could not create export file"; return false; }
+    if (!builder.writeToStream(*stream, nullptr)) { error = "Could not write LSampler-24 library export"; return false; }
     stream->flush();
     if (stream->getStatus().failed()) { error = "Could not flush library export"; return false; }
     stream.reset();
     if (!temporary.overwriteTargetFileWithTemporary()) { error = "Could not replace export file"; return false; }
     return true;
+}
+
+bool LSampler24AudioProcessor::exportLibraryArchive(const juce::File& requestedTarget,
+                                                     int& exportedSlots,
+                                                     int& exportedSamples,
+                                                     juce::String& error)
+{
+    return exportLibraryFolderArchive(library.slots(), requestedTarget, exportedSlots, exportedSamples, error);
 }
 
 bool LSampler24AudioProcessor::importLibraryArchive(const juce::File& archiveFile,
@@ -2379,6 +2409,19 @@ bool LSampler24AudioProcessor::importLibraryArchive(const juce::File& archiveFil
         return false;
     }
     return true;
+}
+
+
+juce::File LSampler24AudioProcessor::defaultLibraryRoot()
+{
+    return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("LSampler-24");
+}
+
+void LSampler24AudioProcessor::setLibraryRoot(const juce::File& root)
+{
+    if (root.getFullPathName().isEmpty()) return;
+    library = LibraryManager(root);
+    uiRevision.fetch_add(1, std::memory_order_release);
 }
 
 void LSampler24AudioProcessor::getStateInformation(juce::MemoryBlock& destData)

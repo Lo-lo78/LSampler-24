@@ -167,6 +167,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     addButton(saveBank, 6);
     addButton(help, 7);
     addButton(aboutButton, 8);
+    addButton(advancedButton, 9);
     // Show keyboard equivalents directly on the mouse buttons so sighted users
     // discover the accessible workflow while exploring the interface.
     loadSample.setButtonText("Load Sample  Alt+O");
@@ -179,6 +180,9 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     aboutButton.setButtonText("About  Alt+A");
     aboutButton.setDescription("Alt+A");
     aboutButton.onClick = [this] { openAbout(); };
+    advancedButton.setButtonText("Advanced");
+    advancedButton.setDescription("Library location and advanced settings");
+    advancedButton.onClick = [this] { showAdvancedMenu(); };
 
     const auto aboutText = juce::String("LSampler-24\nVersion: ") + lsamplerVersion
         + "\nRelease date: " + lsamplerReleaseDate
@@ -325,8 +329,14 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     addChildComponent(exportLibraryButton);
     exportLibraryButton.setVisible(false);
 
+    exportAllLibraryButton.setWantsKeyboardFocus(true);
+    exportAllLibraryButton.setExplicitFocusOrder(4);
+    exportAllLibraryButton.addKeyListener(this);
+    addChildComponent(exportAllLibraryButton);
+    exportAllLibraryButton.setVisible(false);
+
     importLibraryButton.setWantsKeyboardFocus(true);
-    importLibraryButton.setExplicitFocusOrder(4);
+    importLibraryButton.setExplicitFocusOrder(5);
     importLibraryButton.addKeyListener(this);
     addChildComponent(importLibraryButton);
     importLibraryButton.setVisible(false);
@@ -336,8 +346,17 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     saveSlot.onClick   = [this] { chooseSaveSlot(); };
     loadBank.onClick   = [this] { enterSlotLibraryBrowser(false, true); };
     saveBank.onClick   = [this] { chooseSaveBank(); };
-    exportLibraryButton.onClick = [this] { chooseExportLibrary(); };
+    exportLibraryButton.onClick = [this] { chooseExportFolder(); };
+    exportAllLibraryButton.onClick = [this] { chooseExportLibrary(); };
     importLibraryButton.onClick = [this] { chooseImportLibrary(); };
+
+    // Delay the warning until the editor is fully constructed so the modal
+    // alert has a valid parent and Advanced can be opened after OK.
+    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+    {
+        if (safeThis != nullptr)
+            safeThis->showStartupLibraryWarningIfNeeded();
+    });
 
     refreshSlotCells();
     leaveSlotParameters();
@@ -390,8 +409,9 @@ void LSampler24AudioProcessorEditor::resized()
         browserCell.setBounds(area.removeFromTop(60));area.removeFromTop(12);
         auto buttons=area.removeFromTop(36);
         if(importBrowserActive) {importSourceCombo.setBounds(buttons.removeFromLeft(250));buttons.removeFromLeft(10);}
-        exportLibraryButton.setBounds(buttons.removeFromLeft(250));buttons.removeFromLeft(10);
-        importLibraryButton.setBounds(buttons.removeFromLeft(250));
+        exportLibraryButton.setBounds(buttons.removeFromLeft(220));buttons.removeFromLeft(10);
+        exportAllLibraryButton.setBounds(buttons.removeFromLeft(220));buttons.removeFromLeft(10);
+        importLibraryButton.setBounds(buttons.removeFromLeft(220));
         return;
     }
     waveform.setBounds(384,72,getWidth()-400,294);
@@ -405,6 +425,7 @@ void LSampler24AudioProcessorEditor::resized()
     const std::array<juce::TextButton*,6> buttons { &loadSample,&loadSlot,&saveSlot,&loadBank,&saveBank,&help };
     for(int i=0;i<6;++i)buttons[size_t(i)]->setBounds(16+(i%3)*118,574+(i/3)*36,114,32);
     aboutButton.setBounds(370,610,114,32);
+    advancedButton.setBounds(492,610,114,32);
 
     auto aboutArea = getLocalBounds().withSizeKeepingCentre(700, 430);
     auto aboutCloseArea = aboutArea.removeFromBottom(42);
@@ -758,7 +779,7 @@ void LSampler24AudioProcessorEditor::enterSlotParameters()
     parameterPage = true;
     for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
     loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
+    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false); advancedButton.setVisible(false);
     parameterSelector.setVisible(true);
     parameterValue.setVisible(true);
     const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
@@ -792,7 +813,7 @@ void LSampler24AudioProcessorEditor::leaveSlotParameters()
     parameterValue.setVisible(false);
     for (auto& cell : slotCells) cell.setVisible(true);
     loadSample.setVisible(true); loadSlot.setVisible(true); saveSlot.setVisible(true);
-    loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true);
+    loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true); advancedButton.setVisible(true);
     refreshSlotCells();
     resized();
 }
@@ -810,7 +831,7 @@ void LSampler24AudioProcessorEditor::openGlobal()
     parameterPage = true;
     for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
     loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
+    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false); advancedButton.setVisible(false);
     parameterSelector.setVisible(true);
     parameterValue.setVisible(true);
     const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
@@ -853,7 +874,7 @@ void LSampler24AudioProcessorEditor::closeGlobal(bool accept)
         parameterValue.setVisible(false);
         for (auto& cell : slotCells) cell.setVisible(true);
         loadSample.setVisible(true); loadSlot.setVisible(true); saveSlot.setVisible(true);
-        loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true);
+        loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true); advancedButton.setVisible(true);
         refreshSlotCells();
         resized();
         selectSlot(processor.getCurrentSlot(), true);
@@ -945,8 +966,8 @@ void LSampler24AudioProcessorEditor::setSelectedParameterBoundary(bool maximum)
 void LSampler24AudioProcessorEditor::setMainControlsEnabled(bool enabled)
 {
     for (auto& cell : slotCells) cell.setEnabled(enabled);
-    for (auto* control : std::array<juce::Component*, 9> {
-             &loadSample, &loadSlot, &saveSlot, &loadBank, &saveBank, &help, &aboutButton,
+    for (auto* control : std::array<juce::Component*, 10> {
+             &loadSample, &loadSlot, &saveSlot, &loadBank, &saveBank, &help, &aboutButton, &advancedButton,
              &parameterSelector, &parameterValue })
         control->setEnabled(enabled);
 }
@@ -1050,7 +1071,7 @@ bool LSampler24AudioProcessorEditor::navigateAboutText(const juce::KeyPress& key
 bool LSampler24AudioProcessorEditor::isActionButton(const juce::Component* component) const
 {
     return component == &loadSample || component == &loadSlot || component == &saveSlot
-        || component == &loadBank || component == &saveBank || component == &help || component == &aboutButton;
+        || component == &loadBank || component == &saveBank || component == &help || component == &aboutButton || component == &advancedButton;
 }
 
 int LSampler24AudioProcessorEditor::slotCellIndex(const juce::Component* component) const
@@ -1257,8 +1278,9 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     if (slotLibraryActive)
     {
         const bool onExportLibrary = source == &exportLibraryButton;
+        const bool onExportAllLibrary = source == &exportAllLibraryButton;
         const bool onImportLibrary = source == &importLibraryButton;
-        const bool onLibraryAction = onExportLibrary || onImportLibrary;
+        const bool onLibraryAction = onExportLibrary || onExportAllLibrary || onImportLibrary;
         const auto focusSlotLibrary = [this]
         {
             slotLibraryCell.grabKeyboardFocus();
@@ -1279,12 +1301,14 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             if (mods.isShiftDown())
             {
                 if (onExportLibrary) focusSlotLibrary();
-                else if (onImportLibrary) exportLibraryButton.grabKeyboardFocus();
+                else if (onExportAllLibrary) exportLibraryButton.grabKeyboardFocus();
+                else if (onImportLibrary) exportAllLibraryButton.grabKeyboardFocus();
                 else importLibraryButton.grabKeyboardFocus();
             }
             else
             {
-                if (onExportLibrary) importLibraryButton.grabKeyboardFocus();
+                if (onExportLibrary) exportAllLibraryButton.grabKeyboardFocus();
+                else if (onExportAllLibrary) importLibraryButton.grabKeyboardFocus();
                 else if (onImportLibrary) focusSlotLibrary();
                 else exportLibraryButton.grabKeyboardFocus();
             }
@@ -1297,7 +1321,9 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         {
             if (code == juce::KeyPress::returnKey || code == juce::KeyPress::spaceKey)
             {
-                if (onExportLibrary) chooseExportLibrary(); else chooseImportLibrary();
+                if (onExportLibrary) chooseExportFolder();
+                else if (onExportAllLibrary) chooseExportLibrary();
+                else chooseImportLibrary();
                 return true;
             }
             return true;
@@ -1437,6 +1463,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     {
         const bool onImportSource = source == &importSourceCombo;
         const bool onExportLibrary = source == &exportLibraryButton;
+        const bool onExportAllLibrary = source == &exportAllLibraryButton;
         const bool onImportLibrary = source == &importLibraryButton;
         const auto focusImportBrowser = [this]
         {
@@ -1456,19 +1483,21 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             {
                 if (onImportSource) focusImportBrowser();
                 else if (onExportLibrary) importSourceCombo.grabKeyboardFocus();
-                else if (onImportLibrary) exportLibraryButton.grabKeyboardFocus();
+                else if (onExportAllLibrary) exportLibraryButton.grabKeyboardFocus();
+                else if (onImportLibrary) exportAllLibraryButton.grabKeyboardFocus();
                 else importLibraryButton.grabKeyboardFocus();
             }
             else
             {
                 if (onImportSource) exportLibraryButton.grabKeyboardFocus();
-                else if (onExportLibrary) importLibraryButton.grabKeyboardFocus();
+                else if (onExportLibrary) exportAllLibraryButton.grabKeyboardFocus();
+                else if (onExportAllLibrary) importLibraryButton.grabKeyboardFocus();
                 else if (onImportLibrary) focusImportBrowser();
                 else importSourceCombo.grabKeyboardFocus();
             }
             return true;
         }
-        if (onImportSource || onExportLibrary || onImportLibrary)
+        if (onImportSource || onExportLibrary || onExportAllLibrary || onImportLibrary)
         {
             if (onImportSource && !mods.isCtrlDown() && !mods.isAltDown()
                 && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey
@@ -1483,7 +1512,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 {
                     if (importSourceCombo.getSelectedId() == 2) chooseImportFolder(); else chooseImportFiles();
                 }
-                else if (onExportLibrary) chooseExportLibrary();
+                else if (onExportLibrary) chooseExportFolder();
+                else if (onExportAllLibrary) chooseExportLibrary();
                 else chooseImportLibrary();
                 return true;
             }
@@ -2497,7 +2527,7 @@ void LSampler24AudioProcessorEditor::enterSampleSetEditor()
     sampleSetActive = true;
     for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
     loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
+    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false); advancedButton.setVisible(false);
     parameterSelector.setVisible(false); parameterValue.setVisible(false);
     sampleSetCell.setVisible(true); sampleSetCell.setWantsKeyboardFocus(true);
     refreshSampleSetCell(false);
@@ -2523,7 +2553,7 @@ void LSampler24AudioProcessorEditor::leaveSampleSetEditor()
         parameterPage = true;
         for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
         loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-        loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
+        loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false); advancedButton.setVisible(false);
         parameterSelector.setVisible(true); parameterValue.setVisible(true);
         refreshParameterGrid();
         resized();
@@ -2542,7 +2572,7 @@ void LSampler24AudioProcessorEditor::leaveSampleSetEditor()
         parameterSelector.setVisible(false); parameterValue.setVisible(false);
         for (auto& cell : slotCells) { cell.setVisible(true); cell.setWantsKeyboardFocus(true); }
         loadSample.setVisible(true); loadSlot.setVisible(true); saveSlot.setVisible(true);
-        loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true);
+        loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true); advancedButton.setVisible(true);
         refreshSlotCells();
         resized();
         if (returnFocus != nullptr && returnFocus->isShowing() && returnFocus->isEnabled())
@@ -2728,7 +2758,7 @@ void LSampler24AudioProcessorEditor::enterImportBrowser()
 
     for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
     loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
+    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false); advancedButton.setVisible(false);
     parameterSelector.setVisible(false); parameterValue.setVisible(false);
     sampleSetCell.setVisible(false); sampleSetCell.setWantsKeyboardFocus(false);
     importBrowserCell.setVisible(true);
@@ -2737,6 +2767,8 @@ void LSampler24AudioProcessorEditor::enterImportBrowser()
     importSourceCombo.setWantsKeyboardFocus(!importForSampleSet);
     exportLibraryButton.setVisible(!importForSampleSet);
     exportLibraryButton.setWantsKeyboardFocus(!importForSampleSet);
+    exportAllLibraryButton.setVisible(!importForSampleSet);
+    exportAllLibraryButton.setWantsKeyboardFocus(!importForSampleSet);
     importLibraryButton.setVisible(!importForSampleSet);
     importLibraryButton.setWantsKeyboardFocus(!importForSampleSet);
     refreshImportEntries();
@@ -2809,6 +2841,8 @@ void LSampler24AudioProcessorEditor::leaveImportBrowser(bool announceSlot, bool 
     importSourceCombo.setWantsKeyboardFocus(false);
     exportLibraryButton.setVisible(false);
     exportLibraryButton.setWantsKeyboardFocus(false);
+    exportAllLibraryButton.setVisible(false);
+    exportAllLibraryButton.setWantsKeyboardFocus(false);
     importLibraryButton.setVisible(false);
     importLibraryButton.setWantsKeyboardFocus(false);
     if (returningToSampleSet)
@@ -2816,7 +2850,7 @@ void LSampler24AudioProcessorEditor::leaveImportBrowser(bool announceSlot, bool 
         importForSampleSet = false;
         for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
         loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-        loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
+        loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false); advancedButton.setVisible(false);
         parameterSelector.setVisible(false); parameterValue.setVisible(false);
         sampleSetCell.setVisible(true); sampleSetCell.setWantsKeyboardFocus(true);
         resized();
@@ -2827,7 +2861,7 @@ void LSampler24AudioProcessorEditor::leaveImportBrowser(bool announceSlot, bool 
     importForSampleSet = false;
     for (auto& cell : slotCells) { cell.setVisible(true); cell.setWantsKeyboardFocus(true); }
     loadSample.setVisible(true); loadSlot.setVisible(true); saveSlot.setVisible(true);
-    loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true);
+    loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true); advancedButton.setVisible(true);
     resized();
     if (announceSlot) returnToCurrentSlotAndAnnounce();
 }
@@ -3099,8 +3133,9 @@ void LSampler24AudioProcessorEditor::saveImportSettings(bool resetPreviewPositio
     if (!importBrowserActive && !importDirectory.isDirectory()) return;
     auto file = importSettingsFile();
 
-    juce::String savedSlotDirectory, savedSlotEntryPath;
+    juce::String savedSlotDirectory, savedSlotEntryPath, savedLibraryRoot;
     int savedSlotIndex = 0;
+    std::vector<juce::String> savedLibraryHistory;
     if (file.existsAsFile())
     {
         juce::XmlDocument doc(file);
@@ -3109,6 +3144,9 @@ void LSampler24AudioProcessorEditor::saveImportSettings(bool resetPreviewPositio
             savedSlotDirectory = oldXml->getStringAttribute("f4Directory");
             savedSlotEntryPath = oldXml->getStringAttribute("f4EntryPath");
             savedSlotIndex = oldXml->getIntAttribute("f4Index", 0);
+            savedLibraryRoot = oldXml->getStringAttribute("libraryRoot");
+            for (auto* child = oldXml->getFirstChildElement(); child != nullptr; child = child->getNextElement())
+                if (child->hasTagName("LibraryHistory")) savedLibraryHistory.push_back(child->getStringAttribute("path"));
         }
     }
 
@@ -3131,6 +3169,12 @@ void LSampler24AudioProcessorEditor::saveImportSettings(bool resetPreviewPositio
     if (savedSlotDirectory.isNotEmpty()) xml.setAttribute("f4Directory", savedSlotDirectory);
     if (savedSlotEntryPath.isNotEmpty()) xml.setAttribute("f4EntryPath", savedSlotEntryPath);
     xml.setAttribute("f4Index", savedSlotIndex);
+    if (savedLibraryRoot.isNotEmpty()) xml.setAttribute("libraryRoot", savedLibraryRoot);
+    for (const auto& path : savedLibraryHistory)
+    {
+        auto* child = xml.createNewChildElement("LibraryHistory");
+        child->setAttribute("path", path);
+    }
     xml.writeTo(file);
 }
 
@@ -3578,6 +3622,7 @@ void LSampler24AudioProcessorEditor::chooseSample()
 
 void LSampler24AudioProcessorEditor::chooseImportFiles()
 {
+    if (!requireLibraryAvailable(&importSourceCombo, true)) return;
     juce::Array<juce::File> files;
     auto addUnique = [&files](const juce::File& file) { if (!files.contains(file)) files.add(file); };
     for (const auto& item : importPlan) if (!item.slice) addUnique(item.file);
@@ -3599,6 +3644,7 @@ void LSampler24AudioProcessorEditor::chooseImportFiles()
 
 void LSampler24AudioProcessorEditor::chooseImportFolder()
 {
+    if (!requireLibraryAvailable(&importSourceCombo, true)) return;
     chooser = std::make_unique<juce::FileChooser>("Import Folder", importDirectory, "*");
     chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const juce::FileChooser& fc) {
@@ -3617,10 +3663,240 @@ void LSampler24AudioProcessorEditor::chooseImportFolder()
         });
 }
 
+void LSampler24AudioProcessorEditor::chooseExportFolder()
+{
+    if (!requireLibraryAvailable(&exportLibraryButton, true)) return;
+    if (!slotLibraryActive || slotLibraryForSampleSet || slotLibraryForBank || slotLibraryEntries.empty()
+        || slotLibraryEntryIndex < 0 || slotLibraryEntryIndex >= static_cast<int>(slotLibraryEntries.size())
+        || !slotLibraryEntries[static_cast<size_t>(slotLibraryEntryIndex)].directory)
+    {
+        lsampler::announceToActiveScreenReader(exportLibraryButton,
+            "Select a folder in the Slot Library browser before using Export Folder");
+        return;
+    }
+
+    const auto folder = slotLibraryEntries[static_cast<size_t>(slotLibraryEntryIndex)].file;
+    auto baseName = juce::File::createLegalFileName(folder.getFileName().trim());
+    if (baseName.isEmpty()) baseName = "LSampler-24 Folder";
+    auto initial = processor.getLibrary().root().getChildFile(baseName + ".lsampler-24.ls24");
+    chooser = std::make_unique<juce::FileChooser>("Export Folder: " + folder.getFileName(), initial, "*");
+    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                         | juce::FileBrowserComponent::warnAboutOverwriting,
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), folder](const juce::FileChooser& fc)
+        {
+            if (safeThis == nullptr) return;
+            auto chosen = fc.getResult();
+            if (chosen.getFullPathName().isEmpty()) { safeThis->exportLibraryButton.grabKeyboardFocus(); return; }
+            auto name = chosen.getFileName().trim();
+            if (name.endsWithIgnoreCase(".lsampler-24.ls24"))
+                name = name.dropLastCharacters((int) juce::String(".lsampler-24.ls24").length());
+            else if (name.endsWithIgnoreCase(".ls24"))
+                name = name.dropLastCharacters(5);
+            name = juce::File::createLegalFileName(name.trim());
+            if (name.isEmpty()) name = juce::File::createLegalFileName(folder.getFileName());
+            auto target = chosen.getParentDirectory().getChildFile(name + ".lsampler-24.ls24");
+
+            safeThis->runFileTask("Exporting folder", [folder, target](LSampler24AudioProcessor& p) {
+                FileTaskResult r; int samples = 0;
+                r.ok = p.exportLibraryFolderArchive(folder, target, r.count, samples, r.message);
+                if (r.ok) r.message = "Exported folder " + folder.getFileName() + ": "
+                    + juce::String(r.count) + " slots, " + juce::String(samples) + " samples";
+                return r;
+            }, [safeThis](const FileTaskResult&, bool focus) { if (focus) safeThis->exportLibraryButton.grabKeyboardFocus(); });
+        });
+}
+
+std::vector<juce::File> LSampler24AudioProcessorEditor::loadLibraryHistory() const
+{
+    std::vector<juce::File> result;
+    auto file = importSettingsFile();
+    if (!file.existsAsFile()) return result;
+    juce::XmlDocument doc(file);
+    auto xml = doc.getDocumentElement();
+    if (xml == nullptr || !xml->hasTagName("LSampler24Settings")) return result;
+    for (auto* child = xml->getFirstChildElement(); child != nullptr; child = child->getNextElement())
+        if (child->hasTagName("LibraryHistory"))
+        {
+            auto f = juce::File(child->getStringAttribute("path"));
+            if (f.getFullPathName().isNotEmpty()) result.push_back(f);
+        }
+    return result;
+}
+
+void LSampler24AudioProcessorEditor::saveLibrarySettings(const juce::File& currentRoot,
+                                                          const std::vector<juce::File>& history) const
+{
+    auto file = importSettingsFile();
+    std::unique_ptr<juce::XmlElement> xml;
+    if (file.existsAsFile())
+    {
+        juce::XmlDocument doc(file);
+        xml = doc.getDocumentElement();
+    }
+    if (xml == nullptr || !xml->hasTagName("LSampler24Settings"))
+        xml = std::make_unique<juce::XmlElement>("LSampler24Settings");
+
+    xml->setAttribute("libraryRoot", currentRoot.getFullPathName());
+    for (auto* child = xml->getFirstChildElement(); child != nullptr;)
+    {
+        auto* next = child->getNextElement();
+        if (child->hasTagName("LibraryHistory")) xml->removeChildElement(child, true);
+        child = next;
+    }
+    int count = 0;
+    for (const auto& path : history)
+    {
+        if (path.getFullPathName().isEmpty() || count++ >= 20) continue;
+        auto* child = xml->createNewChildElement("LibraryHistory");
+        child->setAttribute("path", path.getFullPathName());
+    }
+    xml->writeTo(file);
+}
+
+void LSampler24AudioProcessorEditor::activateLibraryRoot(const juce::File& root, bool remember)
+{
+    if (root.getFullPathName().isEmpty()) return;
+    root.createDirectory();
+    processor.setLibraryRoot(root);
+
+    auto history = loadLibraryHistory();
+    const auto defaultRoot = LSampler24AudioProcessor::defaultLibraryRoot();
+    if (remember && root != defaultRoot)
+    {
+        std::vector<juce::File> next { root };
+        for (const auto& old : history)
+            if (old != root && old != defaultRoot && next.size() < 20) next.push_back(old);
+        history = std::move(next);
+    }
+    saveLibrarySettings(root, history);
+    slotLibraryRoot = processor.getLibrary().slots();
+    slotLibraryDirectory = slotLibraryRoot;
+    if (slotLibraryActive) refreshSlotLibraryEntries();
+    lsampler::announceToActiveScreenReader(advancedButton,
+        "Library Folder. " + processor.getLibrary().root().getChildFile("Library").getFullPathName());
+}
+
+bool LSampler24AudioProcessorEditor::isLibraryAvailable() const
+{
+    // Check the configured root on demand. This intentionally allows an
+    // external drive to become available again while the plug-in is open.
+    const auto root = processor.getLibrary().root();
+    return root.getFullPathName().isNotEmpty() && root.isDirectory();
+}
+
+juce::String LSampler24AudioProcessorEditor::unavailableLibraryMessage() const
+{
+    const auto path = processor.getLibrary().root().getChildFile("Library").getFullPathName();
+    return "Library unavailable: " + path
+        + "\n\nConnect the drive, or choose/restore the Library Folder in Advanced.";
+}
+
+bool LSampler24AudioProcessorEditor::requireLibraryAvailable(juce::Component* focusTarget,
+                                                              bool openAdvancedAfterOk)
+{
+    if (isLibraryAvailable())
+        return true;
+
+    auto options = juce::MessageBoxOptions()
+        .withIconType(juce::MessageBoxIconType::WarningIcon)
+        .withTitle("LSampler-24 Library unavailable")
+        .withMessage(unavailableLibraryMessage())
+        .withButton("OK");
+
+    juce::AlertWindow::showAsync(options,
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this),
+         focus = juce::Component::SafePointer<juce::Component>(focusTarget),
+         openAdvancedAfterOk](int)
+        {
+            if (safeThis == nullptr) return;
+            if (openAdvancedAfterOk)
+                safeThis->showAdvancedMenu();
+            else if (focus != nullptr)
+                focus->grabKeyboardFocus();
+        });
+    return false;
+}
+
+void LSampler24AudioProcessorEditor::showStartupLibraryWarningIfNeeded()
+{
+    if (!isLibraryAvailable())
+        requireLibraryAvailable(&advancedButton, true);
+}
+
+void LSampler24AudioProcessorEditor::chooseLibraryFolder()
+{
+    auto currentLibrary = processor.getLibrary().root().getChildFile("Library");
+    chooser = std::make_unique<juce::FileChooser>("Choose LSampler-24 Library location", currentLibrary.getParentDirectory(), "*");
+    chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const juce::FileChooser& fc)
+        {
+            if (safeThis == nullptr) return;
+            auto selected = fc.getResult();
+            if (selected.getFullPathName().isEmpty()) { safeThis->advancedButton.grabKeyboardFocus(); return; }
+
+            juce::File root;
+            if (selected.getFileName().equalsIgnoreCase("Library")
+                && selected.getParentDirectory().getFileName().equalsIgnoreCase("LSampler-24"))
+                root = selected.getParentDirectory();
+            else if (selected.getFileName().equalsIgnoreCase("LSampler-24"))
+                root = selected;
+            else
+                root = selected.getChildFile("LSampler-24");
+
+            safeThis->activateLibraryRoot(root, true);
+            safeThis->advancedButton.grabKeyboardFocus();
+        });
+}
+
+void LSampler24AudioProcessorEditor::restoreDefaultLibraryFolder()
+{
+    activateLibraryRoot(LSampler24AudioProcessor::defaultLibraryRoot(), false);
+}
+
+void LSampler24AudioProcessorEditor::showAdvancedMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem(1, "Choose Library Folder...");
+    menu.addItem(2, "Open Library Folder");
+    menu.addItem(3, "Restore Default Library Folder");
+
+    juce::PopupMenu previous;
+    const auto history = loadLibraryHistory();
+    int id = 100;
+    for (const auto& root : history)
+    {
+        const auto libraryPath = root.getChildFile("Library").getFullPathName();
+        previous.addItem(id++, libraryPath + (root.isDirectory() ? juce::String() : " (unavailable)"), root.isDirectory());
+    }
+    if (history.empty()) previous.addItem(99, "No previous libraries", false);
+    menu.addSubMenu("Previous Libraries", previous);
+
+    auto options = juce::PopupMenu::Options().withTargetComponent(&advancedButton);
+    menu.showMenuAsync(options,
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), history](int result)
+        {
+            if (safeThis == nullptr) return;
+            if (result == 1) safeThis->chooseLibraryFolder();
+            else if (result == 2)
+            {
+                if (!safeThis->requireLibraryAvailable(&safeThis->advancedButton, false))
+                    return;
+                auto folder = safeThis->processor.getLibrary().root().getChildFile("Library");
+                if (!folder.startAsProcess())
+                    lsampler::announceToActiveScreenReader(safeThis->advancedButton, "Cannot open Library Folder");
+            }
+            else if (result == 3) safeThis->restoreDefaultLibraryFolder();
+            else if (result >= 100 && result < 100 + static_cast<int>(history.size()))
+                safeThis->activateLibraryRoot(history[static_cast<size_t>(result - 100)], true);
+            else safeThis->advancedButton.grabKeyboardFocus();
+        });
+}
+
 void LSampler24AudioProcessorEditor::chooseExportLibrary()
 {
-    auto initial = processor.getLibrary().root().getChildFile("LSampler-24 Library");
-    chooser = std::make_unique<juce::FileChooser>("Export Library", initial, "*");
+    if (!requireLibraryAvailable(&exportAllLibraryButton, true)) return;
+    auto initial = processor.getLibrary().root().getChildFile("LSampler-24 Full Library.lsampler-24.ls24");
+    chooser = std::make_unique<juce::FileChooser>("Export All", initial, "*");
     chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const juce::FileChooser& fc)
         {
@@ -3634,23 +3910,24 @@ void LSampler24AudioProcessorEditor::chooseExportLibrary()
                 else if (name.endsWithIgnoreCase(".ls24"))
                     name = name.dropLastCharacters(5);
                 name = juce::File::createLegalFileName(name.trim());
-                if (name.isEmpty()) name = "LSampler-24 Library";
+                if (name.isEmpty()) name = "LSampler-24 Full Library";
                 auto target = chosen.getParentDirectory().getChildFile(name + ".lsampler-24.ls24");
 
-                safeThis->runFileTask("Exporting library", [target](LSampler24AudioProcessor& p) {
+                safeThis->runFileTask("Exporting all library", [target](LSampler24AudioProcessor& p) {
                     FileTaskResult r; int samples = 0;
                     r.ok = p.exportLibraryArchive(target, r.count, samples, r.message);
                     if (r.ok) r.message = "Exported " + juce::String(r.count) + " slots, " + juce::String(samples) + " samples";
                     return r;
-                }, [safeThis](const FileTaskResult&, bool focus) { if (focus) safeThis->exportLibraryButton.grabKeyboardFocus(); });
+                }, [safeThis](const FileTaskResult&, bool focus) { if (focus) safeThis->exportAllLibraryButton.grabKeyboardFocus(); });
                 return;
             }
-            safeThis->exportLibraryButton.grabKeyboardFocus();
+            safeThis->exportAllLibraryButton.grabKeyboardFocus();
         });
 }
 
 void LSampler24AudioProcessorEditor::chooseImportLibrary()
 {
+    if (!requireLibraryAvailable(&importLibraryButton, true)) return;
     chooser = std::make_unique<juce::FileChooser>("Import Library", processor.getLibrary().root(), "*.ls24;*.lsampler-24.ls24");
     chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const juce::FileChooser& fc) {
@@ -3705,6 +3982,9 @@ void LSampler24AudioProcessorEditor::saveSlotLibraryNavigationState()
 
 void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser(bool forSampleSet, bool forBank)
 {
+    juce::Component* libraryFocus = forBank ? static_cast<juce::Component*>(&loadBank)
+                                            : static_cast<juce::Component*>(&loadSlot);
+    if (!requireLibraryAvailable(libraryFocus, true)) return;
     if (slotLibraryActive) return;
     slotLibraryForSampleSet = forSampleSet;
     slotLibraryForBank = forBank;
@@ -3760,13 +4040,14 @@ void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser(bool forSampleSet, 
 
     for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
     loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
+    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false); advancedButton.setVisible(false);
     parameterSelector.setVisible(false); parameterValue.setVisible(false);
     sampleSetCell.setVisible(false); sampleSetCell.setWantsKeyboardFocus(false);
     importBrowserCell.setVisible(false); importSourceCombo.setVisible(false);
     const bool showLibraryActions = !slotLibraryForSampleSet && !slotLibraryForBank;
-    exportLibraryButton.setVisible(showLibraryActions); importLibraryButton.setVisible(showLibraryActions);
+    exportLibraryButton.setVisible(showLibraryActions); exportAllLibraryButton.setVisible(showLibraryActions); importLibraryButton.setVisible(showLibraryActions);
     exportLibraryButton.setWantsKeyboardFocus(showLibraryActions);
+    exportAllLibraryButton.setWantsKeyboardFocus(showLibraryActions);
     importLibraryButton.setWantsKeyboardFocus(showLibraryActions);
     slotLibraryCell.setVisible(true);
     slotLibraryCell.setWantsKeyboardFocus(true);
@@ -3796,6 +4077,8 @@ void LSampler24AudioProcessorEditor::leaveSlotLibraryBrowser(bool announceSlot)
     slotLibraryCell.setWantsKeyboardFocus(false);
     exportLibraryButton.setVisible(false);
     exportLibraryButton.setWantsKeyboardFocus(false);
+    exportAllLibraryButton.setVisible(false);
+    exportAllLibraryButton.setWantsKeyboardFocus(false);
     importLibraryButton.setVisible(false);
     importLibraryButton.setWantsKeyboardFocus(false);
 
@@ -3803,7 +4086,7 @@ void LSampler24AudioProcessorEditor::leaveSlotLibraryBrowser(bool announceSlot)
     {
         for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
         loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
-        loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false);
+        loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false); aboutButton.setVisible(false); advancedButton.setVisible(false);
         parameterSelector.setVisible(false); parameterValue.setVisible(false);
         sampleSetCell.setVisible(true); sampleSetCell.setWantsKeyboardFocus(true);
         resized();
@@ -3820,7 +4103,7 @@ void LSampler24AudioProcessorEditor::leaveSlotLibraryBrowser(bool announceSlot)
         cell.setWantsKeyboardFocus(i == processor.getCurrentSlot());
     }
     loadSample.setVisible(true); loadSlot.setVisible(true); saveSlot.setVisible(true);
-    loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true);
+    loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true); advancedButton.setVisible(true);
     parameterSelector.setVisible(false); parameterValue.setVisible(false);
     resized();
     if (announceSlot) returnToCurrentSlotAndAnnounce();
@@ -3865,13 +4148,18 @@ void LSampler24AudioProcessorEditor::refreshSlotLibraryEntries()
 
 void LSampler24AudioProcessorEditor::selectSlotLibraryEntry(int index, bool announce)
 {
-    if (slotLibraryEntries.empty()) { slotLibraryCell.setBrowserText("Empty folder"); return; }
+    if (slotLibraryEntries.empty()) { slotLibraryCell.setBrowserText("Empty folder"); exportLibraryButton.setButtonText("Export Folder"); return; }
     slotLibraryEntryIndex = juce::jlimit(0, int(slotLibraryEntries.size()) - 1, index);
     const auto& e = slotLibraryEntries[size_t(slotLibraryEntryIndex)];
     juce::String text;
-    if (e.directory) text = "Folder " + e.file.getFileName();
+    if (e.directory)
+    {
+        text = "Folder " + e.file.getFileName();
+        exportLibraryButton.setButtonText("Export Folder: " + e.file.getFileName());
+    }
     else
     {
+        exportLibraryButton.setButtonText("Export Folder");
         text = slotLibraryForBank ? cleanLibraryBankName(e.file) : cleanLibrarySlotName(e.file);
         if (!slotLibraryForBank)
         {
@@ -4220,6 +4508,7 @@ void LSampler24AudioProcessorEditor::chooseLoadSlot()
 
 void LSampler24AudioProcessorEditor::chooseSaveSlot()
 {
+    if (!requireLibraryAvailable(&saveSlot, true)) return;
     // The native Save dialog shows only the editable logical slot name.
     // Prefix and LSampler extension are added after the user confirms.
     auto logicalName = processor.getSlotName(processor.getCurrentSlot());
@@ -4281,6 +4570,7 @@ void LSampler24AudioProcessorEditor::chooseLoadBank()
 
 void LSampler24AudioProcessorEditor::chooseSaveBank()
 {
+    if (!requireLibraryAvailable(&saveBank, true)) return;
     auto initial = processor.getLibrary().banks().getChildFile(LibraryManager::defaultName("Bank") + LibraryManager::bankExtension);
     chooser = std::make_unique<juce::FileChooser>("Save Bank", initial, "*.lsampler-24-b");
     chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,

@@ -1,0 +1,23 @@
+LSampler-24 TEST83 - Library Advanced / Export Folder / Export All
+
+- Aggiunto pulsante Advanced nella schermata principale.
+- Advanced permette di scegliere la posizione della Library, aprire la Library corrente,
+  ripristinare Documents\LSampler-24\Library e richiamare le Library usate in precedenza.
+- Percorso attivo e storico sono salvati in:
+  %APPDATA%\Lo-lo78\LSampler-24\settings.xml
+- Il percorso configurato viene letto anche alla creazione del processor, quindi persiste
+  tra istanze e riavvii. Se un disco esterno configurato non e' disponibile all'avvio,
+  viene usata temporaneamente la Library predefinita senza cancellare lo storico.
+- La struttura creata resta LSampler-24\Library\Samples, Slots, Banks.
+- Export Library e' stato separato in Export Folder e Export All.
+- Export Folder opera sulla cartella selezionata nel browser Slots e risolve i veri file
+  audio referenziati da ogni Slot (sampleReference + SHA-256), indipendentemente dalla
+  posizione/nome delle cartelle sotto Library\Samples.
+- I campioni condivisi da piu' Slot vengono inclusi una sola volta.
+- Export All conserva la precedente logica di esportazione di tutti gli Slot e di tutte
+  le loro dipendenze audio.
+- Import continua a riscrivere i riferimenti verso la Library attiva, mantenendo il
+  pacchetto .lsampler-24.ls24 autosufficiente e portabile.
+- Il nome proposto da Export Folder contiene il nome della cartella selezionata.
+- Nessuna modifica al DSP.
+- Nessuna compilazione eseguita.
