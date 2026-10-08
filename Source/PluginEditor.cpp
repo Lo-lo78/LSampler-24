@@ -128,6 +128,17 @@ public:
         window.setTitle("Choose Help language");
     }
 };
+
+class AdvancedMenuLookAndFeel final : public rackgui::Theme
+{
+public:
+    void preparePopupMenuWindow(juce::Component& window) override
+    {
+        juce::LookAndFeel_V4::preparePopupMenuWindow(window);
+        window.setName("Advanced");
+        window.setTitle("Advanced");
+    }
+};
 }
 
 LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioProcessor& p)
@@ -135,6 +146,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
 {
     setLookAndFeel(&rackTheme);
     helpMenuLookAndFeel = std::make_unique<HelpMenuLookAndFeel>();
+    advancedMenuLookAndFeel = std::make_unique<AdvancedMenuLookAndFeel>();
     for (auto* display : std::array<juce::Component*,5>{ &waveform, &slotOverview, &currentEdit, &sliceOverview, &masterOutput })
         addAndMakeVisible(*display);
     addChildComponent(propertiesPanel);
@@ -180,9 +192,9 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     aboutButton.setButtonText("About  Alt+A");
     aboutButton.setDescription("Alt+A");
     aboutButton.onClick = [this] { openAbout(); };
-    advancedButton.setButtonText("Advanced");
+    advancedButton.setButtonText("Advanced  Alt+V");
     advancedButton.setName("Advanced");
-    advancedButton.setDescription("Library location and advanced settings");
+    advancedButton.setDescription("Advanced settings. Shortcut Alt+V on the Slot page.");
     advancedButton.onClick = [this] { showAdvancedMenu(); };
 
     const auto aboutText = juce::String("LSampler-24\nVersion: ") + lsamplerVersion
@@ -384,7 +396,7 @@ void LSampler24AudioProcessorEditor::paint(juce::Graphics& g)
     if(!importBrowserActive && !slotLibraryActive && !sampleSetActive) {
         rackgui::frame(g, {16,72,352,490}, "SLOTS / 01-24");
         g.setColour(rackgui::muted);g.setFont(13.0f);
-        g.drawText(globalOpen?"Enter: Confirm  /  Esc: Cancel  /  Alt+V: Value":parameterPage?"Alt+V: Value  /  Alt+L: Loop On-Off  /  Alt+M: Sample Set  /  Alt+E: Slice":"Enter: Edit selected slot  /  Alt+M: Sample Set  /  Alt+E: Slice",384,588,getWidth()-400,24,juce::Justification::centredLeft);
+        g.drawText(globalOpen?"Enter: Confirm  /  Esc: Cancel  /  Alt+V: Value":parameterPage?"Alt+V: Value  /  Alt+L: Loop On-Off  /  Alt+M: Sample Set  /  Alt+E: Slice":"Enter: Edit selected slot  /  Alt+V: Advanced  /  Alt+M: Sample Set  /  Alt+E: Slice",384,588,getWidth()-400,24,juce::Justification::centredLeft);
     }
 }
 
@@ -1854,6 +1866,15 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     }
 
     if (!mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown()
+        && mods.isAltDown() && ch == 'v' && !parameterPage)
+    {
+        advancedButton.grabKeyboardFocus();
+        if (auto* handler = advancedButton.getAccessibilityHandler()) handler->grabFocus();
+        showAdvancedMenu();
+        return true;
+    }
+
+    if (!mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown()
         && mods.isAltDown() && ch == 'h')
     {
         showHelpLanguageMenu();
@@ -2268,6 +2289,37 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             returnToCurrentSlotAndAnnounce();
             return true;
         }
+
+        if (code == juce::KeyPress::tabKey)
+        {
+            std::array<juce::Component*, 8> buttons {
+                &loadSample, &loadSlot, &saveSlot, &loadBank, &saveBank, &help, &aboutButton, &advancedButton
+            };
+            const bool backwards = mods.isShiftDown();
+            int index = -1;
+            for (int i = 0; i < static_cast<int>(buttons.size()); ++i)
+                if (source == buttons[static_cast<size_t>(i)]) { index = i; break; }
+
+            juce::Component* target = nullptr;
+            if (index >= 0)
+            {
+                if (!backwards && index == static_cast<int>(buttons.size()) - 1)
+                    target = &slotCells[static_cast<size_t>(processor.getCurrentSlot())];
+                else if (backwards && index == 0)
+                    target = &slotCells[static_cast<size_t>(processor.getCurrentSlot())];
+                else
+                    target = buttons[static_cast<size_t>(index + (backwards ? -1 : 1))];
+            }
+
+            if (target != nullptr)
+            {
+                juce::AccessibilityHandler::clearCurrentlyFocusedHandler();
+                target->grabKeyboardFocus();
+                if (auto* handler = target->getAccessibilityHandler()) handler->grabFocus();
+            }
+            return true;
+        }
+
         if (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey
             || code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
             || code == juce::KeyPress::homeKey || code == juce::KeyPress::endKey
@@ -3926,6 +3978,7 @@ void LSampler24AudioProcessorEditor::enterExportFolderBrowser()
 void LSampler24AudioProcessorEditor::showAdvancedMenu()
 {
     juce::PopupMenu menu;
+    menu.setLookAndFeel(advancedMenuLookAndFeel.get());
     menu.addSectionHeader("Advanced");
     menu.addItem(1, "Choose Library Folder...");
     menu.addItem(2, "Open Library Folder");

@@ -512,6 +512,7 @@ private:
     LSamplerValueSlider parameterValue;
     std::unique_ptr<juce::LookAndFeel_V4> valueLookAndFeel;
     std::unique_ptr<juce::LookAndFeel_V4> helpMenuLookAndFeel;
+    std::unique_ptr<juce::LookAndFeel_V4> advancedMenuLookAndFeel;
 
     std::unique_ptr<juce::FileChooser> chooser;
 
