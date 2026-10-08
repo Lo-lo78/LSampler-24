@@ -336,6 +336,10 @@ private:
     bool gridPreviewMode = true;
     bool editorFocusSeen = false;
     bool editorHadKeyboardFocus = false;
+    // Set after the missing-Library warning is acknowledged.  Do not open the
+    // Advanced popup while REAPER's FX Chain still owns keyboard focus; wait
+    // until the user actually enters the plug-in editor.
+    bool pendingAdvancedOpen = false;
     juce::Component::SafePointer<juce::Component> propertiesReturnFocus;
     juce::Component::SafePointer<juce::Component> sliceReturnFocus;
     void openSliceEditor(bool sequencer);

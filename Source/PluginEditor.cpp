@@ -2471,6 +2471,22 @@ void LSampler24AudioProcessorEditor::timerCallback()
     {
         editorFocusSeen = true;
         editorHadKeyboardFocus = true;
+
+        if (pendingAdvancedOpen)
+        {
+            pendingAdvancedOpen = false;
+            advancedButton.grabKeyboardFocus();
+
+            // Let JUCE/REAPER finish the focus transition before creating the
+            // popup.  This makes its first item the real keyboard and NVDA
+            // focus target instead of leaving focus in the FX Chain.
+            juce::MessageManager::callAsync(
+                [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+                {
+                    if (safeThis != nullptr && safeThis->hasKeyboardFocus(true))
+                        safeThis->showAdvancedMenu();
+                });
+        }
     }
     else if (editorFocusSeen && editorHadKeyboardFocus)
     {
@@ -3810,7 +3826,18 @@ bool LSampler24AudioProcessorEditor::requireLibraryAvailable(juce::Component* fo
         {
             if (safeThis == nullptr) return;
             if (openAdvancedAfterOk)
-                safeThis->showAdvancedMenu();
+            {
+                // The Alert can be shown while REAPER's FX Chain owns focus.
+                // Opening a PopupMenu here creates a menu that exists visually
+                // but is not the active keyboard/accessibility surface.  Defer
+                // it until timerCallback sees keyboard focus inside the editor.
+                safeThis->pendingAdvancedOpen = true;
+
+                // If focus has already returned to the editor after dismissing
+                // the Alert, the timer will open Advanced on its next tick.
+                if (safeThis->hasKeyboardFocus(true))
+                    safeThis->advancedButton.grabKeyboardFocus();
+            }
             else if (focus != nullptr)
                 focus->grabKeyboardFocus();
         });
