@@ -105,6 +105,7 @@ bool LSampler24AudioProcessor::startFileTask(FileTask task, std::function<void(F
 {
     bool expected = false;
     if (shuttingDown.load() || !fileTaskRunning.compare_exchange_strong(expected, true)) return false;
+    fileTaskProgress.store(0.0, std::memory_order_release);
     fileWorker.addJob(std::function<void()>([this, task = std::move(task), completion = std::move(completion)]() mutable {
         FileTaskResult result;
         try { result = task(*this); }
@@ -112,6 +113,7 @@ bool LSampler24AudioProcessor::startFileTask(FileTask task, std::function<void(F
         catch (...) { result.message = "File operation failed"; }
         if (result.message.isEmpty()) result.message = result.ok ? "File operation completed" : "File operation stopped";
         { const juce::ScopedLock lock(fileResultLock); lastFileTaskResult = result; }
+        fileTaskProgress.store(1.0, std::memory_order_release);
         fileTaskRunning.store(false, std::memory_order_release);
         if (!shuttingDown.load(std::memory_order_acquire))
             juce::MessageManager::callAsync([completion = std::move(completion), result]() mutable { completion(result); });
@@ -1968,8 +1970,11 @@ bool LSampler24AudioProcessor::importFilesToLibrary(const juce::Array<juce::File
     error.clear();
 
     bool foundSupportedAudio = false;
+    int progressIndex = 0;
+    const int progressTotal = juce::jmax(1, sourceFiles.size());
     for (const auto& source : sourceFiles)
     {
+        setFileTaskProgress(double(progressIndex++) / double(progressTotal));
         if (shouldStopFileTask()) { error = "Import stopped"; return false; }
         if (!source.existsAsFile() || !SamplePool::instance().canReadFile(source))
             continue;
@@ -2059,6 +2064,8 @@ bool LSampler24AudioProcessor::importFolderToLibrary(const juce::File& sourceFol
     juce::Array<juce::File> files;
     sourceFolder.findChildFiles(files, juce::File::findFiles, true);
     bool foundSupportedAudio = false;
+    int progressIndex = 0;
+    const int progressTotal = juce::jmax(1, files.size());
 
     auto collectionName = juce::File::createLegalFileName(sourceFolder.getFileName()).trim();
     if (collectionName.isEmpty())
@@ -2071,6 +2078,7 @@ bool LSampler24AudioProcessor::importFolderToLibrary(const juce::File& sourceFol
 
     for (const auto& source : files)
     {
+        setFileTaskProgress(double(progressIndex++) / double(progressTotal));
         if (shouldStopFileTask()) { error = "Import stopped"; return false; }
         if (!source.existsAsFile() || !SamplePool::instance().canReadFile(source))
             continue;
@@ -2173,8 +2181,11 @@ bool LSampler24AudioProcessor::exportLibraryFolderArchive(const juce::File& slot
     struct ExportSlot { juce::File slot; juce::String slotPath; std::vector<ExportSample> samples; };
     std::vector<ExportSlot> valid;
 
+    int scanIndex = 0;
+    const int scanTotal = juce::jmax(1, slotFiles.size());
     for (const auto& slotFile : slotFiles)
     {
+        setFileTaskProgress(0.70 * double(scanIndex++) / double(scanTotal));
         if (shouldStopFileTask()) { error = "Export stopped"; return false; }
         juce::String readError;
         auto tree = readPreset(slotFile, readError);
@@ -2244,6 +2255,7 @@ bool LSampler24AudioProcessor::exportLibraryFolderArchive(const juce::File& slot
         }
     }
 
+    setFileTaskProgress(0.85);
     auto stream = temporary.getFile().createOutputStream();
     if (stream == nullptr) { error = "Could not create export file"; return false; }
     if (!builder.writeToStream(*stream, nullptr)) { error = "Could not write LSampler-24 library export"; return false; }
@@ -2251,6 +2263,7 @@ bool LSampler24AudioProcessor::exportLibraryFolderArchive(const juce::File& slot
     if (stream->getStatus().failed()) { error = "Could not flush library export"; return false; }
     stream.reset();
     if (!temporary.overwriteTargetFileWithTemporary()) { error = "Could not replace export file"; return false; }
+    setFileTaskProgress(1.0);
     return true;
 }
 
@@ -2315,8 +2328,11 @@ bool LSampler24AudioProcessor::importLibraryArchive(const juce::File& archiveFil
     importedSlotsDir.findChildFiles(slotFiles, juce::File::findFiles, true,
                                      "*" + juce::String(LibraryManager::slotExtension));
 
+    int importIndex = 0;
+    const int importTotal = juce::jmax(1, slotFiles.size());
     for (const auto& sourceSlot : slotFiles)
     {
+        setFileTaskProgress(0.15 + 0.80 * double(importIndex++) / double(importTotal));
         if (shouldStopFileTask()) { error = "Import stopped"; return false; }
         juce::String localError;
         auto tree = readPreset(sourceSlot, localError);

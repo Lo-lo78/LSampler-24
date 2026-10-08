@@ -54,6 +54,8 @@ public:
     bool isFileTaskRunning() const noexcept { return fileTaskRunning.load(std::memory_order_acquire); }
     FileTaskResult getLastFileTaskResult() const { const juce::ScopedLock lock(fileResultLock); return lastFileTaskResult; }
     bool shouldStopFileTask() const noexcept { return shuttingDown.load(std::memory_order_acquire); }
+    void setFileTaskProgress(double progress) noexcept { fileTaskProgress.store(juce::jlimit(0.0, 1.0, progress), std::memory_order_release); }
+    double getFileTaskProgress() const noexcept { return fileTaskProgress.load(std::memory_order_acquire); }
     uint64_t getUiRevision() const noexcept { return uiRevision.load(std::memory_order_acquire); }
 
     bool loadSample(const juce::File& file, juce::String& error);
@@ -263,6 +265,7 @@ private:
     FileTaskResult lastFileTaskResult;
     std::atomic<uint64_t> uiRevision { 1 };
     std::atomic<bool> fileTaskRunning { false }, shuttingDown { false };
+    std::atomic<double> fileTaskProgress { 0.0 };
     juce::ThreadPool fileWorker { 1, 0, juce::Thread::Priority::low };
     std::atomic<bool> resetOutputEnvelope { false };
     mutable juce::CriticalSection stateLock;

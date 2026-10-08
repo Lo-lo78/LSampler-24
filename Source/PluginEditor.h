@@ -414,6 +414,8 @@ private:
     void chooseExportLibrary();
     void chooseImportLibrary();
     void showAdvancedMenu();
+    void returnToAdvancedAndAnnounce();
+    void enterExportFolderBrowser();
     bool isLibraryAvailable() const;
     juce::String unavailableLibraryMessage() const;
     bool requireLibraryAvailable(juce::Component* focusTarget = nullptr, bool openAdvancedAfterOk = true);
@@ -503,6 +505,8 @@ private:
     bool aboutOpen = false;
     juce::Component::SafePointer<juce::Component> aboutReturnFocus;
     juce::Label status;
+    juce::String fileTaskTitle;
+    int lastFileTaskProgress = -1;
 
     LSamplerParameterComboBox parameterSelector;
     LSamplerValueSlider parameterValue;
@@ -566,6 +570,7 @@ private:
     bool slotLibraryActive = false;
     bool slotLibraryForSampleSet = false;
     bool slotLibraryForBank = false;
+    bool slotLibraryForExport = false;
     bool slotLibraryPreviewEnabled = false;
     bool slotLibraryShiftSelectionActive = false;
     juce::juce_wchar slotLibraryLastInitial = 0;
