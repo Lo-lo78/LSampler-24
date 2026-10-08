@@ -182,19 +182,24 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     addButton(advancedButton, 9);
     // Show keyboard equivalents directly on the mouse buttons so sighted users
     // discover the accessible workflow while exploring the interface.
-    loadSample.setButtonText("Load Sample  Alt+O");
-    loadSlot.setButtonText("Load Slot  Alt+S");
-    saveSlot.setButtonText("Save Slot  Alt+Shift+S");
-    loadBank.setButtonText("Load Bank  Alt+B");
-    saveBank.setButtonText("Save Bank  Alt+Shift+B");
-    help.setButtonText("Help  Alt+H");
+    loadSample.setButtonText("Load Sample");
+    loadSample.setDescription("Alt+O");
+    loadSlot.setButtonText("Load Slot");
+    loadSlot.setDescription("Alt+S");
+    saveSlot.setButtonText("Save Slot");
+    saveSlot.setDescription("Alt+Shift+S");
+    loadBank.setButtonText("Load Bank");
+    loadBank.setDescription("Alt+B");
+    saveBank.setButtonText("Save Bank");
+    saveBank.setDescription("Alt+Shift+B");
+    help.setButtonText("Help");
+    help.setDescription("Alt+H");
     help.onClick = [this] { showHelpLanguageMenu(); };
-    aboutButton.setButtonText("About  Alt+A");
+    aboutButton.setButtonText("About");
     aboutButton.setDescription("Alt+A");
     aboutButton.onClick = [this] { openAbout(); };
-    advancedButton.setButtonText("Advanced  Alt+V");
-    advancedButton.setName("Advanced");
-    advancedButton.setDescription("Advanced settings. Shortcut Alt+V on the Slot page.");
+    advancedButton.setButtonText("Advanced");
+    advancedButton.setDescription("Alt+V");
     advancedButton.onClick = [this] { showAdvancedMenu(); };
 
     const auto aboutText = juce::String("LSampler-24\nVersion: ") + lsamplerVersion
