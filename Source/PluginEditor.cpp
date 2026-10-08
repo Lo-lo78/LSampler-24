@@ -425,11 +425,8 @@ void LSampler24AudioProcessorEditor::resized()
         }
         auto& browserCell=slotLibraryActive?slotLibraryCell:importBrowserCell;
         browserCell.setBounds(area.removeFromTop(60));area.removeFromTop(12);
-        auto buttons=area.removeFromTop(36);
-        if(importBrowserActive) {importSourceCombo.setBounds(buttons.removeFromLeft(250));buttons.removeFromLeft(10);}
-        exportLibraryButton.setBounds(buttons.removeFromLeft(220));buttons.removeFromLeft(10);
-        exportAllLibraryButton.setBounds(buttons.removeFromLeft(220));buttons.removeFromLeft(10);
-        importLibraryButton.setBounds(buttons.removeFromLeft(220));
+        // Alt+O and the Slot Library browsers use the full browser area.
+        // Import/Export controls are exposed only through Advanced (Alt+V).
         return;
     }
     waveform.setBounds(384,72,getWidth()-400,294);
@@ -1333,7 +1330,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             return true;
         }
 
-        if (code == juce::KeyPress::escapeKey) { const bool wasExport = slotLibraryForExport; leaveSlotLibraryBrowser(!wasExport); if (wasExport) returnToAdvancedAndAnnounce(); return true; }
+        if (code == juce::KeyPress::escapeKey) { const bool wasExport = slotLibraryForExport; leaveSlotLibraryBrowser(!wasExport); if (wasExport) returnToCurrentSlotAndAnnounce(); return true; }
 
         if (onLibraryAction)
         {
@@ -1481,68 +1478,16 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (importBrowserActive)
     {
-        const bool onImportSource = source == &importSourceCombo;
-        const bool onExportLibrary = source == &exportLibraryButton;
-        const bool onExportAllLibrary = source == &exportAllLibraryButton;
-        const bool onImportLibrary = source == &importLibraryButton;
-        const auto focusImportBrowser = [this]
-        {
-            importBrowserCell.grabKeyboardFocus();
-            juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
-            {
-                if (safeThis == nullptr || !safeThis->importBrowserActive) return;
-                lsampler::announceToActiveScreenReader(safeThis->importBrowserCell, safeThis->importForSampleSet
-                    ? "Sample Browser. Enter loads the selected file into the current Sample Set position."
-                    : "Sample Browser. Enter loads selected items into slots.");
-            });
-        };
         if (code == juce::KeyPress::tabKey)
         {
-            if (importForSampleSet) { importBrowserCell.grabKeyboardFocus(); return true; }
-            if (mods.isShiftDown())
-            {
-                if (onImportSource) focusImportBrowser();
-                else if (onExportLibrary) importSourceCombo.grabKeyboardFocus();
-                else if (onExportAllLibrary) exportLibraryButton.grabKeyboardFocus();
-                else if (onImportLibrary) exportAllLibraryButton.grabKeyboardFocus();
-                else importLibraryButton.grabKeyboardFocus();
-            }
-            else
-            {
-                if (onImportSource) exportLibraryButton.grabKeyboardFocus();
-                else if (onExportLibrary) exportAllLibraryButton.grabKeyboardFocus();
-                else if (onExportAllLibrary) importLibraryButton.grabKeyboardFocus();
-                else if (onImportLibrary) focusImportBrowser();
-                else importSourceCombo.grabKeyboardFocus();
-            }
-            return true;
-        }
-        if (onImportSource || onExportLibrary || onExportAllLibrary || onImportLibrary)
-        {
-            if (onImportSource && !mods.isCtrlDown() && !mods.isAltDown()
-                && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey
-                    || code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
-                    || code == juce::KeyPress::homeKey || code == juce::KeyPress::endKey))
-                return false; // Let the ComboBox perform normal accessible selection.
-
-            if (code == juce::KeyPress::escapeKey) { leaveImportBrowser(true, true); return true; }
-            if (code == juce::KeyPress::returnKey || code == juce::KeyPress::spaceKey)
-            {
-                if (onImportSource)
-                {
-                    if (importSourceCombo.getSelectedId() == 2) chooseImportFolder(); else chooseImportFiles();
-                }
-                else if (onExportLibrary) chooseExportFolder();
-                else if (onExportAllLibrary) chooseExportLibrary();
-                else chooseImportLibrary();
-                return true;
-            }
+            importBrowserCell.grabKeyboardFocus();
             return true;
         }
         if (code == juce::KeyPress::escapeKey)
         {
             if (importRecentPathsMode) { leaveImportRecentPaths(); return true; }
-            leaveImportBrowser(true, true); return true;
+            leaveImportBrowser(true, true);
+            return true;
         }
         if (importForSampleSet)
         {
@@ -2852,14 +2797,16 @@ void LSampler24AudioProcessorEditor::enterImportBrowser()
     sampleSetCell.setVisible(false); sampleSetCell.setWantsKeyboardFocus(false);
     importBrowserCell.setVisible(true);
     importBrowserCell.setWantsKeyboardFocus(true);
-    importSourceCombo.setVisible(!importForSampleSet);
-    importSourceCombo.setWantsKeyboardFocus(!importForSampleSet);
-    exportLibraryButton.setVisible(!importForSampleSet);
-    exportLibraryButton.setWantsKeyboardFocus(!importForSampleSet);
-    exportAllLibraryButton.setVisible(!importForSampleSet);
-    exportAllLibraryButton.setWantsKeyboardFocus(!importForSampleSet);
-    importLibraryButton.setVisible(!importForSampleSet);
-    importLibraryButton.setWantsKeyboardFocus(!importForSampleSet);
+    // Alt+O is only the Sample Browser. Library Import/Export actions live
+    // exclusively in Advanced (Alt+V).
+    importSourceCombo.setVisible(false);
+    importSourceCombo.setWantsKeyboardFocus(false);
+    exportLibraryButton.setVisible(false);
+    exportLibraryButton.setWantsKeyboardFocus(false);
+    exportAllLibraryButton.setVisible(false);
+    exportAllLibraryButton.setWantsKeyboardFocus(false);
+    importLibraryButton.setVisible(false);
+    importLibraryButton.setWantsKeyboardFocus(false);
     refreshImportEntries();
     if (importRememberedEntryPath.isNotEmpty())
     {
@@ -3720,7 +3667,7 @@ void LSampler24AudioProcessorEditor::chooseImportFiles()
         {
             if (safeThis == nullptr) return;
             const auto files = fc.getResults();
-            if (files.isEmpty()) { safeThis->returnToAdvancedAndAnnounce(); return; }
+            if (files.isEmpty()) { safeThis->returnToCurrentSlotAndAnnounce(); return; }
             safeThis->runFileTask("Import Files", [files](LSampler24AudioProcessor& p) {
                 FileTaskResult r;
                 r.ok = p.importFilesToLibrary(files, r.count, r.skipped, r.message);
@@ -3745,7 +3692,7 @@ void LSampler24AudioProcessorEditor::chooseImportFolder()
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const juce::FileChooser& fc) {
             if (safeThis == nullptr) return;
             const auto folder = fc.getResult();
-            if (folder.getFullPathName().isEmpty()) { safeThis->returnToAdvancedAndAnnounce(); return; }
+            if (folder.getFullPathName().isEmpty()) { safeThis->returnToCurrentSlotAndAnnounce(); return; }
             safeThis->runFileTask("Importing folder", [folder](LSampler24AudioProcessor& p) {
                 FileTaskResult r;
                 r.ok = p.importFolderToLibrary(folder, r.count, r.skipped, r.message);
@@ -3781,7 +3728,7 @@ void LSampler24AudioProcessorEditor::chooseExportFolder()
         {
             if (safeThis == nullptr) return;
             auto chosen = fc.getResult();
-            if (chosen.getFullPathName().isEmpty()) { safeThis->leaveSlotLibraryBrowser(false); safeThis->returnToAdvancedAndAnnounce(); return; }
+            if (chosen.getFullPathName().isEmpty()) { safeThis->leaveSlotLibraryBrowser(false); safeThis->returnToCurrentSlotAndAnnounce(); return; }
             auto name = chosen.getFileName().trim();
             if (name.endsWithIgnoreCase(".lsampler-24.ls24"))
                 name = name.dropLastCharacters((int) juce::String(".lsampler-24.ls24").length());
@@ -4030,7 +3977,7 @@ void LSampler24AudioProcessorEditor::showAdvancedMenu()
             else if (result == 14) safeThis->chooseExportLibrary();
             else if (result >= 100 && result < 100 + static_cast<int>(history.size()))
                 safeThis->activateLibraryRoot(history[static_cast<size_t>(result - 100)], true);
-            else safeThis->returnToAdvancedAndAnnounce();
+            else safeThis->returnToCurrentSlotAndAnnounce();
         });
 }
 
@@ -4063,7 +4010,7 @@ void LSampler24AudioProcessorEditor::chooseExportLibrary()
                 }, [safeThis](const FileTaskResult&, bool) { safeThis->returnToAdvancedAndAnnounce(); });
                 return;
             }
-            safeThis->returnToAdvancedAndAnnounce();
+            safeThis->returnToCurrentSlotAndAnnounce();
         });
 }
 
@@ -4075,7 +4022,7 @@ void LSampler24AudioProcessorEditor::chooseImportLibrary()
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const juce::FileChooser& fc) {
             if (safeThis == nullptr) return;
             const auto file = fc.getResult();
-            if (file.getFullPathName().isEmpty()) { safeThis->returnToAdvancedAndAnnounce(); return; }
+            if (file.getFullPathName().isEmpty()) { safeThis->returnToCurrentSlotAndAnnounce(); return; }
             safeThis->runFileTask("Importing library", [file](LSampler24AudioProcessor& p) {
                 FileTaskResult r; int samples = 0;
                 r.ok = p.importLibraryArchive(file, r.count, samples, r.skipped, r.message);
