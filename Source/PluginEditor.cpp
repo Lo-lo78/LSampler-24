@@ -494,7 +494,7 @@ void LSampler24AudioProcessorEditor::selectSlot(int slotIndex, bool moveKeyboard
     // start, not a toggle: moving to a new slot replaces the old preview and
     // plays this slot through the same configured preview path. Empty slots
     // simply stop the previous preview.
-    if (slotPreviewMode && !parameterPage && !propertiesOpen)
+    if (!propertiesOpen && (parameterPage || slotPreviewMode))
         processor.requestPreviewStart();
 }
 

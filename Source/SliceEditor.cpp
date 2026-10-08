@@ -199,7 +199,7 @@ void SliceEditor::preview(bool whole,bool slice,bool toggle) {
     // step as the timeline start for the next Space preview.  Kind 5 is the
     // normal MIDI-note Slice path with an explicit starting timeline position.
     const int kind=whole?(page==Page::steps?5:1):slice?(page==Page::boundaries?2:4):page==Page::boundaries?1:3;
-    const bool stopping=toggle&&processor.getSlicePreviewKind()==kind&&(kind==1||kind==3||kind==5||lastPreviewItem==item);
+    const bool stopping=toggle&&processor.getSlicePreviewKind()==kind;
     processor.requestSlicePreview(slot,kind,item,toggle);lastPreviewItem=item;
     if(toggle) {
         const juce::String name=(kind==1||kind==5)?"Sample preview":kind==3?"Sequence preview":kind==2?"Slice preview":"Step preview";
