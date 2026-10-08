@@ -415,6 +415,7 @@ private:
     void chooseImportLibrary();
     void showAdvancedMenu();
     void returnToAdvancedAndAnnounce();
+    void returnToButton(juce::TextButton& button);
     void enterExportFolderBrowser();
     bool isLibraryAvailable() const;
     juce::String unavailableLibraryMessage() const;
