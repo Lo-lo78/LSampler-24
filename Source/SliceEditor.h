@@ -45,6 +45,7 @@ private:
     int stepWidthIndex=0;
     bool numeric=false;
     bool valueMode=false;
+    bool manualSpacePreviewPlaying=false; // toggled only by manual Space
     int lastPreviewItem=-1;
     std::bitset<128> selected;
     std::vector<lsampler::SliceStep> clipboard;

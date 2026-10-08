@@ -1,0 +1,9 @@
+TEST96 - Preview Grid e Slice, verifica approfondita (solo sorgente)
+
+- La richiesta di anteprima Grid Ctrl+Su/Giu contiene direttamente l'indice dello Slot di destinazione; evita che venga sovrascritto da altri comandi preview condivisi.
+- La preview della Grid e' Start, non Toggle: interrompe la precedente e avvia il nuovo Slot con la mappatura Low/High Key/Original Pitch esistente.
+- Slice F2: Space alterna Play e Stop attraverso uno stato esplicito nell'editor, NON attraverso getSlicePreviewKind().
+- L'avvio F2 continua dallo step corrente (kind 5); navigazione/modifica step non retriggera lo Space attivo.
+- Anche se il suono termina naturalmente, la seconda pressione di Space e' Stop.
+- F1/F3 usano lo stesso Play/Stop manuale; le auto-audizioni F2/F3 sono permesse soltanto a trasporto manuale disattivato.
+- Nessuna compilazione. Verificare in REAPER: Ctrl+Su/Giu nella Grid con Slot caricati, F2 Space Play, cambio step, Space Stop, Space Play da nuovo step.

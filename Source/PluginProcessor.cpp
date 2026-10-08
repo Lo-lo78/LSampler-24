@@ -143,6 +143,7 @@ void LSampler24AudioProcessor::releaseResources()
     libraryPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
     previewPlaying = false;
     previewPlayingSlot = -1;
+    previewStartSlot.store(-1, std::memory_order_release);
     slicePreviewKind.store(0);slicePreviewCommand.store(-1);
     importPreviewPlaying = false;
     importPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
@@ -381,7 +382,7 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         && libraryPreviewVoicePool.activeVoiceCount() == 0 && !importPreviewPlaying
         && !previewPlaying && !libraryPreviewPlaying && slicePreviewKind.load() == 0
         && stopVoicesMask.load() == 0 && slicePreviewCommand.load() < 0
-        && !previewToggleRequested.load() && !previewStartRequested.load()
+        && !previewToggleRequested.load() && previewStartSlot.load() < 0
         && !previewStopRequested.load() && !previewRestartRequested.load() && !previewAuditionRequested.load()
         && !previewSampleSetRequested.load()
         && !libraryPreviewToggleRequested.load() && !libraryPreviewStopRequested.load()
@@ -561,19 +562,19 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     voicePool.setOutputRoutes(routes);
     libraryPreviewVoicePool.setOutputRoutes(routes);
 
-    if (previewStartRequested.exchange(false, std::memory_order_acq_rel)) {
-        // Main-slot audition mode: changing slot must never behave like a toggle.
-        // Stop the previous preview and start the newly selected slot through the
-        // exact normal preview/MIDI-note path so every slot parameter is honoured.
+    const int requestedPreviewSlot = previewStartSlot.exchange(-1, std::memory_order_acq_rel);
+    if (requestedPreviewSlot >= 0) {
+        // This is always Start, never Toggle. Stop the former Slot and audition
+        // the exact Slot selected in the grid using its mapped MIDI pitch.
         voicePool.stopPreviewVoices();
         previewPlaying = false;
         previewPlayingSlot = -1;
         previewPlayingSampleIndex = -1;
-        const int slot = juce::jlimit(0, slotCount - 1, previewTargetSlot.load());
+        const int slot = juce::jlimit(0, slotCount - 1, requestedPreviewSlot);
         if (slotHasAudio(audio[size_t(slot)])) {
             voicePool.noteOn(slot, previewMidiNoteForSlot(audio[size_t(slot)]), 1.0f, 0, true);
-            previewPlaying = true;
-            previewPlayingSlot = slot;
+            previewPlaying = voicePool.hasPreviewVoices(slot);
+            previewPlayingSlot = previewPlaying ? slot : -1;
         }
     }
 
@@ -595,7 +596,8 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if(sliceCommand>=0) {
         const int kind=sliceCommand&7,slot=(sliceCommand>>3)&31,item=(sliceCommand>>8)&127;
         const bool toggle=(sliceCommand&(1<<15))!=0;
-        const bool stopping=kind==0||(toggle&&slicePreviewKind.load()==kind&&slicePreviewSlot==slot&&(kind==1||kind==3||slicePreviewItem==item));
+        const bool stopping=kind==0||(toggle&&slicePreviewKind.load()==kind&&slicePreviewSlot==slot
+                                      &&(kind==1||kind==3||kind==5||slicePreviewItem==item));
         voicePool.stopPreviewVoices();previewPlaying=false;previewPlayingSlot=-1;previewPlayingSampleIndex=-1;slicePreviewKind.store(0);
         if(!stopping&&slot<slotCount&&slotHasAudio(audio[size_t(slot)])) {
             // 1 normal slot preview (same Slice path as a MIDI note),

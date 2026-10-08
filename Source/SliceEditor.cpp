@@ -92,7 +92,7 @@ void SliceEditor::auditionEdit() {
     // Manual preview with Space remains available, but changing global slice
     // parameters must not retrigger the sample. F2/F3 keep their existing
     // automatic slice/step audition behaviour.
-    if(page==Page::globals)return;
+    if(page==Page::globals || manualSpacePreviewPlaying)return;
 
     const int kind=processor.getSlicePreviewKind();
     // Match the final Lua/JSFX F6 behaviour: a running Space preview has
@@ -195,15 +195,26 @@ void SliceEditor::moveItem(int target,bool range) {
     speak();
 }
 void SliceEditor::preview(bool whole,bool slice,bool toggle) {
-    // Page 3 keeps the normal Slice Mode semantics, but remembers the current
-    // step as the timeline start for the next Space preview.  Kind 5 is the
-    // normal MIDI-note Slice path with an explicit starting timeline position.
-    const int kind=whole?(page==Page::steps?5:1):slice?(page==Page::boundaries?2:4):page==Page::boundaries?1:3;
-    const bool stopping=toggle&&processor.getSlicePreviewKind()==kind;
-    processor.requestSlicePreview(slot,kind,item,toggle);lastPreviewItem=item;
+    // Space is a real Play/Stop transport in ALL Slice pages. Never determine
+    // whether Space means Stop from the voice kind or the selected step: a
+    // one-shot might have ended already, or the user may have navigated to
+    // another step/changed its parameters. Those events must not retrigger.
     if(toggle) {
-        const juce::String name=(kind==1||kind==5)?"Sample preview":kind==3?"Sequence preview":kind==2?"Slice preview":"Step preview";
-        announceToActiveScreenReader(*this,name+(stopping?" stopped":" started"));setDescription({});
+        if(manualSpacePreviewPlaying) {
+            manualSpacePreviewPlaying=false;
+            processor.stopSlicePreview();
+            announceToActiveScreenReader(*this,"Preview stopped");setDescription({});
+            return;
+        }
+        manualSpacePreviewPlaying=true;
+    }
+    // F2 retains the normal Slice Mode and starts at the selected step.
+    // Auto-audition when manual transport is Off remains separate (kind 2/4).
+    const int kind=whole?(page==Page::steps?5:1):slice?(page==Page::boundaries?2:4):page==Page::boundaries?1:3;
+    processor.requestSlicePreview(slot,kind,item,false); // explicit Start
+    lastPreviewItem=item;
+    if(toggle) {
+        announceToActiveScreenReader(*this,"Preview started");setDescription({});
     }
 }
 bool SliceEditor::sequencerEnabled() const {
@@ -250,6 +261,12 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
     // Enter or Shift+Tab returns to the parameter/boundary grid; Tab opens
     // numeric typing for F1/F2. F3 uses the same Value navigation directly.
     if(valueMode) {
+        // Space is the same Play/Stop transport while editing Value too.
+        if(code==juce::KeyPress::spaceKey && !mods.isAltDown() && !mods.isCtrlDown()
+            && !mods.isShiftDown() && !mods.isCommandDown()) {
+            preview(true,false);
+            return true;
+        }
         if(code==juce::KeyPress::escapeKey || code==juce::KeyPress::returnKey) {
             valueMode=false;speak();return true;
         }
@@ -408,7 +425,10 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
 
 void SliceEditor::focusLost(FocusChangeType) {
     juce::MessageManager::callAsync([safe=juce::Component::SafePointer<SliceEditor>(this)] {
-        if(safe!=nullptr&&!safe->hasKeyboardFocus(true))safe->processor.stopSlicePreview();
+        if(safe!=nullptr&&!safe->hasKeyboardFocus(true)) {
+            safe->manualSpacePreviewPlaying=false;
+            safe->processor.stopSlicePreview();
+        }
     });
 }
 void SliceEditor::focusOfChildComponentChanged(FocusChangeType cause) {

@@ -1996,6 +1996,10 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             refreshSlotCells();
             refreshParameterGrid();
             configureValueForSelectedParameter();
+            // The Grid's Ctrl+Up/Down navigation does not use selectSlot().
+            // Publish the actual destination as an unconditional Start command
+            // so moving the Grid cursor plays exactly the newly chosen Slot.
+            processor.requestPreviewStartForSlot(found);
             lsampler::announceToActiveScreenReader(parameterSelector, processor.getSlotLabel(found) + ". " + parameterCellText(selectedParameter));
         }
         else

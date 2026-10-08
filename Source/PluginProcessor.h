@@ -140,13 +140,16 @@ public:
         previewTargetSampleIndex.store(juce::jlimit(0, sampleSetSize - 1, sampleIndex), std::memory_order_relaxed);
         previewSampleSetRequested.store(true, std::memory_order_release);
     }
-    // Start the current slot preview unconditionally. Unlike Toggle, this always
-    // replaces any previous preview voice and is used by the main-slot
-    // Alt+P audition mode when selection moves between slots.
+    // The slot to audition is published as ONE audio-thread command. The
+    // separate Toggle/Audition handlers reuse previewTargetSlot, so sharing
+    // that target with Start could otherwise race with another GUI action.
+    void requestPreviewStartForSlot(int slotIndex) noexcept
+    {
+        previewStartSlot.store(juce::jlimit(0, slotCount - 1, slotIndex), std::memory_order_release);
+    }
     void requestPreviewStart() noexcept
     {
-        previewTargetSlot.store(currentSlot.load(std::memory_order_relaxed));
-        previewStartRequested.store(true, std::memory_order_release);
+        requestPreviewStartForSlot(currentSlot.load(std::memory_order_relaxed));
     }
     void requestPreviewRestartIfPlaying() noexcept
     {
@@ -275,7 +278,7 @@ private:
     // UI working memory only. Deliberately excluded from plugin/project/preset state.
     std::atomic<int> slotGridPosition { 0 };
     std::atomic<bool> previewToggleRequested { false };
-    std::atomic<bool> previewStartRequested { false };
+    std::atomic<int> previewStartSlot { -1 }; // -1 = no pending start
     std::atomic<bool> previewStopRequested { false };
     std::atomic<bool> previewRestartRequested { false };
     std::atomic<bool> previewAuditionRequested { false };
