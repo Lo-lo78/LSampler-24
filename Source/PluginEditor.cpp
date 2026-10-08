@@ -199,7 +199,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     aboutButton.setDescription("Alt+A");
     aboutButton.onClick = [this] { openAbout(); };
     advancedButton.setButtonText("Advanced");
-    advancedButton.setDescription("Alt+V");
+    advancedButton.setDescription("Alt+T");
     advancedButton.onClick = [this] { showAdvancedMenu(); };
 
     const auto aboutText = juce::String("LSampler-24\nVersion: ") + lsamplerVersion
@@ -401,7 +401,7 @@ void LSampler24AudioProcessorEditor::paint(juce::Graphics& g)
     if(!importBrowserActive && !slotLibraryActive && !sampleSetActive) {
         rackgui::frame(g, {16,72,352,490}, "SLOTS / 01-24");
         g.setColour(rackgui::muted);g.setFont(13.0f);
-        g.drawText(globalOpen?"Enter: Confirm  /  Esc: Cancel  /  Alt+V: Value":parameterPage?"Alt+V: Value  /  Alt+L: Loop On-Off  /  Alt+M: Sample Set  /  Alt+E: Slice":"Enter: Edit selected slot  /  Alt+V: Advanced  /  Alt+M: Sample Set  /  Alt+E: Slice",384,588,getWidth()-400,24,juce::Justification::centredLeft);
+        g.drawText(globalOpen?"Enter: Confirm  /  Esc: Cancel  /  Alt+V: Value":parameterPage?"Alt+V: Value  /  Alt+L: Loop On-Off  /  Alt+M: Sample Set  /  Alt+E: Slice":"Enter: Edit selected slot  /  Alt+T: Advanced  /  Alt+M: Sample Set  /  Alt+E: Slice",384,588,getWidth()-400,24,juce::Justification::centredLeft);
     }
 }
 
@@ -426,7 +426,7 @@ void LSampler24AudioProcessorEditor::resized()
         auto& browserCell=slotLibraryActive?slotLibraryCell:importBrowserCell;
         browserCell.setBounds(area.removeFromTop(60));area.removeFromTop(12);
         // Alt+O and the Slot Library browsers use the full browser area.
-        // Import/Export controls are exposed only through Advanced (Alt+V).
+        // Import/Export controls are exposed only through Advanced (Alt+T).
         return;
     }
     waveform.setBounds(384,72,getWidth()-400,294);
@@ -1828,7 +1828,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     }
 
     if (!mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown()
-        && mods.isAltDown() && ch == 'v' && !parameterPage)
+        && mods.isAltDown() && ch == 't' && !parameterPage)
     {
         advancedButton.grabKeyboardFocus();
         if (auto* handler = advancedButton.getAccessibilityHandler()) handler->grabFocus();
@@ -2810,7 +2810,7 @@ void LSampler24AudioProcessorEditor::enterImportBrowser()
     importBrowserCell.setVisible(true);
     importBrowserCell.setWantsKeyboardFocus(true);
     // Alt+O is only the Sample Browser. Library Import/Export actions live
-    // exclusively in Advanced (Alt+V).
+    // exclusively in Advanced (Alt+T).
     importSourceCombo.setVisible(false);
     importSourceCombo.setWantsKeyboardFocus(false);
     exportLibraryButton.setVisible(false);

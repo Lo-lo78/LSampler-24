@@ -1,0 +1,8 @@
+LSampler-24 TEST93
+
+- La posizione della griglia parametri principale e ora globale: cambiando Slot resta selezionato lo stesso parametro.
+- La preview principale usa una nota realmente valida nel range Low Key / High Key. Original Pitch resta il riferimento di intonazione; se e fuori dal range, la preview usa il limite mappato piu vicino.
+- Advanced spostato da Alt+V ad Alt+T.
+- Alt+V torna libero per il precedente comando Paste Slot nella pagina Slot; in Grid resta Value come prima.
+- Space non modificato.
+- Nessuna compilazione eseguita.

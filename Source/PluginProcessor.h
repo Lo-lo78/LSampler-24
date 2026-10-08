@@ -273,7 +273,7 @@ private:
     std::array<SlotState,slotCount>& slots=*slotStorage;
     std::atomic<int> currentSlot { 0 };
     // UI working memory only. Deliberately excluded from plugin/project/preset state.
-    std::array<std::atomic<int>, slotCount> slotGridPositions {};
+    std::atomic<int> slotGridPosition { 0 };
     std::atomic<bool> previewToggleRequested { false };
     std::atomic<bool> previewStartRequested { false };
     std::atomic<bool> previewStopRequested { false };
