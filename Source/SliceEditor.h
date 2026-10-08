@@ -44,6 +44,7 @@ private:
     int item=0,property=0,global=0,boundarySide=1,anchor=-1;
     int stepWidthIndex=0;
     bool numeric=false;
+    bool valueMode=false;
     int lastPreviewItem=-1;
     std::bitset<128> selected;
     std::vector<lsampler::SliceStep> clipboard;
