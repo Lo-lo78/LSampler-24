@@ -2081,7 +2081,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     }
 
     if (sampleSetActive && mods.isCtrlDown() && mods.isShiftDown()
-        && !mods.isAltDown() && !mods.isCommandDown()
+        && !mods.isAltDown()
         && juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code)) == 'a')
     {
         auto* selected = processor.getAutomationSampleSetParameter(processor.getCurrentSlot(),
@@ -2248,7 +2248,6 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     // Ctrl+Shift+A: execute DAW-provided envelope toggle, if available.
     // No popup; otherwise preserve the TEST111 last-touched fallback.
     if (mods.isCtrlDown() && mods.isShiftDown() && !mods.isAltDown()
-        && !mods.isCommandDown()
         && juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code)) == 'a'
         && parameterPage && !sourceIsValueEditor)
     {

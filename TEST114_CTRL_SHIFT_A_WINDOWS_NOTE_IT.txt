@@ -1,0 +1,25 @@
+TEST114 - Correzione intercettazione Ctrl+Shift+A su Windows
+
+Base: TEST113. Nessuna compilazione locale.
+
+Diagnosi: in JUCE su Windows/Linux isCommandDown() e isCtrlDown()
+risultano entrambi veri quando è premuto Ctrl. Il controllo simultaneo
+mods.isCtrlDown() && !mods.isCommandDown() impediva perciò l'accesso
+ai gestori Ctrl+Shift+A, in griglia, Sample Set e Slice Globals.
+
+Correzione: rimossa esclusivamente la condizione contraddittoria
+!mods.isCommandDown() dai tre gestori Ctrl+Shift+A.
+
+Il comportamento del menù VST3 della DAW e il ripiego sul parametro
+last-touched rimangono come in TEST113. Ctrl+Shift+A non forza la
+creazione della corsia se il menu della DAW non offre un'azione
+eseguibile o univoca. In tal caso NVDA annuncia la mancata disponibilità.
+
+TEST: in REAPER entrare nella griglia e selezionare Level, premere
+Ctrl+Shift+A. Attendersi ora ALMENO un annuncio NVDA: se non
+avviene, la combinazione potrebbe essere intercettata dal focus o
+dalla DAW; se NVDA dice 'Direct automation toggle unavailable',
+il tasto funziona ma la DAW non ha fornito un'azione riconoscibile.
+Provare poi Bank Macro Level, Sample Set Velocity Low e Slice Globals.
+
+Nessun cambio a DSP, ID VST3, dati banco o scorciatoie diverse.

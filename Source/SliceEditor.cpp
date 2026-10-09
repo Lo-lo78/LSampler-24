@@ -256,7 +256,6 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
     if(numeric)return true;
     const auto mods=k.getModifiers();const int code=k.getKeyCode();
     if (mods.isCtrlDown() && mods.isShiftDown() && !mods.isAltDown()
-        && !mods.isCommandDown()
         && juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code)) == 'a')
     {
         auto* selected = page == Page::globals
