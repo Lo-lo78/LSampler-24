@@ -202,6 +202,19 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     advancedButton.setDescription("Alt+T");
     advancedButton.onClick = [this] { showAdvancedMenu(); };
 
+    // Keep the text free of the shortcut so the screen reader announces
+    // "Slice Editor, button, Alt+E" / "Sample Set, button, Alt+M".
+    addButton(sliceEditorButton, 3);
+    sliceEditorButton.setButtonText("Slice Editor");
+    sliceEditorButton.setDescription("Alt+E");
+    sliceEditorButton.onClick = [this] { openSliceEditor(false); };
+    addButton(sampleSetButton, 4);
+    sampleSetButton.setButtonText("Sample Set");
+    sampleSetButton.setDescription("Alt+M");
+    sampleSetButton.onClick = [this] { enterSampleSetEditor(); };
+    sliceEditorButton.setVisible(false);
+    sampleSetButton.setVisible(false);
+
     const auto aboutText = juce::String("LSampler-24\nVersion: ") + lsamplerVersion
         + "\nRelease date: " + lsamplerReleaseDate
         + "\nProject: " + lsamplerProjectUrl
@@ -407,6 +420,12 @@ void LSampler24AudioProcessorEditor::paint(juce::Graphics& g)
 
 void LSampler24AudioProcessorEditor::resized()
 {
+    // The tools belong to the Slot parameter grid, not the slot page,
+    // global-output editor, browser, or modal Properties page.
+    const bool showParameterTools = parameterPage && !globalOpen && !propertiesOpen
+        && !importBrowserActive && !slotLibraryActive && !sampleSetActive;
+    sliceEditorButton.setVisible(showParameterTools);
+    sampleSetButton.setVisible(showParameterTools);
     if(sliceEditor)sliceEditor->setBounds(getLocalBounds());
     if (propertiesOpen)
     {
@@ -437,6 +456,9 @@ void LSampler24AudioProcessorEditor::resized()
     currentEdit.setBounds(384,378,getWidth()-400,200);
     parameterSelector.setBounds(398,504,getWidth()-428,30);
     parameterValue.setBounds(398,540,getWidth()-428,30);
+    // Below the numeric edit field, above the Slice/Master panels.
+    sliceEditorButton.setBounds(398, 614, 148, 32);
+    sampleSetButton.setBounds(554, 614, 148, 32);
     const std::array<juce::TextButton*,6> buttons { &loadSample,&loadSlot,&saveSlot,&loadBank,&saveBank,&help };
     for(int i=0;i<6;++i)buttons[size_t(i)]->setBounds(16+(i%3)*118,574+(i/3)*36,114,32);
     aboutButton.setBounds(370,610,114,32);
@@ -929,6 +951,14 @@ void LSampler24AudioProcessorEditor::focusParameterGrid()
     parameterSelector.grabKeyboardFocus();
 }
 
+void LSampler24AudioProcessorEditor::focusParameterActionButton(juce::TextButton& button)
+{
+    juce::AccessibilityHandler::clearCurrentlyFocusedHandler();
+    button.grabKeyboardFocus();
+    if (auto* handler = button.getAccessibilityHandler())
+        handler->grabFocus();
+}
+
 void LSampler24AudioProcessorEditor::announceSelectedValue()
 {
     auto* source = juce::Component::getCurrentlyFocusedComponent();
@@ -981,9 +1011,9 @@ void LSampler24AudioProcessorEditor::setSelectedParameterBoundary(bool maximum)
 void LSampler24AudioProcessorEditor::setMainControlsEnabled(bool enabled)
 {
     for (auto& cell : slotCells) cell.setEnabled(enabled);
-    for (auto* control : std::array<juce::Component*, 10> {
+    for (auto* control : std::array<juce::Component*, 12> {
              &loadSample, &loadSlot, &saveSlot, &loadBank, &saveBank, &help, &aboutButton, &advancedButton,
-             &parameterSelector, &parameterValue })
+             &parameterSelector, &parameterValue, &sliceEditorButton, &sampleSetButton })
         control->setEnabled(enabled);
 }
 
@@ -2149,7 +2179,13 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         {
             commitEditorValue();
             if(mods.isShiftDown())closeEditorThen([this] { focusValue(); }, false);
-            else closeEditorThen([this] { focusParameterGrid(); }, false);
+            else closeEditorThen([this]
+            {
+                if (!globalOpen)
+                    focusParameterActionButton(sliceEditorButton);
+                else
+                    focusParameterGrid();
+            }, false);
             return true;
         }
         if (code == juce::KeyPress::escapeKey)
@@ -2166,6 +2202,35 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     if (sourceIsValueEditor) return false;
     if (parameterPage)
     {
+        // Main parameter page: Grid -> Value -> Edit -> Slice -> Sample Set
+        // -> Grid. Reverse navigation is symmetrical with Shift+Tab.
+        if (!globalOpen && (source == &sliceEditorButton || source == &sampleSetButton))
+        {
+            if (code == juce::KeyPress::tabKey)
+            {
+                if (source == &sliceEditorButton)
+                {
+                    if (mods.isShiftDown()) openValueEditor();
+                    else focusParameterActionButton(sampleSetButton);
+                }
+                else
+                {
+                    if (mods.isShiftDown()) focusParameterActionButton(sliceEditorButton);
+                    else focusParameterGrid();
+                }
+                return true;
+            }
+            if (code == juce::KeyPress::returnKey || code == juce::KeyPress::spaceKey)
+            {
+                if (source == &sliceEditorButton) openSliceEditor(false);
+                else enterSampleSetEditor();
+                return true;
+            }
+            if (code == juce::KeyPress::escapeKey) { focusParameterGrid(); return true; }
+            // Keep stray arrow keys out of REAPER while one of these buttons
+            // owns focus; the actual action is triggered by Enter or Space.
+            return true;
+        }
         if(mods.isShiftDown()&&!mods.isCtrlDown()&&!mods.isAltDown()
             &&std::strcmp(selectedEntry().category,"Loops")==0
             &&(code==juce::KeyPress::upKey||code==juce::KeyPress::downKey)) {
@@ -2205,7 +2270,16 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         {
             parameterSelector.setLineReadingMode();
 
-            if(code==juce::KeyPress::tabKey) {if(mods.isShiftDown())openValueEditor();else focusValue();return true;}
+            if(code==juce::KeyPress::tabKey)
+            {
+                if(mods.isShiftDown())
+                {
+                    if (!globalOpen) focusParameterActionButton(sampleSetButton);
+                    else openValueEditor();
+                }
+                else focusValue();
+                return true;
+            }
             if (code == juce::KeyPress::returnKey) {
                 if(selectedEntry().action!=Action::none){setSelectedParameterValue(1);refreshParameterGrid();announceSelectedValue();}
                 else focusValue();

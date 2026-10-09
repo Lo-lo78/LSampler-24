@@ -467,6 +467,7 @@ private:
     void configureValueForSelectedParameter();
     void focusValue();
     void focusParameterGrid();
+    void focusParameterActionButton(juce::TextButton& button);
     void changeSelectedParameterValue(int direction, bool coarse);
     void setSelectedParameterBoundary(bool maximum);
     void changeStepWidth(int direction);
@@ -504,6 +505,10 @@ private:
     juce::TextButton help { "Help" };
     juce::TextButton aboutButton { "About" };
     juce::TextButton advancedButton { "Advanced" };
+    // Two discoverable actions on the main parameter page.  Their descriptions
+    // carry the shortcuts; NVDA announces the Button role automatically.
+    juce::TextButton sliceEditorButton { "Slice Editor" };
+    juce::TextButton sampleSetButton { "Sample Set" };
     LSamplerAboutTextEditor aboutInfo { "About LSampler-24" };
     juce::TextButton aboutProject { "Project" };
     juce::TextButton aboutContact { "Contact" };
