@@ -32,7 +32,7 @@ Existing Parameters/Loops/SampleSet/Slice trees and version-2 aliases remain aut
 
 ## Intentionally excluded
 
-Start Threshold, End Threshold (sample scans); End Preview Length (editing audition preference). All file/browser/preset/Sample Set loading/saving, import/export, selected Slot/page/grid position/focus/dialogs, names/paths, Help/About, destructive Zero Crossing/trim/commit, copy/paste, undo/redo/delete and per-step sequencer records remain non-automatable. No fabricated per-sample volume/pan properties or generic selected-control parameters were added. Round Robin and both Random modes use the existing variationMode engine.
+Start Threshold, End Threshold (sample scans); End Preview Length (editing audition preference). All file/browser/preset/Sample Set loading/saving, import/export, selected Slot/page/grid position/focus/dialogs, names/paths, Help/About, destructive Zero Crossing/trim/commit, copy/paste, undo/redo/delete and per-step sequencer records remain non-automatable. No fabricated per-sample volume/pan properties or generic selected-control parameters were added. Round Robin, Random, Random No Repeat and Shuffle No Repeat use the existing variationMode engine and the same stable host parameter IDs.
 
 ## Global catalog
 
@@ -291,7 +291,7 @@ Start Threshold, End Threshold (sample scans); End Preview Length (editing audit
 | slot01_slice_pitchMode | Slot 1 - Slice Pitch Mode | 0 .. 2 | 0 | Off, Follow Slice Mode, Follow Slice Mode Reverse |
 | slot01_slice_pitchDepth | Slot 1 - Slice Pitch Depth | 0 .. 48 | 12 |  |
 | slot01_slice_midiMap | Slot 1 - Slice MIDI Map | 0 .. 1 | 0 | Off, On |
-| slot01_variation_mode | Slot 1 - Variation Mode | 0 .. 3 | 0 | Off, Round Robin, Random, Random No Repeat |
+| slot01_variation_mode | Slot 1 - Variation Mode | 0 .. 4 | 0 | Off, Round Robin, Random, Random No Repeat, Shuffle No Repeat |
 | slot01_sample01_velocity_low | Slot 1 - Sample 1 - Velocity Low | 1 .. 127 | 1 |  |
 | slot01_sample01_velocity_high | Slot 1 - Sample 1 - Velocity High | 1 .. 127 | 127 |  |
 | slot01_sample02_velocity_low | Slot 1 - Sample 2 - Velocity Low | 1 .. 127 | 1 |  |

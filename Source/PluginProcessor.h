@@ -13,7 +13,7 @@ class LSampler24AudioProcessor : public juce::AudioProcessor, private juce::Asyn
 public:
     static constexpr int slotCount = 24;
     static constexpr int sampleSetSize = lsampler::SlotAudioState::sampleSetSize;
-    enum VariationMode { variationOff = 0, variationRoundRobin = 1, variationRandom = 2, variationRandomNoRepeat = 3 };
+    enum VariationMode { variationOff = 0, variationRoundRobin = 1, variationRandom = 2, variationRandomNoRepeat = 3, variationShuffleNoRepeat = 4 };
     struct SampleSetEntryInfo
     {
         bool loaded = false;

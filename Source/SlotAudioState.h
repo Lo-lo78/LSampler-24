@@ -44,7 +44,7 @@ struct SlotAudioState {
     std::array<uint8_t, sampleSetSize> sampleVelocityLow {};
     std::array<uint8_t, sampleSetSize> sampleVelocityHigh {};
     std::array<SamplePlaybackState, sampleSetSize> playback {};
-    int variationMode = 0; // 0 Off, 1 Round Robin, 2 Random, 3 Random No Repeat
+    int variationMode = 0; // 0 Off, 1 Round Robin, 2 Random, 3 Random No Repeat, 4 Shuffle No Repeat
     uint64_t revision = 0;
     double sampleRate = 44100, sourceRatio = 1;
     int start = 0, length = 0, downsampleHold = 1;

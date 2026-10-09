@@ -88,6 +88,21 @@ private:
     std::array<std::array<uint32_t, lsampler::SlotAudioState::sampleSetSize>, slotCount> roundRobinCounters {};
     std::array<std::array<int, lsampler::SlotAudioState::sampleSetSize>, slotCount> lastRandomChoice {};
     std::array<uint32_t,slotCount> variationRandomState {};
+    // Fixed-capacity Shuffle No Repeat cache. At most 2*N+1 distinct velocity
+    // candidate sets can occur with N samples and one contiguous range each.
+    // Unlike the legacy RR/Random cache (indexed by first candidate), separate
+    // eligible masks never overwrite each other's shuffle cycle. No heap/DSP cost.
+    static constexpr int shuffleGroupCapacity = 2 * lsampler::SlotAudioState::sampleSetSize + 1;
+    struct ShuffleBag {
+        std::array<uint8_t, lsampler::SlotAudioState::sampleSetSize> order {};
+        std::array<SharedSample*, lsampler::SlotAudioState::sampleSetSize> sources {};
+        uint16_t eligibleMask = 0;
+        uint8_t count = 0, cursor = 0;
+        int lastPlayed = -1;
+        uint32_t lastUsed = 0;
+    };
+    std::array<std::array<ShuffleBag, shuffleGroupCapacity>, slotCount> shuffleBags {};
+    std::array<uint32_t, slotCount> shuffleTurns {};
     int activeTotal = 0, previewTotal = 0;
     std::array<int,25> outputRoutes {};
     const std::array<lsampler::SlotAudioState,slotCount>* states=nullptr;

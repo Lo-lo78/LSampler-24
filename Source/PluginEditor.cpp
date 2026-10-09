@@ -2720,7 +2720,7 @@ void LSampler24AudioProcessorEditor::setSampleSetBoundary(bool maximum)
     else
     {
         processor.setVariationMode(slot, maximum
-            ? LSampler24AudioProcessor::variationRandomNoRepeat
+            ? LSampler24AudioProcessor::variationShuffleNoRepeat
             : LSampler24AudioProcessor::variationOff);
     }
     refreshSampleSetCell(true);
@@ -2746,7 +2746,7 @@ void LSampler24AudioProcessorEditor::changeSampleSetValue(int direction, bool co
     {
         const int current = processor.getVariationMode(slot);
         processor.setVariationMode(slot, juce::jlimit<int>(LSampler24AudioProcessor::variationOff,
-            LSampler24AudioProcessor::variationRandomNoRepeat, current + (direction < 0 ? -1 : 1)));
+            LSampler24AudioProcessor::variationShuffleNoRepeat, current + (direction < 0 ? -1 : 1)));
     }
     refreshSampleSetCell(true);
 }

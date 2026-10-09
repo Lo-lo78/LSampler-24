@@ -1,0 +1,11 @@
+TEST97 - Sample Set / Variation Mode: Shuffle No Repeat
+
+- Alt+M -> Sample Set -> Variation Mode: aggiunta la quinta scelta nella sequenza Off, Round Robin, Random, Random No Repeat, Shuffle No Repeat (quarta modalita' di variazione, senza contare Off).
+- Nessuna variazione dei numeri associati alle modalita' esistenti: 0, 1, 2, 3 restano identici.
+- Shuffle No Repeat = permutazione Fisher-Yates senza allocazioni sul thread audio; usa ogni campione idoneo UNA volta per ciclo, poi rimescola.
+- Evita l'uguaglianza tra l'ultimo elemento del ciclo precedente e il primo del successivo quando esistono almeno due campioni idonei.
+- I gruppi sono determinati dai campioni caricati e dagli intervalli Velocity Low/High validi per il Note On. Un cambio di gruppo o sostituzione di campione invalida il relativo ciclo.
+- La preview manuale non consuma un elemento del ciclo. Con un solo campione non sono possibili alternanze.
+- VST3 Variation Mode mantiene lo stesso ID; intervallo aggiornato a 0..4, preset precedenti restano validi. La nuova opzione e' salvata nei preset e nello stato del plugin.
+- Da verificare in REAPER: quattro file diversi sulla stessa velocity -> 4 colpi tutti distinti in ogni gruppo di quattro; nessuna ripetizione al confine; differenti layer di velocity; vecchi preset e controllo del parametro automatizzato.
+- NON COMPILATO. Sorgente pronto per GitHub Actions.

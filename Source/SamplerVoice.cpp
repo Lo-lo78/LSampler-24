@@ -33,6 +33,8 @@ void GlobalVoicePool::prepare(double rate) {
     allNotesOff();hostSampleRate=rate>0?rate:44100;ageCounter=noteCounter=0;
     freePhase={};bend={};wheel={};pedal={};diagnostics={};roundRobinCounters={};
     for(auto& row:lastRandomChoice)row.fill(-1);
+    for(auto& groups:shuffleBags)for(auto& bag:groups)bag=ShuffleBag{};
+    shuffleTurns={};
     for(int slot=0;slot<slotCount;++slot)variationRandomState[size_t(slot)]=0x9e3779b9u^uint32_t((slot+1)*2654435761u);
     outputRoutes.fill(-1);outputRoutes[0]=0;
 }
@@ -90,7 +92,7 @@ int GlobalVoicePool::chooseSampleIndex(int slot,const SlotAudioState& s,int velo
             candidates[size_t(count++)]=i;
     }
     if(count==0)return -1;
-    if(preview||s.variationMode==0||count==1)return candidates[0];
+    if(preview||s.variationMode==0)return candidates[0];
     const int groupKey=candidates[0];
     if(s.variationMode==1) {
         auto& counter=roundRobinCounters[size_t(slot)][size_t(groupKey)];
@@ -100,6 +102,61 @@ int GlobalVoicePool::chooseSampleIndex(int slot,const SlotAudioState& s,int velo
     }
     auto& rng=variationRandomState[size_t(slot)];
     auto nextRandom=[&]() noexcept {rng^=rng<<13;rng^=rng>>17;rng^=rng<<5;return rng;};
+    if(s.variationMode==4) {
+        // Fisher-Yates shuffle of the eligible Sample Set entries. Every entry
+        // occurs exactly once per bag; no two consecutive cycles share an
+        // identical end/start entry when there is more than one candidate.
+        uint16_t eligibleMask=0;
+        for(int i=0;i<count;++i)eligibleMask|=uint16_t(1u<<candidates[size_t(i)]);
+        // One bag per distinct velocity-eligible sample set. Slot-scoped cache,
+        // so interleaved notes from unrelated ranges don't restart each other.
+        auto& groups=shuffleBags[size_t(slot)];
+        const uint32_t turn=++shuffleTurns[size_t(slot)];
+        int match=-1,empty=-1,oldest=0;
+        uint32_t oldestAge=0;
+        for(int i=0;i<shuffleGroupCapacity;++i) {
+            const auto& entry=groups[size_t(i)];
+            if(entry.eligibleMask==eligibleMask) {match=i;break;}
+            if(entry.eligibleMask==0 && empty<0)empty=i;
+            const uint32_t age=turn-entry.lastUsed;
+            if(age>=oldestAge) {oldestAge=age;oldest=i;}
+        }
+        auto& bag=groups[size_t(match>=0?match:(empty>=0?empty:oldest))];
+        if(bag.eligibleMask!=eligibleMask)bag=ShuffleBag{};
+        bag.lastUsed=turn;
+        bool changed=bag.eligibleMask!=eligibleMask || int(bag.count)!=count;
+        if(!changed)
+            for(int i=0;i<count;++i) {
+                const int index=candidates[size_t(i)];
+                if(bag.sources[size_t(index)]!=s.sampleSet[size_t(index)]) {changed=true;break;}
+            }
+        if(changed) {
+            bag.eligibleMask=eligibleMask;
+            bag.count=uint8_t(count);
+            bag.cursor=uint8_t(count); // Force new cycle on the next note.
+            bag.sources.fill(nullptr);
+            for(int i=0;i<count;++i) {
+                const int index=candidates[size_t(i)];
+                bag.sources[size_t(index)]=s.sampleSet[size_t(index)];
+            }
+        }
+        if(bag.cursor>=bag.count) {
+            for(int i=0;i<count;++i)bag.order[size_t(i)]=uint8_t(candidates[size_t(i)]);
+            for(int i=count-1;i>0;--i) {
+                const int j=int(nextRandom()%uint32_t(i+1));
+                std::swap(bag.order[size_t(i)],bag.order[size_t(j)]);
+            }
+            if(count>1 && int(bag.order[0])==bag.lastPlayed) {
+                const int alternate=1+int(nextRandom()%uint32_t(count-1));
+                std::swap(bag.order[0],bag.order[size_t(alternate)]);
+            }
+            bag.cursor=0;
+        }
+        const int chosen=int(bag.order[size_t(bag.cursor++)]);
+        bag.lastPlayed=chosen;
+        return chosen;
+    }
+    if(count==1)return candidates[0];
     int pos=int(nextRandom()%uint32_t(count));
     if(s.variationMode==3 && count>1) {
         const int previous=lastRandomChoice[size_t(slot)][size_t(groupKey)];
