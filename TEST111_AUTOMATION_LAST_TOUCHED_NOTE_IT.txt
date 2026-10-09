@@ -1,0 +1,20 @@
+LSampler-24 TEST111 — Ctrl+Shift+A e automazione dell'ultimo parametro toccato
+
+Si parte da TEST110 senza modificare il motore DSP, gli ID VST3, la numerazione delle automazioni o i file congelati TEST59.
+
+Ctrl+Shift+A, da Grid o Value della griglia normale, dalle Bank Macro in modalità Relative, dal Sample Set (F2/F3) e dalla pagina F1 dei parametri globali Slice:
+- identifica il parametro VST3 esposto corrispondente alla selezione corrente;
+- invia alla DAW una normale notifica di 'parameter touched' (inizio gesto, valore corrente, fine gesto), senza cambiare il valore;
+- annuncia con NVDA il nome esatto del parametro host individuato.
+
+I comandi operativi (es. Zero Crossing), le pagine non automatizzabili (es. Sample Set F1, Slice steps/boundaries) e il parametro senza esposizione VST3 annunciano che non è disponibile un parametro automatizzabile.
+Bank Macro 'Set All' non rappresenta una macro VST3 indipendente: premere Alt+U e usare la modalità Relative.
+
+LIMITAZIONE IMPORTANTE:
+Lo standard VST3 permette di comunicare il parametro toccato e i gesti di modifica, ma non permette a un plugin di aprire, mostrare o armare una corsia di automazione in tutte le DAW. Ogni DAW possiede le sue corsie e azioni. Alcune DAW potrebbero non registrare un gesto senza cambiamento di valore come 'last touched'. Pertanto Ctrl+Shift+A NON GARANTISCE che una corsia si apra da sola.
+
+REAPER: dopo Ctrl+Shift+A, assegnare una scorciatoia REAPER all'azione 'FX: Show/hide track/take envelope for last touched FX parameter' (il testo varia leggermente secondo la versione). Un tasto dedicato a questa azione fa mostrare/nascondere la corsia se REAPER ha registrato il parametro toccato.
+
+Test suggeriti: Slot 1 Filter Cutoff, Bank Macro Relative Level, Global Output Gain, Sample Set F2 Velocity Low, Slice F1 Mode; ripetere con NVDA e monitorare che il suono e i valori non cambino. In REAPER, verificare separatamente se 'last touched' viene aggiornato prima di attivare l'azione host.
+
+Non compilato localmente: usare GitHub Actions come da flusso del progetto.

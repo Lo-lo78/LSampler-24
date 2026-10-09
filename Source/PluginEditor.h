@@ -63,7 +63,9 @@ public:
         const auto mods = key.getModifiers();
         const auto code = key.getKeyCode();
         const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
-        const bool dedicated = code==juce::KeyPress::F6Key || (mods.isAltDown() && ch=='e') || (mods.isCtrlDown() && !mods.isAltDown()
+        const bool dedicated = (mods.isCtrlDown() && mods.isShiftDown() && !mods.isAltDown()
+                            && !mods.isCommandDown() && juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code)) == 'a')
+                            || code==juce::KeyPress::F6Key || (mods.isAltDown() && (ch=='e' || ch=='k' || ch=='u')) || (mods.isCtrlDown() && !mods.isAltDown()
                                 && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
                                     || code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
                             || (mods.isAltDown() && !mods.isCtrlDown() && ch == 'l');
@@ -78,9 +80,11 @@ public:
         setDescription({});
     }
 
+    void setBankMacroContext(bool bank) { bankMacroContext = bank; }
+
     void setEntryAccessibility()
     {
-        setTitle("Grid");
+        setTitle(bankMacroContext ? "Bank Macro Grid" : "Grid");
         setDescription({});
     }
 
@@ -105,6 +109,7 @@ public:
 
 
 private:
+    bool bankMacroContext = false;
     Shortcut shortcut;
 };
 
@@ -119,7 +124,9 @@ public:
         const auto mods = key.getModifiers();
         const auto code = key.getKeyCode();
         const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
-        const bool dedicated = code==juce::KeyPress::F6Key || (mods.isAltDown() && ch=='e') || (mods.isCtrlDown() && !mods.isAltDown()
+        const bool dedicated = (mods.isCtrlDown() && mods.isShiftDown() && !mods.isAltDown()
+                            && !mods.isCommandDown() && juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code)) == 'a')
+                            || code==juce::KeyPress::F6Key || (mods.isAltDown() && (ch=='e' || ch=='k' || ch=='u')) || (mods.isCtrlDown() && !mods.isAltDown()
                                 && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
                                     || code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
                             || (mods.isAltDown() && !mods.isCtrlDown() && ch == 'l');
@@ -346,6 +353,9 @@ private:
     bool actionOpenedByShortcut = false;
     juce::Component::SafePointer<juce::Component> propertiesReturnFocus;
     juce::Component::SafePointer<juce::Component> sliceReturnFocus;
+    // Execute the DAW's own envelope show/hide/toggle menu action directly.
+    // Never assume the envelope state when a host does not expose a safe action.
+    bool toggleHostAutomationEnvelope(juce::AudioProcessorParameter*, juce::Component* anchor);
     void openSliceEditor(bool sequencer);
     void closeSliceEditor();
     void openValueEditor();
@@ -611,6 +621,22 @@ private:
 
     bool parameterPage = false;
     bool globalOpen = false;
+    bool bankMacroOpen = false;
+    bool bankMacroReturnWasParameterPage = false;
+    bool bankMacroUniform = false;
+    int bankMacroReturnParameter = 0;
+    int bankMacroCursor = 0;
+    int bankMacroLastCursor = 0;
+    std::vector<int> bankMacroEntries;
+    LSampler24AudioProcessor::BankMacroSnapshot bankMacroReference;
+    std::array<double, lsampler::parameterCount> bankMacroAmounts {};
+    void openBankMacro();
+    void closeBankMacro(bool restoreFocus = true);
+    void selectBankMacroEntry(int position, bool announce);
+    void moveBankMacroPage(int direction);
+    void toggleBankMacroUniform();
+    void resetSelectedBankMacro();
+    juce::String bankMacroValueText(int gridIndex) const;
     bool globalReturnWasParameterPage = false;
     int globalReturnSelectedParameter = 0;
     int globalGridIndex = 0;

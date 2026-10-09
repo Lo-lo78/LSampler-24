@@ -1,0 +1,18 @@
+LSampler-24 TEST110 - Bank Macro automatizzabili in REAPER
+
+I 6629 parametri VST3 preesistenti sono preservati nei nomi, negli ID
+e nell'ordine. Nuove automazioni indipendenti ``bankmacro_<nome>`` vengono
+aggiunte in coda all'elenco e sono visibili come "Bank Macro - ...".
+
+Alt+K Relative modifica i nuovi parametri: 0 è neutro; gli offset non
+sovrascrivono i valori degli slot e REAPER può automatizzarli anche con
+l'editor chiuso. NVDA+Freccia Su consulta il valore corrente esposto nel
+controllo della griglia. Alt+U Set All resta l'operazione diretta sui valori
+degli slot (non è essa stessa un'automazione).
+
+Gli offset vengono salvati nello stato della traccia e nei banchi versione
+5 dentro il figlio BankMacros (dopo i 24 Slot); i vecchi banchi privi del
+figlio ripartono da tutti gli offset a zero. Non si modifica il campione
+audio, la mappatura, né i 6629 ID originali.
+
+SENZA compilazione locale; usare GitHub Actions, poi test REAPER/NVDA.

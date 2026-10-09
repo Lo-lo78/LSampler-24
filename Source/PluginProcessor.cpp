@@ -1358,6 +1358,103 @@ void LSampler24AudioProcessor::clearBank()
     stopVoicesMask.fetch_or(0xffffffu, std::memory_order_release);
 }
 
+LSampler24AudioProcessor::BankMacroSnapshot LSampler24AudioProcessor::getBankMacroSnapshot() const
+{
+    BankMacroSnapshot result;
+    const juce::ScopedLock lock(stateLock);
+    absorbHostValuesLocked();
+    for (int slot = 0; slot < slotCount; ++slot)
+    {
+        const auto& source = slots[size_t(slot)];
+        bool occupied = source.sample != nullptr;
+        for (const auto& other : source.alternateSamples)
+            occupied = occupied || other != nullptr;
+        result.occupied[size_t(slot)] = occupied;
+        if (occupied)
+            result.values[size_t(slot)] = source.parameters.values;
+    }
+    return result;
+}
+
+void LSampler24AudioProcessor::applyBankMacro(int gridIndex, const BankMacroSnapshot& reference,
+                                              double value, bool uniform)
+{
+    if (!juce::isPositiveAndBelow(gridIndex, int(grid.size()))) return;
+    const auto& entry = grid[size_t(gridIndex)];
+    // Only ordinary per-slot parameters are eligible; never modify sample
+    // boundaries, loops, actions, globals, or the MIDI key/velocity layout.
+    if (entry.parameter < 0 || entry.loop >= 0 || entry.global >= 0 || entry.action != Action::none)
+        return;
+    const auto& d = descriptor(entry);
+    const juce::ScopedLock lock(stateLock);
+    absorbHostValuesLocked();
+    bool changed = false;
+    for (int slot = 0; slot < slotCount; ++slot)
+    {
+        if (!reference.occupied[size_t(slot)]) continue;
+        auto& parameters = slots[size_t(slot)].parameters;
+        const double original = reference.values[size_t(slot)][size_t(entry.parameter)];
+        const double next = sanitise(d, uniform ? value : original + value);
+        if (parameters.values[size_t(entry.parameter)] != next)
+        {
+            parameters.set(entry, 0, next);
+            // Preserve the existing BPM-sync quantisation contract.
+            for (int i = 0; i < 2; ++i)
+            {
+                const P sync = i ? P::lfo2_bpm_sync : P::lfo1_bpm_sync;
+                const P rate = i ? P::lfo2_rate : P::lfo1_rate;
+                if (parameters[sync] != 0 &&
+                    (entry.parameter == int(sync) || entry.parameter == int(rate)))
+                    parameters[rate] = std::clamp(std::round(parameters[rate] * 8.0) / 8.0, .125, 512.0);
+            }
+            changed = true;
+        }
+    }
+    if (changed)
+        markAudioStateDirty(); // one snapshot and host publication for all 24 slots
+}
+
+double LSampler24AudioProcessor::getBankMacroOffset(int parameter) const noexcept
+{
+    if (!juce::isPositiveAndBelow(parameter, lsampler::parameterCount)) return 0.0;
+    if (auto* p = hostBankMacros[size_t(parameter)]) return p->load();
+    return 0.0;
+}
+
+void LSampler24AudioProcessor::setBankMacroOffset(int parameter, double offset) noexcept
+{
+    if (!juce::isPositiveAndBelow(parameter, lsampler::parameterCount)) return;
+    if (auto* p = hostBankMacros[size_t(parameter)]) {
+        // This method is called by the editor, not by an audio callback.
+        if (p->load() != offset) {
+            p->storeReal(offset);
+            notifyHostControl(p);
+        }
+    }
+}
+
+void LSampler24AudioProcessor::saveBankMacroState(juce::ValueTree& parent) const
+{
+    juce::ValueTree macros("BankMacros");
+    for (int i = 0; i < lsampler::parameterCount; ++i)
+        if (auto* parameter = hostBankMacros[size_t(i)])
+            macros.setProperty(lsampler::parameters[size_t(i)].key, parameter->load(), nullptr);
+    parent.addChild(macros, -1, nullptr); // after all 24 Slot children
+}
+
+void LSampler24AudioProcessor::restoreBankMacroState(const juce::ValueTree& parent)
+{
+    const auto macros = parent.getChildWithName("BankMacros");
+    // Old bank and session formats have no macros: reset to neutral, rather
+    // than leaking the offsets from whichever bank was loaded previously.
+    for (int i = 0; i < lsampler::parameterCount; ++i)
+        if (auto* parameter = hostBankMacros[size_t(i)]) {
+            const auto key = lsampler::parameters[size_t(i)].key;
+            parameter->storeReal(macros.isValid() && macros.hasProperty(key)
+                ? double(macros.getProperty(key)) : 0.0);
+        }
+}
+
 bool LSampler24AudioProcessor::slotHasSample(int slotIndex) const
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
@@ -1983,6 +2080,7 @@ bool LSampler24AudioProcessor::saveBankPreset(const juce::File& presetFile, juce
 
     for (int i = 0; i < slotCount; ++i)
         bank.addChild(makeSlotState(i, "Slot"), -1, nullptr);
+    saveBankMacroState(bank);
 
     return writePreset(presetFile, bank, error);
 }
@@ -2031,6 +2129,7 @@ bool LSampler24AudioProcessor::loadBankPreset(const juce::File& presetFile, juce
     for (int i = 0; i < globalParameterCount; ++i)
         if (bank.hasProperty(globalParameters[size_t(i)].key))
             setGlobalOutputParameter(static_cast<GlobalP>(i), double(bank.getProperty(globalParameters[size_t(i)].key)));
+    restoreBankMacroState(bank);
     resetOutputEnvelope.store(true, std::memory_order_release);
     markAudioStateDirty();
     error = firstError;
@@ -2783,6 +2882,7 @@ void LSampler24AudioProcessor::getStateInformation(juce::MemoryBlock& destData)
                           getGlobalOutputParameter(static_cast<GlobalP>(i)), nullptr);
     for (int i = 0; i < slotCount; ++i)
         state.addChild(makeSlotState(i, "Slot"), -1, nullptr);
+    saveBankMacroState(state);
 
     if (auto xml = state.createXml())
         copyXmlToBinary(*xml, destData);
@@ -2811,6 +2911,7 @@ void LSampler24AudioProcessor::setStateInformation(const void* data, int sizeInB
                     hostGlobals[size_t(i)]->storeReal(value);
                     globalOutputParameters[size_t(i)].store(value);
                 }
+            restoreBankMacroState(state);
             resetOutputEnvelope.store(true, std::memory_order_release);
             markAudioStateDirty();
         }
@@ -2819,6 +2920,7 @@ void LSampler24AudioProcessor::setStateInformation(const void* data, int sizeInB
             // TEST1/TEST2 single-slot compatibility.
             restoreSlotState(0, state, error);
             currentSlot = 0;
+            restoreBankMacroState(state);
             markAudioStateDirty();
         }
     }
@@ -2934,6 +3036,19 @@ void LSampler24AudioProcessor::createHostParameters()
             h.controlLow[size_t(j)]=1;h.controlHigh[size_t(j)]=127;
         }
     }
+    // Append after the existing 6629 parameters: never shift an old index or
+    // reuse an ID. JUCE VST3 hosts see each Bank Macro as its own automation lane.
+    std::array<bool, parameterCount> added {};
+    for (const auto& entry : grid) {
+        if (!bankMacroEligible(entry)) continue;
+        const int index = entry.parameter;
+        if (added[size_t(index)]) continue;
+        added[size_t(index)] = true;
+        const auto& descriptor = parameters[size_t(index)];
+        hostBankMacros[size_t(index)] = add("bankmacro_" + juce::String(descriptor.key),
+            "Bank Macro - " + juce::String(descriptor.name),
+            bankMacroDeltaDescriptor(index), bankMacroHostGeneration);
+    }
     hostParametersReady=true;
 }
 
@@ -3002,6 +3117,88 @@ void LSampler24AudioProcessor::publishHostValuesLocked(bool notify, int forceSlo
     absorbHostValuesLocked();
 }
 
+// Called only from an actual keyboard gesture on the GUI thread. Send a
+// no-change parameter edit to the DAW, using the same JUCE/VST3 notification
+// channel as normal mouse/keyboard edits. This can make the parameter 'last
+// touched'; the DAW alone owns automation lane visibility and arming.
+juce::String LSampler24AudioProcessor::touchAutomationParameter(HostParameter* p)
+{
+    if (p == nullptr || shuttingDown.load(std::memory_order_acquire)) return {};
+    if (auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+        mm == nullptr || !mm->isThisTheMessageThread()) return {};
+    p->beginChangeGesture();
+    p->sendValueChangedMessageToListeners(p->getValue());
+    p->endChangeGesture();
+    return p->getName(256);
+}
+
+// These helpers intentionally share one selection map with the legacy
+// last-touched fallback: both must select the same host parameter ID.
+juce::AudioProcessorParameter* LSampler24AudioProcessor::getAutomationGridParameter(int slot,
+    int gridIndex, int loop, bool bankMacro) const noexcept
+{
+    if (!hostParametersReady || !juce::isPositiveAndBelow(gridIndex, int(lsampler::grid.size()))) return nullptr;
+    const auto& e = lsampler::grid[size_t(gridIndex)];
+    if (e.action != lsampler::Action::none) return nullptr;
+    if (bankMacro)
+    {
+        if (e.global >= 0 || e.loop >= 0 || !juce::isPositiveAndBelow(e.parameter, lsampler::parameterCount))
+            return nullptr;
+        return hostBankMacros[size_t(e.parameter)];
+    }
+    if (e.global >= 0)
+        return juce::isPositiveAndBelow(e.global, lsampler::globalParameterCount)
+            ? hostGlobals[size_t(e.global)] : nullptr;
+    if (!juce::isPositiveAndBelow(slot, slotCount)) return nullptr;
+    const auto& hs = hostSlots[size_t(slot)];
+    if (e.loop >= 0)
+        return juce::isPositiveAndBelow(e.loop, lsampler::loopParameterCount)
+            ? hs.loops[size_t(juce::jlimit(0, lsampler::loopCount - 1, loop))][size_t(e.loop)]
+            : nullptr;
+    return juce::isPositiveAndBelow(e.parameter, lsampler::parameterCount)
+        ? hs.values[size_t(e.parameter)] : nullptr;
+}
+
+juce::AudioProcessorParameter* LSampler24AudioProcessor::getAutomationSampleSetParameter(int slot,
+    int sample, int page, int field) const noexcept
+{
+    if (!hostParametersReady || !juce::isPositiveAndBelow(slot, slotCount)) return nullptr;
+    const auto& hs = hostSlots[size_t(slot)];
+    if (page == 2) return hs.variation;
+    if (page != 1 || !juce::isPositiveAndBelow(sample, sampleSetSize)) return nullptr;
+    if (field == 0) return hs.velocityLow[size_t(sample)];
+    if (field == 1) return hs.velocityHigh[size_t(sample)];
+    return nullptr;
+}
+
+juce::AudioProcessorParameter* LSampler24AudioProcessor::getAutomationSliceGlobalParameter(int slot,
+    int global) const noexcept
+{
+    if (!hostParametersReady || !juce::isPositiveAndBelow(slot, slotCount)
+        || !juce::isPositiveAndBelow(global, int(lsampler::sliceGlobals.size()))) return nullptr;
+    return hostSlots[size_t(slot)].slice[size_t(global)];
+}
+
+juce::String LSampler24AudioProcessor::touchAutomationGridParameter(int slot, int gridIndex,
+                                                                     int loop, bool bankMacro)
+{
+    return touchAutomationParameter(static_cast<HostParameter*>(
+        getAutomationGridParameter(slot, gridIndex, loop, bankMacro)));
+}
+
+juce::String LSampler24AudioProcessor::touchAutomationSampleSetParameter(int slot, int sample,
+                                                                          int page, int field)
+{
+    return touchAutomationParameter(static_cast<HostParameter*>(
+        getAutomationSampleSetParameter(slot, sample, page, field)));
+}
+
+juce::String LSampler24AudioProcessor::touchAutomationSliceGlobalParameter(int slot, int global)
+{
+    return touchAutomationParameter(static_cast<HostParameter*>(
+        getAutomationSliceGlobalParameter(slot, global)));
+}
+
 void LSampler24AudioProcessor::notifyHostControl(HostParameter* p)
 {
     if(shuttingDown.load(std::memory_order_acquire))return;
@@ -3035,16 +3232,39 @@ void LSampler24AudioProcessor::handleAsyncUpdate()
 void LSampler24AudioProcessor::updateAutomatedAudio(bool snapshotChanged)
 {
     const auto& base=snapshots[size_t(readerSnapshot)].states;
+    const auto macroGeneration = bankMacroHostGeneration.load(std::memory_order_acquire);
+    const bool macroChanged = macroGeneration != audioBankMacroGeneration;
+    audioBankMacroGeneration = macroGeneration;
+    // The audio callback only reads lock-free atomics. No host notifications,
+    // allocation, files, or state-lock acquisition occur here.
+    std::array<double, parameterCount> macroOffsets {};
+    if (macroChanged || snapshotChanged)
+        for (int i = 0; i < parameterCount; ++i)
+            if (auto* macro = hostBankMacros[size_t(i)])
+                macroOffsets[size_t(i)] = macro->load();
     bool changed=snapshotChanged;
     for(int k=0;k<slotCount;++k) {
         const auto generation=hostGenerations[size_t(k)].load(std::memory_order_acquire);
-        if(!snapshotChanged && generation==audioHostGenerations[size_t(k)])continue;
+        if(!snapshotChanged && !macroChanged && generation==audioHostGenerations[size_t(k)])continue;
         audioHostGenerations[size_t(k)]=generation;
         auto& out=automatedAudio[size_t(k)];const auto& original=base[size_t(k)];
         out=original;auto p=original.params;const auto& h=hostSlots[size_t(k)];
         for(int i=0;i<parameterCount;++i)if(auto* parameter=h.values[size_t(i)])p.values[size_t(i)]=parameter->load();
         for(int j=0;j<loopCount;++j)for(int i=0;i<loopParameterCount;++i)
             p.loops[size_t(j)][size_t(i)]=h.loops[size_t(j)][size_t(i)]->load();
+        // Relative Bank Macros are a non-destructive overlay on top of each
+        // slot's own (possibly host-automated) settings. New/empty slots are
+        // unaffected until a sample actually occupies them.
+        bool occupied = false;
+        for (auto* sample : original.sampleSet) if (sample != nullptr) { occupied = true; break; }
+        if (occupied) {
+            for (int i = 0; i < parameterCount; ++i) {
+                const double offset = (macroChanged || snapshotChanged) ? macroOffsets[size_t(i)]
+                    : (hostBankMacros[size_t(i)] ? hostBankMacros[size_t(i)]->load() : 0.0);
+                if (offset != 0.0)
+                    p.values[size_t(i)] = sanitise(parameters[size_t(i)], p.values[size_t(i)] + offset);
+            }
+        }
         // Crossed envelopes have a deterministic safe window; host values remain
         // independent. Playback always clamps to at least one valid frame.
         p[P::sample_end]=std::max(p[P::sample_start],p[P::sample_end]);

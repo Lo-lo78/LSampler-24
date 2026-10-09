@@ -1,0 +1,20 @@
+LSampler-24 TEST109 - Bank Macro Grid (Alt+K)
+
+Alt+K dalla pagina Slots o dalla Grid dello slot apre Bank Macro Grid.
+Solo gli slot che contengono campioni sono inclusi. La griglia espone i
+parametri musicali riproducibili, lasciando esclusi note, mapping, velocity,
+start/end, loop, normalizzazione e conversioni audio offline.
+
+Di default i valori sono offset relativi rispetto a uno snapshot preso
+all'apertura della griglia: 0 non cambia lo strumento, +3 dB incrementa di
+3 dB ogni slot (nei limiti consentiti) conservando i bilanciamenti.
+Alt+U commuta a Set All: il prossimo cambiamento assegna un valore comune.
+La commutazione congela gli edit precedenti per evitare doppi offset.
+Backspace annulla la modifica del parametro selezionato rispetto allo
+snapshot della modalità corrente. Esc e Alt+K chiudono e mantengono le
+modifiche effettivamente eseguite, tornando alla pagina di provenienza.
+
+Invio sullo slot rimane individuale; Alt+G rimane Output globale.
+Nessun parametro aggiunto al catalogo VST3 (6629 invariati).
+
+NESSUNA BUILD: da verificare con GitHub Actions e NVDA in REAPER.

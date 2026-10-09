@@ -1,0 +1,21 @@
+LSampler-24 TEST112 - Ctrl+Shift+A, menu di automazione DAW
+
+Base: TEST111. Nessuna compilazione locale eseguita.
+
+- Ctrl+Shift+A nella griglia slot, Global/Alt+G, Bank Macro/Alt+K (Relative), Sample Set e
+  Slice Globals domanda prima al contesto VST3 della DAW il menu del parametro esposto.
+- Le voci del menu sono fornite dalla DAW; ad esempio possono includere
+  visualizzazione delle corsie di automazione. Non possiamo aprire o armare
+  automaticamente una corsia in tutte le DAW.
+- Il menu appare come JUCE PopupMenu associato al controllo attivo, navigabile
+  da tastiera. Esc annulla e torna al controllo che aveva il focus.
+- Se il contesto non esiste o il menu e' vuoto, resta il comportamento di TEST111:
+  il parametro e' comunicato come ultimo toccato, senza cambiarne il valore.
+- Nel Bank Macro Set All la scorciatoia non apre un parametro macro, poiche'
+  questa modalita' scrive direttamente nei parametri dei singoli slot.
+- Le mappature, gli ID e il conteggio dei 6746 parametri VST3 non cambiano.
+- DSP, suono, import/export, preset e compatibilita' TEST59 non sono modificati.
+
+Prove suggerite: REAPER, griglia slot, Alt+G, Alt+K Relative, Sample Set,
+Slice Globals; test menu con frecce, Invio ed Esc, sia in FX Chain che in
+finestra plugin separata. Provare anche una DAW che non offre un menu VST3.

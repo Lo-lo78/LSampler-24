@@ -1,0 +1,24 @@
+TEST113 - Ctrl+Shift+A senza menu: automazione host diretta
+
+Base: TEST112. Nessuna compilazione locale. DSP, ID e parametri VST3 invariati.
+
+- Ctrl+Shift+A, sul parametro corrente delle griglie (slot, Bank Macro Relative,
+  global, Sample Set, Slice Globals) cerca nel menu di contesto VST3 della DAW
+  la voce specifica che mostra/nasconde/commuta la corsia di automazione.
+- Se la trova, invoca direttamente l'azione della DAW senza mostrare il menu.
+  Ogni pressione interroga nuovamente la DAW: non inventa lo stato con un
+  contatore booleano del plugin. Le voci spuntate vengono interpretate come
+  richiesta di disattivazione, come nel menu host.
+- Se la DAW non offre una voce riconoscibile, o il menu e' ambiguo, non esegue
+  alcuna azione e lascia il parametro ultimo toccato come fallback, con avviso
+  NVDA esplicito che il toggle non e' disponibile.
+- Supporta i nomi piu' comuni di Show/Hide/Toggle Track Envelope e Automation
+  Lane/Track, con alcuni sinonimi italiani ed europei. Il VST3 non definisce
+  un ID universale della voce o un'API di interrogazione della visibilita':
+  impossibile garantirlo in tutte le DAW senza un'integrazione specifica.
+- NVDA annuncia che e' stata INVIATA una richiesta di mostrare/nascondere.
+  Non dichiara che la DAW l'abbia effettivamente eseguita.
+- Non modifica le corsie di registrazione o la modalita' Write/Read.
+- Dopo la compilazione provare in REAPER: parametro di uno slot, premere
+  Ctrl+Shift+A due volte; ripetere con Bank Macro. Verificare che la DAW
+  restituisca un menu contestuale con voce show/hide o spuntabile.

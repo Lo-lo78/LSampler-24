@@ -255,6 +255,24 @@ void SliceEditor::restore(bool forward) {
 bool SliceEditor::keyPressed(const juce::KeyPress& k) {
     if(numeric)return true;
     const auto mods=k.getModifiers();const int code=k.getKeyCode();
+    if (mods.isCtrlDown() && mods.isShiftDown() && !mods.isAltDown()
+        && !mods.isCommandDown()
+        && juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code)) == 'a')
+    {
+        auto* selected = page == Page::globals
+            ? processor.getAutomationSliceGlobalParameter(slot, global) : nullptr;
+        if (selected != nullptr && onToggleHostAutomationEnvelope && onToggleHostAutomationEnvelope(selected, this))
+            return true;
+        const auto name = page == Page::globals
+            ? processor.touchAutomationSliceGlobalParameter(slot, global)
+            : juce::String();
+        // Step and boundary edits are sequencer data, not host parameters.
+        announceToActiveScreenReader(*this, name.isNotEmpty()
+            ? "Direct automation toggle unavailable. Last touched: " + name
+            : "No automatable parameter selected");
+        setDescription({});
+        return true;
+    }
 
     // Match the main parameter grid: Enter opens a real Value mode first.
     // In Value, plain arrows edit the value and Left/Right select the step.

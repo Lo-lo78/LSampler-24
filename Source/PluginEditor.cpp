@@ -295,8 +295,12 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
         if (index >= 0)
         {
             const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
-            selectedParameter = globalOpen ? normalGridSize + index : index;
+            if (bankMacroOpen)
+                bankMacroCursor = juce::jlimit(0, int(bankMacroEntries.size()) - 1, index);
+            selectedParameter = bankMacroOpen ? bankMacroEntries[size_t(bankMacroCursor)]
+                              : globalOpen ? normalGridSize + index : index;
             configureValueForSelectedParameter();
+            if (bankMacroOpen) refreshVisuals();
         }
     };
     addAndMakeVisible(parameterSelector);
@@ -414,7 +418,7 @@ void LSampler24AudioProcessorEditor::paint(juce::Graphics& g)
     if(!importBrowserActive && !slotLibraryActive && !sampleSetActive) {
         rackgui::frame(g, {16,72,352,490}, "SLOTS / 01-24");
         g.setColour(rackgui::muted);g.setFont(13.0f);
-        g.drawText(globalOpen?"Enter: Confirm  /  Esc: Cancel  /  Alt+V: Value":parameterPage?"Alt+L: Grid  /  Alt+Shift+L: Loop On-Off  /  Alt+M: Sample Set  /  Alt+E: Slice":"Alt+L: Slots  /  Enter: Edit selected slot  /  Alt+T: Advanced  /  Alt+M: Sample Set  /  Alt+E: Slice",384,588,getWidth()-400,24,juce::Justification::centredLeft);
+        g.drawText(bankMacroOpen?(bankMacroUniform?"BANK MACRO / Set All  /  Alt+U: Relative  /  Backspace: Reset  /  Esc: Back":"BANK MACRO / Relative  /  Alt+U: Set All  /  Backspace: Reset  /  Esc: Back"):globalOpen?"Enter: Confirm  /  Esc: Cancel  /  Alt+V: Value":parameterPage?"Alt+L: Grid  /  Alt+Shift+L: Loop On-Off  /  Alt+M: Sample Set  /  Alt+E: Slice":"Alt+L: Slots  /  Enter: Edit selected slot  /  Alt+K: Bank Macro  /  Alt+T: Advanced",384,588,getWidth()-400,24,juce::Justification::centredLeft);
     }
 }
 
@@ -422,7 +426,7 @@ void LSampler24AudioProcessorEditor::resized()
 {
     // The tools belong to the Slot parameter grid, not the slot page,
     // global-output editor, browser, or modal Properties page.
-    const bool showParameterTools = parameterPage && !globalOpen && !propertiesOpen
+    const bool showParameterTools = parameterPage && !globalOpen && !bankMacroOpen && !propertiesOpen
         && !importBrowserActive && !slotLibraryActive && !sampleSetActive;
     sliceEditorButton.setVisible(showParameterTools);
     sampleSetButton.setVisible(showParameterTools);
@@ -704,6 +708,9 @@ int LSampler24AudioProcessorEditor::categoryEnd(int index) const {
     return index;
 }
 bool LSampler24AudioProcessorEditor::selectedRateIsSynced() const {
+    // A macro may target slots with different LFO sync settings. No single
+    // selected-slot value can describe all of them.
+    if (bankMacroOpen) return false;
     const auto id=selectedEntry().parameter;
     if(id!=int(P::lfo1_rate)&&id!=int(P::lfo2_rate))return false;
     const auto sync=id==int(P::lfo1_rate)?P::lfo1_bpm_sync:P::lfo2_bpm_sync;
@@ -715,10 +722,31 @@ juce::String LSampler24AudioProcessorEditor::selectedParameterName() const {
     const juce::String name = e.parameter == int(P::global_one_shot) ? "Main Playback Mode" : juce::String(descriptor(e).name);
     return (std::strcmp(e.category,"Loops")==0?"Loop "+juce::String(selectedLoop+1)+" ":juce::String())+name;
 }
-double LSampler24AudioProcessorEditor::getSelectedParameterValue() const {return processor.getSlotParameter(selectedParameter,selectedLoop);}
+double LSampler24AudioProcessorEditor::getSelectedParameterValue() const {
+    if (bankMacroOpen)
+        return bankMacroUniform ? bankMacroAmounts[size_t(selectedEntry().parameter)]
+                                : processor.getBankMacroOffset(selectedEntry().parameter);
+    return processor.getSlotParameter(selectedParameter,selectedLoop);
+}
 void LSampler24AudioProcessorEditor::setSelectedParameterValue(double value)
 {
     const auto parameter = selectedEntry().parameter;
+    if (bankMacroOpen)
+    {
+        const auto& d = descriptor(selectedEntry());
+        const double maximumOffset = d.maximum - d.minimum;
+        value = bankMacroUniform ? sanitise(d, value) :
+            juce::jlimit(-maximumOffset, maximumOffset, value);
+        if (!bankMacroUniform && (d.kind == Kind::integer || d.kind == Kind::enumeration || d.kind == Kind::note))
+            value = std::round(value);
+        if (bankMacroUniform) {
+            bankMacroAmounts[size_t(parameter)] = value;
+            processor.applyBankMacro(selectedParameter, bankMacroReference, value, true);
+        } else {
+            processor.setBankMacroOffset(parameter, value);
+        }
+        return;
+    }
     processor.setSlotParameter(selectedParameter, value, selectedLoop);
     if (parameter == int(P::sample_start))
         processor.requestSampleBoundaryAudition(false, true);
@@ -757,17 +785,42 @@ juce::String LSampler24AudioProcessorEditor::formatParameter(int index,double va
     }
     return juce::String(value,d.decimals)+(juce::String(d.unit).isEmpty()?juce::String():" "+juce::String(d.unit));
 }
-juce::String LSampler24AudioProcessorEditor::selectedParameterValueText() const {return formatParameter(selectedParameter,getSelectedParameterValue());}
+juce::String LSampler24AudioProcessorEditor::bankMacroValueText(int gridIndex) const
+{
+    const auto& d = descriptor(lsampler::grid[size_t(gridIndex)]);
+    const auto parameter = lsampler::grid[size_t(gridIndex)].parameter;
+    const auto value = bankMacroUniform ? bankMacroAmounts[size_t(parameter)]
+                                        : processor.getBankMacroOffset(parameter);
+    if (bankMacroUniform)
+        return formatParameter(gridIndex, value);
+    const juce::String sign = value > 0.0 ? "+" : "";
+    const auto amount = juce::String(value, d.decimals);
+    return sign + amount + (juce::String(d.unit).isEmpty() ? juce::String() : " " + juce::String(d.unit));
+}
+juce::String LSampler24AudioProcessorEditor::selectedParameterValueText() const {
+    return bankMacroOpen ? bankMacroValueText(selectedParameter) :
+        formatParameter(selectedParameter,getSelectedParameterValue());
+}
 juce::String LSampler24AudioProcessorEditor::parameterCellText(int index) const {
     const auto& e=lsampler::grid[size_t(index)];
     const juce::String prefix=std::strcmp(e.category,"Loops")==0?"Loop "+juce::String(selectedLoop+1)+" ":juce::String();
     const juce::String name = e.parameter == int(P::global_one_shot) ? "Main Playback Mode" : juce::String(descriptor(e).name);
+    if (bankMacroOpen)
+        return name + ", " + bankMacroValueText(index);
     return prefix+name+", "+formatParameter(index,processor.getSlotParameter(index,selectedLoop));
 }
 void LSampler24AudioProcessorEditor::refreshParameterGrid() {
     const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
     parameterSelector.clear(juce::dontSendNotification);
-    if (globalOpen)
+    if (bankMacroOpen)
+    {
+        for (int i = 0; i < int(bankMacroEntries.size()); ++i)
+            parameterSelector.addItem(parameterCellText(bankMacroEntries[size_t(i)]), i + 1);
+        bankMacroCursor = juce::jlimit(0, int(bankMacroEntries.size()) - 1, bankMacroCursor);
+        selectedParameter = bankMacroEntries[size_t(bankMacroCursor)];
+        parameterSelector.setSelectedItemIndex(bankMacroCursor, juce::dontSendNotification);
+    }
+    else if (globalOpen)
     {
         for (int i = 0; i < lsampler::globalParameterCount; ++i)
             parameterSelector.addItem(parameterCellText(normalGridSize + i), i + 1);
@@ -787,11 +840,21 @@ void LSampler24AudioProcessorEditor::refreshParameterGrid() {
 }
 void LSampler24AudioProcessorEditor::configureValueForSelectedParameter() {
     const auto& d=descriptor(selectedEntry());
-    parameterValue.setRange(selectedRateIsSynced()?.125:d.minimum,d.maximum,
+    const double offsetLimit = d.maximum - d.minimum;
+    parameterValue.setRange(bankMacroOpen && !bankMacroUniform ? -offsetLimit : (selectedRateIsSynced()?.125:d.minimum),
+        bankMacroOpen && !bankMacroUniform ? offsetLimit : d.maximum,
         d.kind==Kind::integer||d.kind==Kind::enumeration||d.kind==Kind::note||d.kind==Kind::action?1.0:0.0);
-    parameterValue.textFromValueFunction=[this](double v){return formatParameter(selectedParameter,v);};
+    parameterValue.textFromValueFunction=[this](double v){
+        if (bankMacroOpen && !bankMacroUniform) {
+            const auto& d = descriptor(selectedEntry());
+            return (v > 0 ? juce::String("+") : juce::String()) + juce::String(v, d.decimals)
+                   + (juce::String(d.unit).isEmpty() ? juce::String() : " " + juce::String(d.unit));
+        }
+        return formatParameter(selectedParameter,v);
+    };
     parameterValue.valueFromTextFunction=[this](const juce::String& text) {
         const auto& desc=descriptor(selectedEntry());
+        if (bankMacroOpen && !bankMacroUniform) return text.getDoubleValue();
         if(selectedEntry().parameter==int(P::global_one_shot)) {
             static const juce::StringArray labels { "Main Loop", "One Shot", "On Release" };
             const int found=labels.indexOf(text.trim(),true);if(found>=0)return desc.minimum+found;
@@ -841,7 +904,7 @@ void LSampler24AudioProcessorEditor::leaveSlotParameters()
     // slot parameter grid.  The editor constructor also calls this helper to
     // establish the slot-page visibility; saving there would overwrite the
     // processor's remembered cursor with the selector's default item (Level).
-    if (parameterPage)
+    if (parameterPage && !bankMacroOpen)
     {
         const int currentGridIndex = parameterSelector.getSelectedItemIndex();
         if (currentGridIndex >= 0)
@@ -859,6 +922,170 @@ void LSampler24AudioProcessorEditor::leaveSlotParameters()
     loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true); aboutButton.setVisible(true); advancedButton.setVisible(true);
     refreshSlotCells();
     resized();
+}
+
+// The Relative mode edits host-automatable, persistent Bank Macro offsets;
+// Set All is a deliberate one-shot edit of the ordinary per-slot parameters.
+void LSampler24AudioProcessorEditor::openBankMacro()
+{
+    if (bankMacroOpen || globalOpen || importBrowserActive || slotLibraryActive ||
+        sampleSetActive || propertiesOpen || sliceEditor || aboutOpen || fileUiBusy)
+        return;
+
+    bankMacroEntries.clear();
+    const int normalGridSize = int(lsampler::grid.size()) - lsampler::globalParameterCount;
+    for (int i = 0; i < normalGridSize; ++i)
+    {
+        const auto& e = lsampler::grid[size_t(i)];
+        if (e.global >= 0 || e.loop >= 0 || e.action != Action::none || e.parameter < 0) continue;
+        if (!lsampler::bankMacroEligible(e)) continue;
+        bankMacroEntries.push_back(i);
+    }
+    if (bankMacroEntries.empty()) return;
+
+    bankMacroReference = processor.getBankMacroSnapshot();
+    int count = 0;
+    for (bool occupied : bankMacroReference.occupied) if (occupied) ++count;
+    if (count == 0)
+    {
+        lsampler::announceToActiveScreenReader(status, "Bank Macro. No loaded slots");
+        return;
+    }
+    bankMacroReturnWasParameterPage = parameterPage;
+    bankMacroReturnParameter = selectedParameter;
+    bankMacroOpen = true;
+    processor.requestPreviewStop();
+    bankMacroUniform = false;
+    bankMacroAmounts.fill(0.0);
+    bankMacroCursor = juce::jlimit(0, int(bankMacroEntries.size()) - 1, bankMacroLastCursor);
+    selectedParameter = bankMacroEntries[size_t(bankMacroCursor)];
+    parameterPage = true;
+    for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
+    loadSample.setVisible(false); loadSlot.setVisible(false); saveSlot.setVisible(false);
+    loadBank.setVisible(false); saveBank.setVisible(false); help.setVisible(false);
+    aboutButton.setVisible(false); advancedButton.setVisible(false);
+    parameterSelector.setBankMacroContext(true);
+    parameterSelector.setVisible(true);
+    parameterValue.setVisible(true);
+    refreshParameterGrid();
+    resized();
+    parameterSelector.setEntryAccessibility();
+    parameterSelector.grabKeyboardFocus();
+    lsampler::announceToActiveScreenReader(parameterSelector,
+        "Bank Macro Grid. " + juce::String(count) + " loaded slots. Relative. " +
+        parameterCellText(selectedParameter));
+}
+
+void LSampler24AudioProcessorEditor::closeBankMacro(bool restoreFocus)
+{
+    if (!bankMacroOpen) return;
+    bankMacroLastCursor = bankMacroCursor;
+    bankMacroOpen = false;
+    bankMacroUniform = false;
+    parameterSelector.setBankMacroContext(false);
+    if (bankMacroReturnWasParameterPage)
+    {
+        parameterPage = true;
+        selectedParameter = bankMacroReturnParameter;
+        refreshParameterGrid();
+        resized();
+        if (restoreFocus) focusParameterGrid();
+    }
+    else
+    {
+        parameterPage = false;
+        parameterSelector.setVisible(false);
+        parameterValue.setVisible(false);
+        for (auto& cell : slotCells) cell.setVisible(true);
+        loadSample.setVisible(true); loadSlot.setVisible(true); saveSlot.setVisible(true);
+        loadBank.setVisible(true); saveBank.setVisible(true); help.setVisible(true);
+        aboutButton.setVisible(true); advancedButton.setVisible(true);
+        refreshSlotCells();
+        resized();
+        if (restoreFocus) returnToCurrentSlotAndAnnounce();
+    }
+}
+
+void LSampler24AudioProcessorEditor::selectBankMacroEntry(int position, bool announce)
+{
+    if (!bankMacroOpen || !juce::isPositiveAndBelow(position, int(bankMacroEntries.size()))) return;
+    if (position == bankMacroCursor) return;
+    bankMacroCursor = position;
+    selectedParameter = bankMacroEntries[size_t(bankMacroCursor)];
+    parameterSelector.setSelectedItemIndex(position,
+        announce ? juce::sendNotificationSync : juce::dontSendNotification);
+    configureValueForSelectedParameter();
+    refreshVisuals();
+}
+
+void LSampler24AudioProcessorEditor::moveBankMacroPage(int direction)
+{
+    if (!bankMacroOpen) return;
+    const auto* category = selectedEntry().category;
+    int target = bankMacroCursor;
+    if (direction > 0)
+    {
+        while (target < int(bankMacroEntries.size()) &&
+               std::strcmp(lsampler::grid[size_t(bankMacroEntries[size_t(target)])].category, category) == 0)
+            ++target;
+        if (target >= int(bankMacroEntries.size())) return;
+    }
+    else
+    {
+        while (target >= 0 &&
+               std::strcmp(lsampler::grid[size_t(bankMacroEntries[size_t(target)])].category, category) == 0)
+            --target;
+        if (target < 0) return;
+        category = lsampler::grid[size_t(bankMacroEntries[size_t(target)])].category;
+        while (target > 0 &&
+               std::strcmp(lsampler::grid[size_t(bankMacroEntries[size_t(target - 1)])].category, category) == 0)
+            --target;
+    }
+    selectBankMacroEntry(target, true);
+}
+
+void LSampler24AudioProcessorEditor::toggleBankMacroUniform()
+{
+    if (!bankMacroOpen) return;
+    // Host macro offsets remain persistent when toggling to Set All; the latter
+    // edits base slot values. Returning to Relative shows host values again.
+    bankMacroReference = processor.getBankMacroSnapshot();
+    bankMacroUniform = !bankMacroUniform;
+    bankMacroAmounts.fill(0.0);
+    if (bankMacroUniform)
+        for (int gridIndex : bankMacroEntries)
+        {
+            const int parameter = lsampler::grid[size_t(gridIndex)].parameter;
+            int slot = processor.getCurrentSlot();
+            if (!bankMacroReference.occupied[size_t(slot)])
+                for (int s = 0; s < LSampler24AudioProcessor::slotCount; ++s)
+                    if (bankMacroReference.occupied[size_t(s)]) { slot = s; break; }
+            bankMacroAmounts[size_t(parameter)] = bankMacroReference.values[size_t(slot)][size_t(parameter)];
+        }
+    refreshParameterGrid();
+    lsampler::announceToActiveScreenReader(parameterSelector,
+        bankMacroUniform ? "Bank Macro, Set All. Changes assign the same value to every loaded slot"
+                         : "Bank Macro, Relative. Original slot differences preserved");
+}
+
+void LSampler24AudioProcessorEditor::resetSelectedBankMacro()
+{
+    if (!bankMacroOpen) return;
+    const int parameter = selectedEntry().parameter;
+    if (bankMacroUniform)
+    {
+        // In Set All mode Backspace restores the per-slot snapshot, not one
+        // common value (and without altering the current host macro offset).
+        processor.applyBankMacro(selectedParameter, bankMacroReference, 0.0, false);
+        int slot = processor.getCurrentSlot();
+        if (!bankMacroReference.occupied[size_t(slot)])
+            for (int s = 0; s < LSampler24AudioProcessor::slotCount; ++s)
+                if (bankMacroReference.occupied[size_t(s)]) { slot = s; break; }
+        bankMacroAmounts[size_t(parameter)] = bankMacroReference.values[size_t(slot)][size_t(parameter)];
+    }
+    else setSelectedParameterValue(0.0);
+    refreshParameterGrid();
+    lsampler::announceToActiveScreenReader(parameterSelector, "Macro reset. " + parameterCellText(selectedParameter));
 }
 
 void LSampler24AudioProcessorEditor::openGlobal()
@@ -936,7 +1163,7 @@ void LSampler24AudioProcessorEditor::selectParameter(int index, bool announce)
     index = juce::jlimit(minimumIndex, maximumIndex, index);
     if(index==selectedParameter)return;
     selectedParameter = index;
-    if (!globalOpen)
+    if (!globalOpen && !bankMacroOpen)
         processor.setSlotGridPosition(processor.getCurrentSlot(), selectedParameter);
     parameterSelector.setSelectedItemIndex(globalOpen ? selectedParameter - normalGridSize : selectedParameter,
         announce ? juce::sendNotificationSync : juce::dontSendNotification);
@@ -984,6 +1211,12 @@ void LSampler24AudioProcessorEditor::announceSelectedValue()
     auto* source = juce::Component::getCurrentlyFocusedComponent();
     if (source == nullptr)
         source = &status;
+    // Macro notifications are transient: do not store the changed offset in
+    // the focused Grid/Value control's persistent accessibility description.
+    if (bankMacroOpen) {
+        lsampler::announceToActiveScreenReader(status, selectedParameterValueText());
+        return;
+    }
     lsampler::announceToActiveScreenReader(*source, selectedEntry().action!=Action::none?juce::String("Applied"):selectedParameterValueText());
 }
 
@@ -1007,9 +1240,11 @@ void LSampler24AudioProcessorEditor::changeSelectedParameterValue(int direction,
     const double multiplier = static_cast<double>(stepWidths[static_cast<size_t>(stepWidthIndex)])
                             * (coarse ? static_cast<double>(valuePageStep) : 1.0);
     const double step = selectedRateIsSynced()?.125:baseStep*multiplier;
-    const double maximum = d.maximum;
+    const double maximum = bankMacroOpen && !bankMacroUniform ? (d.maximum - d.minimum) : d.maximum;
+    const double minimum = bankMacroOpen && !bankMacroUniform ? -(d.maximum - d.minimum)
+                                                              : (selectedRateIsSynced()?.125:d.minimum);
     const auto current = getSelectedParameterValue();
-    const auto next = juce::jlimit(selectedRateIsSynced()?.125:d.minimum, maximum, current + direction * step);
+    const auto next = juce::jlimit(minimum, maximum, current + direction * step);
     if (std::abs(next - current) < 1.0e-9)
         return;
     setSelectedParameterValue(next);
@@ -1020,7 +1255,9 @@ void LSampler24AudioProcessorEditor::changeSelectedParameterValue(int direction,
 void LSampler24AudioProcessorEditor::setSelectedParameterBoundary(bool maximum)
 {
     const auto& d=descriptor(selectedEntry());
-    const double value = maximum?d.maximum:(selectedRateIsSynced()?.125:d.minimum);
+    const double value = bankMacroOpen && !bankMacroUniform ?
+        (maximum ? d.maximum - d.minimum : d.minimum - d.maximum) :
+        (maximum ? d.maximum : (selectedRateIsSynced()?.125:d.minimum));
     if (std::abs(value - getSelectedParameterValue()) < 1.0e-9)
         return;
     setSelectedParameterValue(value);
@@ -1150,6 +1387,92 @@ int LSampler24AudioProcessorEditor::slotCellIndex(const juce::Component* compone
     for (int i = 0; i < static_cast<int>(slotCells.size()); ++i)
         if (component == &slotCells[static_cast<size_t>(i)]) return i;
     return -1;
+}
+
+// TEST113: Execute a host-provided show/hide/toggle envelope command without
+// opening a popup. Never invent a host state: refresh the host's menu for every
+// keypress, and do nothing when the host doesn't provide a recognisable item.
+// The VST3 context menu callback is owned by the DAW and can be called only
+// while the menu is still alive, on the UI/message thread.
+namespace
+{
+enum class HostEnvelopeCommand { none, show, hide, toggle };
+
+HostEnvelopeCommand classifyHostEnvelopeItem(const juce::String& original)
+{
+    auto label = original.toLowerCase().trim();
+    // Avoid automation-writing modes, Learn, and bulk operations (show ALL).
+    if (label.isEmpty() || label.contains("all envelope") || label.contains("all automation")
+        || label.contains("tutte") || label.contains("tutti")
+        || label.contains("write") || label.contains("record") || label.contains("learn")
+        || label.contains("mode") || label.contains("arm") || label.contains("modulation"))
+        return HostEnvelopeCommand::none;
+
+    // A few hosts add an ellipsis or an accelerator to the label.
+    label = label.replace("&", "").replace("...", "").trim();
+    const bool envelope = label.contains("envelope") || label.contains("automation lane")
+                       || label.contains("automation track") || label.contains("automation for parameter")
+                       || label.contains("parameter automation") || label.contains("inviluppo")
+                       || label.contains("corsia di automazione") || label.contains("traccia di automazione")
+                       || label.contains("pista de automatizaci") || label.contains("courbe d'automation")
+                       || label.contains("automationsspur");
+    if (!envelope) return HostEnvelopeCommand::none;
+
+    if (label.startsWith("hide ") || label.startsWith("remove ")
+        || label.startsWith("nascondi ") || label.startsWith("ocultar ")
+        || label.startsWith("masquer ") || label.contains(" ausblenden"))
+        return HostEnvelopeCommand::hide;
+    if (label.startsWith("show ") || label.startsWith("display ")
+        || label.startsWith("mostra ") || label.startsWith("visualizza ")
+        || label.startsWith("mostrar ") || label.startsWith("afficher ")
+        || label.contains(" anzeigen"))
+        return HostEnvelopeCommand::show;
+    if (label.startsWith("toggle ") || label.startsWith("commuta ")
+        || label.startsWith("attiva/disattiva "))
+        return HostEnvelopeCommand::toggle;
+    return HostEnvelopeCommand::none;
+}
+}
+
+bool LSampler24AudioProcessorEditor::toggleHostAutomationEnvelope(juce::AudioProcessorParameter* param,
+                                                                   juce::Component*)
+{
+    if (param == nullptr) return false;
+    auto* host = getHostContext();
+    if (host == nullptr) return false;
+    auto context = host->getContextMenuForParameter(param);
+    if (context == nullptr) return false;
+
+    const auto menu = context->getEquivalentPopupMenu();
+    juce::PopupMenu::MenuItemIterator iterator(menu, true);
+    std::function<void()> command;
+    auto kind = HostEnvelopeCommand::none;
+    bool checked = false;
+    int matches = 0;
+    while (iterator.next())
+    {
+        const auto& item = iterator.getItem();
+        if (!item.isEnabled || !item.action || item.isSeparator || item.isSectionHeader)
+            continue;
+        const auto candidate = classifyHostEnvelopeItem(item.text);
+        if (candidate == HostEnvelopeCommand::none) continue;
+        ++matches;
+        if (matches != 1) break; // Ambiguous host menu: don't guess.
+        command = item.action;
+        kind = candidate;
+        checked = item.isTicked;
+    }
+
+    if (matches != 1 || !command) return false;
+    // JUCE 8.0.15 captures the host's IContextMenu in this action. The action
+    // must be invoked now, before both context and menu are destroyed.
+    command();
+    const bool hiding = kind == HostEnvelopeCommand::hide
+                     || (kind != HostEnvelopeCommand::hide && checked);
+    const juce::String statusText = hiding ? "Automation lane: hide requested"
+                                           : "Automation lane: show requested";
+    lsampler::announceToActiveScreenReader(status, statusText + ". " + param->getName(160));
+    return true;
 }
 
 bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key)
@@ -1757,6 +2080,22 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         return true;
     }
 
+    if (sampleSetActive && mods.isCtrlDown() && mods.isShiftDown()
+        && !mods.isAltDown() && !mods.isCommandDown()
+        && juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code)) == 'a')
+    {
+        auto* selected = processor.getAutomationSampleSetParameter(processor.getCurrentSlot(),
+            sampleSetIndex, sampleSetPage, sampleSetField);
+        if (toggleHostAutomationEnvelope(selected, &sampleSetCell))
+            return true;
+        const auto name = processor.touchAutomationSampleSetParameter(processor.getCurrentSlot(),
+            sampleSetIndex, sampleSetPage, sampleSetField);
+        lsampler::announceToActiveScreenReader(status, name.isNotEmpty()
+            ? "Direct automation toggle unavailable. Last touched: " + name
+            : "No automatable parameter selected");
+        return true;
+    }
+
     if (sampleSetActive)
     {
         // Space is Preview On/Off on every Sample Set page, including Value.
@@ -1906,6 +2245,178 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         return true; // Sample Set is modal: never leak shortcuts to REAPER.
     }
 
+    // Ctrl+Shift+A: execute DAW-provided envelope toggle, if available.
+    // No popup; otherwise preserve the TEST111 last-touched fallback.
+    if (mods.isCtrlDown() && mods.isShiftDown() && !mods.isAltDown()
+        && !mods.isCommandDown()
+        && juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code)) == 'a'
+        && parameterPage && !sourceIsValueEditor)
+    {
+        if (bankMacroOpen && bankMacroUniform)
+        {
+            lsampler::announceToActiveScreenReader(status,
+                "Set All is not automatable. Use Alt+U for Relative macro automation");
+            return true;
+        }
+        auto* selected = processor.getAutomationGridParameter(processor.getCurrentSlot(),
+            selectedParameter, selectedLoop, bankMacroOpen);
+        if (toggleHostAutomationEnvelope(selected, source))
+            return true;
+        const auto name = processor.touchAutomationGridParameter(processor.getCurrentSlot(),
+            selectedParameter, selectedLoop, bankMacroOpen);
+        lsampler::announceToActiveScreenReader(status, name.isNotEmpty()
+            ? "Direct automation toggle unavailable. Last touched: " + name
+            : "No automatable parameter selected");
+        return true;
+    }
+
+    // A temporary numeric editor must be closed before hiding or repopulating
+    // its owning Slider. This avoids focus/use-after-free problems in REAPER.
+    if (bankMacroOpen && sourceIsValueEditor &&
+        (code == juce::KeyPress::escapeKey ||
+         (mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown() &&
+          (ch == 'k' || ch == 'u' || ch == 'g'))))
+    {
+        const bool discard = code == juce::KeyPress::escapeKey;
+        if (!discard)
+            if (auto* editor = dynamic_cast<juce::TextEditor*>(source))
+                setSelectedParameterValue(parameterValue.getValueFromText(editor->getText()));
+        const auto command = ch;
+        parameterValue.hideTextBox(discard);
+        juce::MessageManager::callAsync(
+            [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this),
+             command, discard]
+            {
+                if (safeThis == nullptr || !safeThis->bankMacroOpen) return;
+                if (discard || command == 'k') safeThis->closeBankMacro();
+                else if (command == 'u') safeThis->toggleBankMacroUniform();
+                else if (command == 'g') { safeThis->closeBankMacro(false); safeThis->openGlobal(); }
+            });
+        return true;
+    }
+
+    // Alt+K is a new independent editor for all occupied slots. It can be
+    // entered from Slots or from an individual slot grid, without changing the
+    // current slot, key ranges, sample sets or existing VST3 automation IDs.
+    if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown()
+        && !mods.isCommandDown() && ch == 'k' && !sourceIsValueEditor)
+    {
+        if (bankMacroOpen) closeBankMacro();
+        else openBankMacro();
+        return true;
+    }
+
+    if (bankMacroOpen)
+    {
+        if (code == juce::KeyPress::escapeKey)
+        {
+            closeBankMacro();
+            return true;
+        }
+        if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown()
+            && !mods.isCommandDown() && ch == 'u')
+        {
+            toggleBankMacroUniform();
+            return true;
+        }
+        if (!mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown()
+            && code == juce::KeyPress::backspaceKey)
+        {
+            resetSelectedBankMacro();
+            return true;
+        }
+        if (source == &parameterSelector)
+        {
+            if (mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown() &&
+                (code == juce::KeyPress::homeKey || code == juce::KeyPress::endKey))
+            {
+                selectBankMacroEntry(code == juce::KeyPress::homeKey ? 0 : int(bankMacroEntries.size()) - 1, true);
+                return true;
+            }
+            if (code == juce::KeyPress::tabKey && !mods.isCtrlDown() && !mods.isAltDown())
+            {
+                focusValue();
+                return true;
+            }
+            if (mods.isAltDown() && mods.isShiftDown() && !mods.isCtrlDown()
+                && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
+            {
+                moveBankMacroPage(code == juce::KeyPress::rightKey ? 1 : -1);
+                return true;
+            }
+            if (!mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
+            {
+                int target = bankMacroCursor;
+                if (code == juce::KeyPress::upKey) --target;
+                else if (code == juce::KeyPress::downKey) ++target;
+                else if (code == juce::KeyPress::homeKey || code == juce::KeyPress::endKey
+                    || code == juce::KeyPress::pageUpKey || code == juce::KeyPress::pageDownKey)
+                {
+                    const auto* category = selectedEntry().category;
+                    int begin = bankMacroCursor, end = bankMacroCursor;
+                    while (begin > 0 && std::strcmp(lsampler::grid[size_t(bankMacroEntries[size_t(begin - 1)])].category, category) == 0) --begin;
+                    while (end + 1 < int(bankMacroEntries.size()) && std::strcmp(lsampler::grid[size_t(bankMacroEntries[size_t(end + 1)])].category, category) == 0) ++end;
+                    if (code == juce::KeyPress::homeKey) target = begin;
+                    else if (code == juce::KeyPress::endKey) target = end;
+                    else if (code == juce::KeyPress::pageUpKey) target = juce::jmax(begin, bankMacroCursor - 8);
+                    else target = juce::jmin(end, bankMacroCursor + 8);
+                }
+                else if (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey)
+                {
+                    moveBankMacroPage(code == juce::KeyPress::rightKey ? 1 : -1);
+                    return true;
+                }
+                else if (code == juce::KeyPress::returnKey)
+                {
+                    focusValue();
+                    return true;
+                }
+                else if (code == juce::KeyPress::tabKey)
+                {
+                    focusValue();
+                    return true;
+                }
+                else
+                {
+                    const auto initial = juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
+                    if (initial >= 33 && initial <= 126)
+                    {
+                        const int direction = mods.isShiftDown() ? -1 : 1;
+                        for (int distance = 1; distance <= int(bankMacroEntries.size()); ++distance)
+                        {
+                            const int cursor = (bankMacroCursor + int(bankMacroEntries.size()) +
+                                                direction * distance % int(bankMacroEntries.size())) % int(bankMacroEntries.size());
+                            const auto name = juce::String(descriptor(lsampler::grid[size_t(bankMacroEntries[size_t(cursor)])]).name);
+                            if (name.isNotEmpty() && juce::CharacterFunctions::toLowerCase(name[0]) == initial)
+                            { target = cursor; break; }
+                        }
+                    }
+                    else return true;
+                }
+                if (target >= 0 && target < int(bankMacroEntries.size()))
+                {
+                    // Like the slot grid, Up/Down do not cross page borders.
+                    if ((code != juce::KeyPress::upKey && code != juce::KeyPress::downKey) ||
+                        std::strcmp(lsampler::grid[size_t(bankMacroEntries[size_t(target)])].category,
+                                    selectedEntry().category) == 0)
+                        selectBankMacroEntry(target, true);
+                }
+                return true;
+            }
+        }
+        // Prevent slot-specific actions and file dialogs in this modal macro
+        // surface; only Grid/Value, output Global, mode and fine-step remain.
+        if (mods.isAltDown() && !mods.isCtrlDown()
+            && ch != 'l' && ch != 'v' && ch != 'g'
+            && code != juce::KeyPress::leftKey && code != juce::KeyPress::rightKey
+            && code != juce::KeyPress::upKey && code != juce::KeyPress::downKey
+            && code != juce::KeyPress::homeKey && code != juce::KeyPress::endKey
+            && code != juce::KeyPress::pageUpKey && code != juce::KeyPress::pageDownKey)
+            return true;
+        if (mods.isCtrlDown() && !mods.isAltDown()) return true;
+        if (code == juce::KeyPress::spaceKey) return true;
+    }
+
     // Contextual Alt+L on Slots or on the selected Slot's Grid/Value.
     // The manual numeric text field
     // commits its value before leaving, further below in sourceIsValueEditor.
@@ -2024,6 +2535,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown() && ch == 'g')
     {
+        if (bankMacroOpen) closeBankMacro(false);
         if (globalOpen) closeGlobal(true); else openGlobal();
         return true;
     }
@@ -2050,7 +2562,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     // Page/category navigation remains available, now on Alt+Shift+Left/Right.
     // Ctrl+Left/Right is reserved for Sample Play Start scrubbing.
-    if (parameterPage && !globalOpen && !sourceIsValueEditor && mods.isAltDown() && mods.isShiftDown()
+    if (parameterPage && !globalOpen && !bankMacroOpen && !sourceIsValueEditor && mods.isAltDown() && mods.isShiftDown()
         && !mods.isCtrlDown() && !mods.isCommandDown()
         && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
     {
@@ -2062,7 +2574,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     // Empty slots are skipped, there is no wrap, and boundaries stay silent when
     // more than one loaded slot exists.  If this is the only loaded slot, announce
     // that fact so the user knows there is nowhere else to navigate.
-    if (parameterPage && !globalOpen && !sourceIsValueEditor && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
+    if (parameterPage && !globalOpen && !bankMacroOpen && !sourceIsValueEditor && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
         && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
     {
         const int current = processor.getCurrentSlot();
@@ -2111,7 +2623,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     // Ctrl+Left/Right scrubs Sample Play Start without exposing it in the Grid.
     // Use the same coarse multiplier as Page Up/Down so sample navigation is fast,
     // while Alt+Left/Right still selects the step-width multiplier.
-    if (parameterPage && !globalOpen && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
+    if (parameterPage && !globalOpen && !bankMacroOpen && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
         && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
     {
         const auto& d = lsampler::parameters[static_cast<size_t>(lsampler::P::sample_play_start)];
@@ -2153,7 +2665,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         if (ch == 'v' && parameterPage && !sourceIsValueEditor) { focusValue(); return true; }
         // The old Alt+L loop toggle is retained as Alt+Shift+L; plain Alt+L
         // now locates Slots on the main page or Grid inside the slot editor.
-        if (ch == 'l' && mods.isShiftDown() && parameterPage && !globalOpen)
+        if (ch == 'l' && mods.isShiftDown() && parameterPage && !globalOpen && !bankMacroOpen)
         {
             for (int i = 0; i < static_cast<int>(lsampler::grid.size()); ++i)
                 if (lsampler::grid[static_cast<size_t>(i)].parameter == int(lsampler::P::global_one_shot)
@@ -2195,7 +2707,10 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             {
                 const auto typed = parameterValue.getValueFromText(editor->getText());
                 const auto& d=descriptor(selectedEntry());
-                setSelectedParameterValue(juce::jlimit(d.minimum,d.maximum,typed));
+                const double macroRange = d.maximum - d.minimum;
+                setSelectedParameterValue(bankMacroOpen && !bankMacroUniform
+                    ? juce::jlimit(-macroRange, macroRange, typed)
+                    : juce::jlimit(d.minimum, d.maximum, typed));
                 refreshParameterGrid();
             }
         };
@@ -2239,7 +2754,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             if(mods.isShiftDown())closeEditorThen([this] { focusValue(); }, false);
             else closeEditorThen([this]
             {
-                if (!globalOpen)
+                if (!globalOpen && !bankMacroOpen)
                     focusParameterActionButton(sliceEditorButton);
                 else
                     focusParameterGrid();
@@ -5379,6 +5894,11 @@ void LSampler24AudioProcessorEditor::openSliceEditor(bool sequencer)
     sliceReturnFocus=juce::Component::getCurrentlyFocusedComponent();
     processor.requestPreviewStop();processor.requestImportPreviewStop();processor.requestLibraryPreviewStop();
     sliceEditor=std::make_unique<SliceEditor>(processor,slot,sequencer);
+    sliceEditor->onToggleHostAutomationEnvelope = [safeThis=juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+        (juce::AudioProcessorParameter* parameter, juce::Component* target)
+    {
+        return safeThis != nullptr && safeThis->toggleHostAutomationEnvelope(parameter, target);
+    };
     sliceEditor->onClose=[safeThis=juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)] {
         // Never delete the focused component in the middle of its keyPressed call.
         juce::MessageManager::callAsync([safeThis]{if(safeThis!=nullptr)safeThis->closeSliceEditor();});

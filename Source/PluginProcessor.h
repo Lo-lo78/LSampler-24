@@ -1,5 +1,6 @@
 #pragma once
 #include "HostParameter.h"
+#include "BankMacroParameters.h"
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "SamplePool.h"
 #include "SamplerVoice.h"
@@ -110,6 +111,32 @@ public:
     void clearCurrentSlot();
     void clearBank();
     bool slotHasSample(int slotIndex) const;
+    // One atomic control-thread snapshot for the runtime Bank Macro editor.
+    // Does not duplicate WAV buffers or alter persisted host parameter IDs.
+    struct BankMacroSnapshot {
+        std::array<std::array<double, lsampler::parameterCount>, slotCount> values {};
+        std::array<bool, slotCount> occupied {};
+    };
+    BankMacroSnapshot getBankMacroSnapshot() const;
+    void applyBankMacro(int gridIndex, const BankMacroSnapshot& reference,
+                        double value, bool uniform);
+    // Persistent, independent, host-automatable relative controls. No audio
+    // buffers or slot settings are modified when the macro is moved.
+    // Portable VST3/AU host 'last touched parameter' gesture. A plug-in has no
+    // cross-DAW API to create/show/arm a host-owned automation lane.
+    // The returned name is empty when the selected item is not host-automatable.
+    // Return the exact exposed JUCE parameter for VST3 host-provided
+    // automation menus. No edits, host notifications or value changes occur.
+    juce::AudioProcessorParameter* getAutomationGridParameter(int slot, int gridIndex,
+                                                               int loop, bool bankMacro) const noexcept;
+    juce::AudioProcessorParameter* getAutomationSampleSetParameter(int slot, int sample,
+                                                                    int page, int field) const noexcept;
+    juce::AudioProcessorParameter* getAutomationSliceGlobalParameter(int slot, int global) const noexcept;
+    juce::String touchAutomationGridParameter(int slot, int gridIndex, int loop, bool bankMacro);
+    juce::String touchAutomationSampleSetParameter(int slot, int sample, int page, int field);
+    juce::String touchAutomationSliceGlobalParameter(int slot, int global);
+    double getBankMacroOffset(int parameter) const noexcept;
+    void setBankMacroOffset(int parameter, double offset) noexcept;
     int getSlotGridPosition(int slotIndex) const noexcept;
     void setSlotGridPosition(int slotIndex, int gridIndex) noexcept;
 
@@ -209,6 +236,7 @@ public:
     static juce::File defaultLibraryRoot();
 
 private:
+    juce::String touchAutomationParameter(lsampler::HostParameter*);
     void notifyHostControl(lsampler::HostParameter*);
     void handleAsyncUpdate() override;
     void createHostParameters();
@@ -247,6 +275,11 @@ private:
     };
     std::array<HostSlot,slotCount> hostSlots;
     std::array<lsampler::HostParameter*,lsampler::globalParameterCount> hostGlobals {};
+    std::array<lsampler::HostParameter*,lsampler::parameterCount> hostBankMacros {};
+    std::atomic<uint64_t> bankMacroHostGeneration {0};
+    uint64_t audioBankMacroGeneration = 0;
+    void saveBankMacroState(juce::ValueTree& parent) const;
+    void restoreBankMacroState(const juce::ValueTree& parent);
     std::array<std::atomic<uint64_t>,slotCount> hostGenerations {};
     std::atomic<uint64_t> globalHostGeneration {0};
     mutable std::array<uint64_t,slotCount> controlHostGenerations {};

@@ -12,6 +12,7 @@ public:
     SliceEditor(LSampler24AudioProcessor&,int slot,bool sequencePage);
     ~SliceEditor() override;
     std::function<void()> onClose;
+    std::function<bool(juce::AudioProcessorParameter*, juce::Component*)> onToggleHostAutomationEnvelope;
     bool keyPressed(const juce::KeyPress&) override;
     bool keyStateChanged(bool) override {return true;}
     void paint(juce::Graphics&) override;
