@@ -1435,31 +1435,28 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         if (code == juce::KeyPress::spaceKey && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown())
         {
             if (slotLibraryForBank) return true; // Banks have no audio preview.
-            if (slotLibraryEntries.empty()) return true;
-            const auto& e = slotLibraryEntries[size_t(slotLibraryEntryIndex)];
-            if (e.directory) return true;
             if (slotLibraryForSampleSet)
             {
-                if (sampleSetBrowserPreviewPlaying)
+                sampleSetBrowserPreviewEnabled = !sampleSetBrowserPreviewEnabled;
+                if (!sampleSetBrowserPreviewEnabled)
                 {
                     processor.requestImportPreviewStop();
-                    sampleSetBrowserPreviewPlaying = false;
-                    lsampler::announceToActiveScreenReader(slotLibraryCell, "Preview stopped");
+                    slotLibraryPendingPreview = {};
+                    slotLibraryPreviewDelayTicks = 0;
+                    lsampler::announceToActiveScreenReader(slotLibraryCell, "Preview Off");
                 }
                 else
                 {
-                    juce::String error;
-                    if (!processor.prepareImportPreview(e.file, error))
-                        lsampler::announceToActiveScreenReader(slotLibraryCell, error);
-                    else
-                    {
-                        processor.requestImportPreviewToggle();
-                        sampleSetBrowserPreviewPlaying = true;
-                        lsampler::announceToActiveScreenReader(slotLibraryCell, "Original sample preview");
-                    }
+                    // A selected folder/empty folder is silent, but Preview On
+                    // stays armed for the next audio file.
+                    updateSlotLibraryPreviewForSelection();
+                    lsampler::announceToActiveScreenReader(slotLibraryCell, "Preview On");
                 }
                 return true;
             }
+            if (slotLibraryEntries.empty()) return true;
+            const auto& e = slotLibraryEntries[size_t(slotLibraryEntryIndex)];
+            if (e.directory) return true;
             if (slotLibraryPreviewEnabled)
             {
                 slotLibraryPreviewEnabled = false;
@@ -1704,6 +1701,14 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (sampleSetActive)
     {
+        // Space is Preview On/Off on every Sample Set page, including Value.
+        // The enabled state outlives the audio voice and changes only on Space.
+        if (code == juce::KeyPress::spaceKey && !mods.isCtrlDown() && !mods.isAltDown()
+            && !mods.isShiftDown() && !mods.isCommandDown())
+        {
+            previewSampleSetEntry();
+            return true;
+        }
         if (code == juce::KeyPress::escapeKey)
         {
             if (sampleSetValueFocus)
@@ -1780,9 +1785,9 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 {
                     if (sampleSetIndex != 0)
                     {
-                        processor.requestImportPreviewStop();
                         sampleSetIndex = 0;
                         refreshSampleSetCell(true);
+                        previewSampleSetEntry(false);
                     }
                     return true;
                 }
@@ -1791,19 +1796,19 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                     const int last = LSampler24AudioProcessor::sampleSetSize - 1;
                     if (sampleSetIndex != last)
                     {
-                        processor.requestImportPreviewStop();
                         sampleSetIndex = last;
                         refreshSampleSetCell(true);
+                        previewSampleSetEntry(false);
                     }
                     return true;
                 }
                 if (code == juce::KeyPress::deleteKey)
                 {
-                    processor.requestImportPreviewStop();
                     processor.clearSampleSetEntry(processor.getCurrentSlot(), sampleSetIndex);
-                    refreshSlotCells(); refreshSampleSetCell(true); return true;
+                    refreshSlotCells(); refreshSampleSetCell(true);
+                    previewSampleSetEntry(false); // Silence an emptied entry without disabling Preview On.
+                    return true;
                 }
-                if (code == juce::KeyPress::spaceKey) { previewSampleSetEntry(); return true; }
             }
             else if (sampleSetValueFocus)
             {
@@ -2577,9 +2582,22 @@ void LSampler24AudioProcessorEditor::timerCallback()
     refreshMeters();
     if (slotLibraryActive && slotLibraryPreviewDelayTicks > 0) {
         --slotLibraryPreviewDelayTicks;
-        if (slotLibraryPreviewDelayTicks == 0 && slotLibraryPreviewEnabled && slotLibraryPendingPreview.existsAsFile()) {
+        if (slotLibraryPreviewDelayTicks == 0 && slotLibraryPendingPreview.existsAsFile()) {
+            const auto file = slotLibraryPendingPreview;
+            slotLibraryPendingPreview = {};
             juce::String error;
-            if (processor.prepareLibrarySlotPreview(slotLibraryPendingPreview, error)) processor.requestLibraryPreviewToggle();
+            if (slotLibraryForSampleSet && sampleSetBrowserPreviewEnabled) {
+                // Always start the newly selected raw file, even when the
+                // previous one ended by itself. Space alone turns this mode off.
+                if (processor.prepareImportPreview(file, error))
+                    processor.requestImportPreviewToggle();
+                else
+                    lsampler::announceToActiveScreenReader(slotLibraryCell, error);
+            }
+            else if (!slotLibraryForSampleSet && slotLibraryPreviewEnabled) {
+                if (processor.prepareLibrarySlotPreview(file, error))
+                    processor.requestLibraryPreviewToggle();
+            }
         }
     }
 }
@@ -2601,6 +2619,7 @@ void LSampler24AudioProcessorEditor::enterSampleSetEditor()
     sampleSetIndex = juce::jlimit(0, LSampler24AudioProcessor::sampleSetSize - 1, sampleSetIndex);
     sampleSetField = 0;
     sampleSetPage = 0;
+    sampleSetPreviewEnabled = false;
     sampleSetGridFocus = false;
     sampleSetValueFocus = false;
     sampleSetActive = true;
@@ -2677,6 +2696,8 @@ void LSampler24AudioProcessorEditor::switchSampleSetPage(int requestedPage)
 void LSampler24AudioProcessorEditor::leaveSampleSetEditor()
 {
     if (!sampleSetActive) return;
+    sampleSetPreviewEnabled = false;
+    processor.requestPreviewStop();
     processor.requestImportPreviewStop();
     auto returnFocus = sampleSetReturnFocus;
     sampleSetReturnFocus = nullptr;
@@ -2757,9 +2778,9 @@ void LSampler24AudioProcessorEditor::moveSampleSetEntry(int direction)
     if (sampleSetGridFocus) return;
     const int next = juce::jlimit(0, LSampler24AudioProcessor::sampleSetSize - 1, sampleSetIndex + (direction < 0 ? -1 : 1));
     if (next == sampleSetIndex) return;
-    processor.requestImportPreviewStop();
     sampleSetIndex = next;
     refreshSampleSetCell(true);
+    previewSampleSetEntry(false); // On means follow selected sample even if last one finished.
 }
 
 void LSampler24AudioProcessorEditor::moveSampleSetField(int direction)
@@ -2836,20 +2857,34 @@ void LSampler24AudioProcessorEditor::changeSampleSetValue(int direction, bool co
     refreshSampleSetCell(true);
 }
 
-void LSampler24AudioProcessorEditor::previewSampleSetEntry()
+void LSampler24AudioProcessorEditor::previewSampleSetEntry(bool toggleMode)
 {
+    if (toggleMode)
+        sampleSetPreviewEnabled = !sampleSetPreviewEnabled;
+    if (!sampleSetPreviewEnabled)
+    {
+        processor.requestPreviewStop();
+        if (toggleMode)
+            lsampler::announceToActiveScreenReader(sampleSetCell, "Preview Off");
+        return;
+    }
+
     const int slot = processor.getCurrentSlot();
     const auto info = processor.getSampleSetEntry(slot, sampleSetIndex);
     if (!info.loaded)
     {
-        lsampler::announceToActiveScreenReader(sampleSetCell, "Empty sample");
+        // An empty entry has no sound, but Preview stays On for the next entry.
+        processor.requestPreviewStop();
+        if (toggleMode)
+            lsampler::announceToActiveScreenReader(sampleSetCell, "Preview On. Empty sample");
         return;
     }
-    // Audition the selected Sample Set entry through the configured slot engine,
-    // not as a raw file. This keeps Original Pitch, Start/End, ADSR and the other
-    // slot playback settings identical to the sound the region will actually play.
+    // Selected Sample Set entries play through the current Slot DSP. Only the
+    // explicit Space action changes Preview On/Off, never the end of the audio.
     processor.requestImportPreviewStop();
     processor.requestSampleSetPreview(slot, sampleSetIndex);
+    if (toggleMode)
+        lsampler::announceToActiveScreenReader(sampleSetCell, "Preview On");
 }
 
 void LSampler24AudioProcessorEditor::enterSampleSetBrowser()
@@ -4266,7 +4301,7 @@ void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser(bool forSampleSet, 
             importPreviewEnabled = xml->getBoolAttribute("f3Preview", false);
     }
     slotLibraryPreviewEnabled = (slotLibraryForBank || slotLibraryForSampleSet) ? false : importPreviewEnabled;
-    sampleSetBrowserPreviewPlaying = false;
+    sampleSetBrowserPreviewEnabled = false;
     slotLibraryShiftSelectionActive = false;
     slotLibrarySelection.clear();
     slotLibraryStartSlot = processor.getCurrentSlot();
@@ -4329,7 +4364,7 @@ void LSampler24AudioProcessorEditor::leaveSlotLibraryBrowser(bool announceSlot)
     if (!returningToSampleSet) saveSlotLibraryNavigationState();
     processor.requestLibraryPreviewStop();
     processor.requestImportPreviewStop();
-    sampleSetBrowserPreviewPlaying = false;
+    sampleSetBrowserPreviewEnabled = false;
     slotLibraryPendingPreview = {};
     slotLibraryPreviewDelayTicks = 0;
     slotLibraryPreviewEnabled = false;
@@ -4481,8 +4516,12 @@ void LSampler24AudioProcessorEditor::updateSlotLibraryPreviewForSelection()
     if (slotLibraryForSampleSet)
     {
         processor.requestImportPreviewStop();
-        sampleSetBrowserPreviewPlaying = false;
-        return; // Sample Set preview is manual, raw and does not auto-play on navigation.
+        if (!sampleSetBrowserPreviewEnabled || slotLibraryEntries.empty()) return;
+        const auto& e = slotLibraryEntries[size_t(slotLibraryEntryIndex)];
+        if (e.directory) return; // Keep On, but only files can make sound.
+        slotLibraryPendingPreview = e.file;
+        slotLibraryPreviewDelayTicks = 1; // Match Alt+S's short navigation debounce.
+        return;
     }
     if (slotLibraryForBank) return;
     if (!slotLibraryPreviewEnabled || slotLibraryEntries.empty()) return;

@@ -513,12 +513,13 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (previewSampleSetRequested.exchange(false, std::memory_order_acq_rel)) {
         const int slot = juce::jlimit(0, slotCount - 1, previewTargetSlot.load(std::memory_order_relaxed));
         const int sampleIndex = juce::jlimit(0, sampleSetSize - 1, previewTargetSampleIndex.load(std::memory_order_relaxed));
-        const bool stoppingSameEntry = previewPlaying && previewPlayingSlot == slot && previewPlayingSampleIndex == sampleIndex;
+        // This command is an explicit restart, not a toggle. The GUI owns
+        // Preview On/Off independently of voice lifetime and uses Stop to switch off.
         voicePool.stopPreviewVoices();
         previewPlaying = false;
         previewPlayingSlot = -1;
         previewPlayingSampleIndex = -1;
-        if (!stoppingSameEntry && audio[size_t(slot)].sampleSet[size_t(sampleIndex)] != nullptr) {
+        if (audio[size_t(slot)].sampleSet[size_t(sampleIndex)] != nullptr) {
             const int root = previewMidiNoteForSlot(audio[size_t(slot)]);
             voicePool.noteOn(slot, root, 1.0f, 0, true, -1.0, -1, false, sampleIndex);
             previewPlaying = voicePool.hasPreviewVoices(slot);

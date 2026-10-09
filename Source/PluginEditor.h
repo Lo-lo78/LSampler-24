@@ -376,7 +376,7 @@ private:
     void setSampleSetBoundary(bool maximum);
     void changeSampleSetValue(int direction, bool coarse = false);
     juce::String sampleSetParameterText() const;
-    void previewSampleSetEntry();
+    void previewSampleSetEntry(bool toggleMode = true);
     void enterSampleSetBrowser();
     void enterImportBrowser();
     void leaveImportBrowser(bool announceSlot, bool resetPreviewPosition = false);
@@ -524,6 +524,7 @@ private:
 
     LSamplerImportBrowserCell sampleSetCell;
     bool sampleSetActive = false;
+    bool sampleSetPreviewEnabled = false; // Persistent Space on/off across F1, F2 and F3
     bool sampleSetReturnWasParameterPage = false;
     int sampleSetIndex = 0;
     int sampleSetField = 0; // Parameter grid: Velocity Low, Velocity High, Variation Mode
@@ -576,7 +577,7 @@ private:
     int slotLibraryEntryIndex = 0;
     int slotLibraryStartSlot = 0;
     bool slotLibraryActive = false;
-    bool sampleSetBrowserPreviewPlaying = false;
+    bool sampleSetBrowserPreviewEnabled = false; // Raw preview mode, independent of file duration
     bool slotLibraryForSampleSet = false;
     bool slotLibraryForBank = false;
     bool slotLibraryForExport = false;

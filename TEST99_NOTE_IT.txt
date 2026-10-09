@@ -1,0 +1,19 @@
+TEST99 — Anteprima persistente in Alt+M (solo sorgente; NON compilato)
+
+1. Alt+M F1/F2/F3: Space alterna Preview On e Preview Off,
+   anche in Value. La modalità non si spegne quando termina il file.
+2. Con Preview On: cambiare campione in F1 (Su/Giù/Home/End)
+   riproduce il nuovo campione con il DSP dello Slot; campioni vuoti
+   rimangono silenziosi senza disattivare il modo.
+3. F2/F3: cambiare pagina o parametro non provoca un riavvio; Space
+   controlla la medesima modalità d'ascolto condivisa.
+4. Browser Alt+M (Library\Samples): Space attiva/disattiva l'ascolto
+   del file originale. Con Preview On, frecce/Home/End/iniziali e
+   cartelle riproducono ogni nuovo file; fine-file NON disattiva Preview.
+   Su cartelle/file assenti resta armato, ma non suona.
+5. Esc dal browser interrompe la preview del file e ritorna a F1/F2/F3.
+   Esc da Alt+M interrompe la preview dello Slot.
+6. Nessuna modifica a TEST59, agli ID dei 6629 parametri, ai preset
+   o alla gestione del suono di un campione caricato.
+
+Verificare in REAPER con NVDA. Non e' stato lanciato alcun build.
