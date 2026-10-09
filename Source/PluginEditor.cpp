@@ -299,6 +299,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
                 bankMacroCursor = juce::jlimit(0, int(bankMacroEntries.size()) - 1, index);
             selectedParameter = bankMacroOpen ? bankMacroEntries[size_t(bankMacroCursor)]
                               : globalOpen ? normalGridSize + index : index;
+            syncSelectedAutomationIndicator();
             configureValueForSelectedParameter();
             if (bankMacroOpen) refreshVisuals();
         }
@@ -720,7 +721,9 @@ bool LSampler24AudioProcessorEditor::selectedRateIsSynced() const {
 juce::String LSampler24AudioProcessorEditor::selectedParameterName() const {
     const auto& e=selectedEntry();
     const juce::String name = e.parameter == int(P::global_one_shot) ? "Main Playback Mode" : juce::String(descriptor(e).name);
-    return (std::strcmp(e.category,"Loops")==0?"Loop "+juce::String(selectedLoop+1)+" ":juce::String())+name;
+    return (std::strcmp(e.category,"Loops")==0?"Loop "+juce::String(selectedLoop+1)+" ":juce::String())+name
+        + ((observedAutomationState == 1 && observedAutomationParameter == automationGridSelection())
+             ? juce::String(", Auto") : juce::String());
 }
 double LSampler24AudioProcessorEditor::getSelectedParameterValue() const {
     if (bankMacroOpen)
@@ -805,11 +808,20 @@ juce::String LSampler24AudioProcessorEditor::parameterCellText(int index) const 
     const auto& e=lsampler::grid[size_t(index)];
     const juce::String prefix=std::strcmp(e.category,"Loops")==0?"Loop "+juce::String(selectedLoop+1)+" ":juce::String();
     const juce::String name = e.parameter == int(P::global_one_shot) ? "Main Playback Mode" : juce::String(descriptor(e).name);
+    const juce::String marker = (index == selectedParameter && observedAutomationState == 1
+        && observedAutomationParameter == automationGridSelection()) ? ", Auto" : "";
     if (bankMacroOpen)
-        return name + ", " + bankMacroValueText(index);
-    return prefix+name+", "+formatParameter(index,processor.getSlotParameter(index,selectedLoop));
+        return name + ", " + bankMacroValueText(index) + marker;
+    return prefix+name+", "+formatParameter(index,processor.getSlotParameter(index,selectedLoop)) + marker;
 }
 void LSampler24AudioProcessorEditor::refreshParameterGrid() {
+    // Update one selected parameter, not the entire 143-parameter grid.
+    auto* selectedHost = automationGridSelection();
+    if (selectedHost != observedAutomationParameter)
+    {
+        observedAutomationParameter = selectedHost;
+        observedAutomationState = getHostAutomationEnvelopeState(selectedHost);
+    }
     const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
     parameterSelector.clear(juce::dontSendNotification);
     if (bankMacroOpen)
@@ -1014,6 +1026,7 @@ void LSampler24AudioProcessorEditor::selectBankMacroEntry(int position, bool ann
     selectedParameter = bankMacroEntries[size_t(bankMacroCursor)];
     parameterSelector.setSelectedItemIndex(position,
         announce ? juce::sendNotificationSync : juce::dontSendNotification);
+    syncSelectedAutomationIndicator();
     configureValueForSelectedParameter();
     refreshVisuals();
 }
@@ -1167,11 +1180,13 @@ void LSampler24AudioProcessorEditor::selectParameter(int index, bool announce)
         processor.setSlotGridPosition(processor.getCurrentSlot(), selectedParameter);
     parameterSelector.setSelectedItemIndex(globalOpen ? selectedParameter - normalGridSize : selectedParameter,
         announce ? juce::sendNotificationSync : juce::dontSendNotification);
+    syncSelectedAutomationIndicator();
     configureValueForSelectedParameter();
 }
 
 void LSampler24AudioProcessorEditor::focusValue()
 {
+    syncSelectedAutomationIndicator();
     configureValueForSelectedParameter();
     parameterValue.setEntryAccessibility();
     parameterValue.grabKeyboardFocus();
@@ -1434,6 +1449,90 @@ HostEnvelopeCommand classifyHostEnvelopeItem(const juce::String& original)
 }
 }
 
+// Query only the selected parameter, on the message thread. Never infer an
+// envelope from the existence of an automatable parameter or an old keypress.
+// The host may describe the action as Show/Hide, or provide a ticked toggle.
+int LSampler24AudioProcessorEditor::getHostAutomationEnvelopeState(juce::AudioProcessorParameter* param) const
+{
+    if (param == nullptr) return -1;
+    auto* host = getHostContext();
+    if (host == nullptr) return -1;
+    auto context = host->getContextMenuForParameter(param);
+    if (context == nullptr) return -1;
+    const auto menu = context->getEquivalentPopupMenu();
+    juce::PopupMenu::MenuItemIterator iterator(menu, true);
+    int matches = 0;
+    int state = -1;
+    while (iterator.next())
+    {
+        const auto& item = iterator.getItem();
+        if (!item.isEnabled || !item.action || item.isSeparator || item.isSectionHeader)
+            continue;
+        const auto kind = classifyHostEnvelopeItem(item.text);
+        if (kind == HostEnvelopeCommand::none) continue;
+        ++matches;
+        if (matches > 1) return -1; // ambiguous: don't label the wrong parameter
+        if (kind == HostEnvelopeCommand::hide)
+            state = 1;
+        else if (kind == HostEnvelopeCommand::toggle)
+            state = item.isTicked ? 1 : 0;
+        else
+            state = item.isTicked ? 1 : 0; // show item ticked only when active
+    }
+    return matches == 1 ? state : -1;
+}
+
+juce::AudioProcessorParameter* LSampler24AudioProcessorEditor::automationGridSelection() const
+{
+    if (!parameterPage || (bankMacroOpen && bankMacroUniform)) return nullptr;
+    return processor.getAutomationGridParameter(processor.getCurrentSlot(),
+        selectedParameter, selectedLoop, bankMacroOpen);
+}
+
+void LSampler24AudioProcessorEditor::syncSelectedAutomationIndicator(bool forceQuery)
+{
+    if (!parameterPage) return;
+    auto* param = automationGridSelection();
+    const bool parameterChanged = observedAutomationParameter != param;
+    if (forceQuery || parameterChanged)
+    {
+        observedAutomationParameter = param;
+        const int newState = getHostAutomationEnvelopeState(param);
+        if (parameterChanged || observedAutomationState != newState)
+        {
+            observedAutomationState = newState;
+            const int itemIndex = parameterSelector.getSelectedItemIndex();
+            if (juce::isPositiveAndBelow(itemIndex, parameterSelector.getNumItems()))
+            {
+                const auto text = parameterCellText(selectedParameter);
+                if (parameterSelector.getItemText(itemIndex) != text)
+                    parameterSelector.changeItemText(itemIndex + 1, text);
+            }
+            // Value-mode line reading uses the same stable, compact suffix.
+            parameterValue.setParameterAccessibilityName(selectedParameterName());
+        }
+    }
+}
+
+void LSampler24AudioProcessorEditor::syncSampleSetAutomationIndicator(bool forceQuery)
+{
+    if (!sampleSetActive || !sampleSetGridFocus) return;
+    auto* param = processor.getAutomationSampleSetParameter(processor.getCurrentSlot(),
+        sampleSetIndex, sampleSetPage, sampleSetField);
+    const bool parameterChanged = param != observedSampleSetParameter;
+    if (forceQuery || parameterChanged)
+    {
+        observedSampleSetParameter = param;
+        const int newState = getHostAutomationEnvelopeState(param);
+        if (parameterChanged || observedSampleSetState != newState)
+        {
+            observedSampleSetState = newState;
+            const auto prefix = sampleSetPage == 2 ? "F3 Global Parameters. " : "F2 Sample Parameters. ";
+            sampleSetCell.setBrowserText(juce::String(prefix) + sampleSetParameterText());
+        }
+    }
+}
+
 bool LSampler24AudioProcessorEditor::toggleHostAutomationEnvelope(juce::AudioProcessorParameter* param,
                                                                    juce::Component*)
 {
@@ -1472,6 +1571,14 @@ bool LSampler24AudioProcessorEditor::toggleHostAutomationEnvelope(juce::AudioPro
     const juce::String statusText = hiding ? "Automation lane: hide requested"
                                            : "Automation lane: show requested";
     lsampler::announceToActiveScreenReader(status, statusText + ". " + param->getName(160));
+    juce::Timer::callAfterDelay(120,
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+        {
+            if (safeThis == nullptr) return;
+            safeThis->syncSelectedAutomationIndicator(true);
+            safeThis->syncSampleSetAutomationIndicator(true);
+            if (safeThis->sliceEditor) safeThis->sliceEditor->refreshAutomationIndicator();
+        });
     return true;
 }
 
@@ -3200,6 +3307,13 @@ void LSampler24AudioProcessorEditor::timerCallback()
         if (focus) lsampler::announceToActiveScreenReader(*this, result.message);
     }
     const bool editorFocused = hasKeyboardFocus(true);
+    if (editorFocused && ++automationRefreshTicks >= 10)
+    {
+        automationRefreshTicks = 0;
+        if (sampleSetActive) syncSampleSetAutomationIndicator(true);
+        else if (sliceEditor) sliceEditor->refreshAutomationIndicator();
+        else if (parameterPage) syncSelectedAutomationIndicator(true);
+    }
     if (editorFocused)
     {
         editorFocusSeen = true;
@@ -3405,6 +3519,16 @@ void LSampler24AudioProcessorEditor::leaveSampleSetEditor()
 
 void LSampler24AudioProcessorEditor::refreshSampleSetCell(bool announce)
 {
+    if (sampleSetGridFocus)
+    {
+        auto* param = processor.getAutomationSampleSetParameter(processor.getCurrentSlot(),
+            sampleSetIndex, sampleSetPage, sampleSetField);
+        if (observedSampleSetParameter != param)
+        {
+            observedSampleSetParameter = param;
+            observedSampleSetState = getHostAutomationEnvelopeState(param);
+        }
+    }
     const int slot = processor.getCurrentSlot();
     const auto info = processor.getSampleSetEntry(slot, sampleSetIndex);
     const auto sampleName = info.loaded ? (info.name.isNotEmpty() ? info.name : juce::String("Loaded")) : juce::String("Empty");
@@ -3429,13 +3553,17 @@ void LSampler24AudioProcessorEditor::refreshSampleSetCell(bool announce)
 
 juce::String LSampler24AudioProcessorEditor::sampleSetParameterText() const
 {
+    const juce::String suffix = observedSampleSetState == 1 && observedSampleSetParameter != nullptr
+        && observedSampleSetParameter == processor.getAutomationSampleSetParameter(
+             processor.getCurrentSlot(), sampleSetIndex, sampleSetPage, sampleSetField)
+          ? juce::String(", Auto") : juce::String();
     const int slot = processor.getCurrentSlot();
     const auto info = processor.getSampleSetEntry(slot, sampleSetIndex);
     switch (sampleSetPage == 2 ? 2 : juce::jlimit(0, 1, sampleSetField))
     {
-        case 0: return "Velocity Low, " + juce::String(info.velocityLow);
-        case 1: return "Velocity High, " + juce::String(info.velocityHigh);
-        default: return "Variation Mode, " + LSampler24AudioProcessor::variationModeName(processor.getVariationMode(slot));
+        case 0: return "Velocity Low, " + juce::String(info.velocityLow) + suffix;
+        case 1: return "Velocity High, " + juce::String(info.velocityHigh) + suffix;
+        default: return "Variation Mode, " + LSampler24AudioProcessor::variationModeName(processor.getVariationMode(slot)) + suffix;
     }
 }
 
@@ -5893,6 +6021,11 @@ void LSampler24AudioProcessorEditor::openSliceEditor(bool sequencer)
     sliceReturnFocus=juce::Component::getCurrentlyFocusedComponent();
     processor.requestPreviewStop();processor.requestImportPreviewStop();processor.requestLibraryPreviewStop();
     sliceEditor=std::make_unique<SliceEditor>(processor,slot,sequencer);
+    sliceEditor->onHostAutomationEnvelopeState = [safeThis=juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+        (juce::AudioProcessorParameter* parameter) -> int
+    {
+        return safeThis != nullptr ? safeThis->getHostAutomationEnvelopeState(parameter) : -1;
+    };
     sliceEditor->onToggleHostAutomationEnvelope = [safeThis=juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
         (juce::AudioProcessorParameter* parameter, juce::Component* target)
     {

@@ -1,0 +1,9 @@
+LSampler-24 TEST115 — indicatore accessibile Auto
+
+- Griglia slot, Global e Bank Macro Relative: suffisso ", Auto" sull'etichetta del parametro selezionato quando la DAW conferma una corsia d'automazione attiva.
+- Stesso suffisso nella modalita Value; F2/F3 Sample Set e F1 Slice Globals.
+- NVDA+Freccia Su legge la stessa etichetta stabile, senza annunci di stato permanenti indesiderati.
+- Controllo basato sulla voce host VST3 Show/Hide o sul segno di spunta, non sul semplice fatto che il parametro sia automatizzabile.
+- Stato sconosciuto: nessuna dicitura Auto (non simuliamo lo stato della DAW).
+- Si interroga solo il parametro selezionato, con sincronizzazione silenziosa fino a una volta al secondo quando l'editor ha focus.
+- Nessun nuovo parametro, nessun cambiamento audio, nessun cambiamento di ID VST3, nessuna build locale.

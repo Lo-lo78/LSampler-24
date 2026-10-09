@@ -356,6 +356,17 @@ private:
     // Execute the DAW's own envelope show/hide/toggle menu action directly.
     // Never assume the envelope state when a host does not expose a safe action.
     bool toggleHostAutomationEnvelope(juce::AudioProcessorParameter*, juce::Component* anchor);
+    // -1: unsupported/unknown; 0: no envelope visible; 1: host confirms active.
+    int getHostAutomationEnvelopeState(juce::AudioProcessorParameter*) const;
+    void syncSelectedAutomationIndicator(bool forceQuery = false);
+    void syncSampleSetAutomationIndicator(bool forceQuery = false);
+    juce::AudioProcessorParameter* automationGridSelection() const;
+    juce::AudioProcessorParameter* observedAutomationParameter = nullptr;
+    int observedAutomationState = -1;
+    juce::AudioProcessorParameter* observedSampleSetParameter = nullptr;
+    int observedSampleSetState = -1;
+    unsigned automationRefreshTicks = 0;
+
     void openSliceEditor(bool sequencer);
     void closeSliceEditor();
     void openValueEditor();

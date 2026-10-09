@@ -13,6 +13,8 @@ public:
     ~SliceEditor() override;
     std::function<void()> onClose;
     std::function<bool(juce::AudioProcessorParameter*, juce::Component*)> onToggleHostAutomationEnvelope;
+    std::function<int(juce::AudioProcessorParameter*)> onHostAutomationEnvelopeState;
+    void refreshAutomationIndicator();
     bool keyPressed(const juce::KeyPress&) override;
     bool keyStateChanged(bool) override {return true;}
     void paint(juce::Graphics&) override;
@@ -52,6 +54,7 @@ private:
     std::vector<lsampler::SliceStep> clipboard;
     std::deque<lsampler::SliceState> undo,redo;
     juce::String line;
+    bool automationActive = false;
     int count() const;
     juce::String currentLine() const;
     void speak(const juce::String& prefix={});

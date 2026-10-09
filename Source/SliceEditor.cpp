@@ -38,7 +38,8 @@ int SliceEditor::count() const {
 juce::String SliceEditor::currentLine() const {
     const auto state=processor.getSliceState(slot);
     if(page==Page::globals) {
-        const auto& d=sliceGlobals[size_t(global)];return juce::String(d.name)+", "+sliceValueText(d,state.globals[size_t(global)]);
+        const auto& d=sliceGlobals[size_t(global)];return juce::String(d.name)+", "+sliceValueText(d,state.globals[size_t(global)])
+            + (automationActive ? juce::String(", Auto") : juce::String());
     }
     if(page==Page::steps) {
         const auto& d=sliceProperties[size_t(property)];
@@ -52,13 +53,33 @@ juce::String SliceEditor::currentLine() const {
         +juce::String(frame)+" samples, "+juce::String(1000.0*frame/std::max(1.0,rate),3)+" ms"
         +(b==0||b==layout.count?". Sample window edge":"")+". Zero Crossing "+(state.zeroCrossing?"On":"Off");
 }
+void SliceEditor::refreshAutomationIndicator()
+{
+    bool active = false;
+    if (page == Page::globals && onHostAutomationEnvelopeState)
+    {
+        auto* param = processor.getAutomationSliceGlobalParameter(slot, global);
+        active = param != nullptr && onHostAutomationEnvelopeState(param) == 1;
+    }
+    if (active != automationActive)
+    {
+        automationActive = active;
+        line = currentLine();
+        setTitle(line);
+        setDescription({});
+        currentEdit.name = line;
+        currentEdit.repaint();
+    }
+}
 void SliceEditor::speak(const juce::String& prefix) {
+    refreshAutomationIndicator();
     line=currentLine();setTitle(line);setName({});setDescription({});refreshVisuals();repaint();
     // One speech path only.  Mixing titleChanged with the explicit NVDA
     // announcer caused consecutive overlapping messages on some Slice pages.
     announceToActiveScreenReader(*this,prefix+line);setDescription({});
 }
 void SliceEditor::announceEntry() {
+    refreshAutomationIndicator();
     grabKeyboardFocus();if(auto* h=getAccessibilityHandler())h->grabFocus();
     speak("Slice Edit. Slot "+juce::String(slot+1)+". "+juce::String(count())+" slices. "
         +(page==Page::globals?"Global Slice Settings. ":page==Page::steps?"Slice Sequencer. ":"Boundaries. "));
