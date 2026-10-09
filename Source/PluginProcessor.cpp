@@ -1,8 +1,10 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "HostSlicePreparation.h"
+#include "SamplePoolProgress.h"
 #include <cmath>
 #include <set>
+#include <map>
 #include <juce_cryptography/juce_cryptography.h>
 using namespace lsampler;
 
@@ -71,6 +73,22 @@ std::shared_ptr<SharedSample> restoreEditedAudio(const juce::ValueTree& tree,con
         sample->dc[size_t(ch)]=sum/frames;
     }
     if(channels==1)sample->dc[1]=sample->dc[0];sample->peak=peak;return sample;
+}
+
+// One unit per main sample (or empty slot), plus each referenced Sample Set
+// alternate. The same units are used for a standalone slot and the bank total.
+int slotLoadUnits(const juce::ValueTree& slot)
+{
+    int units = 1;
+    const auto set = slot.getChildWithName("SampleSet");
+    for (int i = 0; i < set.getNumChildren(); ++i)
+    {
+        const auto entry = set.getChild(i);
+        if (int(entry.getProperty("index", i)) != 0
+            && entry.getProperty("sampleReference").toString().isNotEmpty())
+            ++units;
+    }
+    return units;
 }
 }
 
@@ -775,7 +793,10 @@ bool LSampler24AudioProcessor::loadSample(const juce::File& file, juce::String& 
 bool LSampler24AudioProcessor::loadSampleToSlot(const juce::File& file, int slotIndex, juce::String& error)
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
-    auto loaded = SamplePool::instance().load(file, error);
+    auto loaded = lsampler::loadSampleWithProgress(file, error,
+        isFileTaskRunning() ? lsampler::SampleLoadProgress([this](double fraction) {
+            setFileTaskProgress(fraction);
+        }) : lsampler::SampleLoadProgress{});
     if (!loaded)
     {
         const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
@@ -821,7 +842,10 @@ bool LSampler24AudioProcessor::loadSampleSetEntryToSlot(const juce::File& file, 
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
     sampleIndex = juce::jlimit(0, sampleSetSize - 1, sampleIndex);
-    auto loaded = SamplePool::instance().load(file, error);
+    auto loaded = lsampler::loadSampleWithProgress(file, error,
+        isFileTaskRunning() ? lsampler::SampleLoadProgress([this](double fraction) {
+            setFileTaskProgress(fraction);
+        }) : lsampler::SampleLoadProgress{});
     if (!loaded) return false;
 
     const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
@@ -1515,7 +1539,8 @@ juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slotIndex, const juc
     return tree;
 }
 
-bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::ValueTree& tree, juce::String& error)
+bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::ValueTree& tree,
+                                                juce::String& error, std::function<void(double)> progress)
 {
     if (!tree.isValid())
     {
@@ -1530,6 +1555,16 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
     const float volume = juce::jlimit(0.0f, 1.0f, static_cast<float>(tree.getProperty("volume", 1.0)));
 
     const auto sampleSetTree = tree.getChildWithName("SampleSet");
+    const int unitCount = slotLoadUnits(tree);
+    int completedUnits = 0;
+    auto reportPart = [&](double fraction)
+    {
+        if (progress)
+            progress(juce::jlimit(0.0, 1.0,
+                (double(completedUnits) + juce::jlimit(0.0, 1.0, fraction)) / double(unitCount)));
+    };
+    auto finishPart = [&]() { ++completedUnits; reportPart(0.0); };
+    reportPart(0.0);
     auto reference = tree.getProperty("sampleReference").toString();
     auto sampleHash = tree.getProperty("sampleHash").toString();
     if (reference.isEmpty())
@@ -1564,7 +1599,9 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
         }
         else
         {
-            loaded = SamplePool::instance().load(file, error);
+            loaded = lsampler::loadSampleWithProgress(file, error,
+                progress ? lsampler::SampleLoadProgress([&](double fraction) { reportPart(fraction); })
+                         : lsampler::SampleLoadProgress{});
             if (!loaded)
             {
                 statusText = error;
@@ -1576,6 +1613,7 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
             }
         }
     }
+    finishPart();
 
     {
         SlotState slot;
@@ -1616,13 +1654,16 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
                 const auto altFile=library.resolveSampleReference(ref,hash);
                 if(!altFile.existsAsFile()) {
                     if(error.isEmpty())error="Sample Set file missing: "+juce::File(ref).getFileName();
-                    ok=false;continue;
+                    ok=false;finishPart();continue;
                 }
                 juce::String altError;
-                auto alt=SamplePool::instance().load(altFile,altError);
-                if(!alt) {if(error.isEmpty())error=altError;ok=false;continue;}
+                auto alt=lsampler::loadSampleWithProgress(altFile,altError,
+                    progress ? lsampler::SampleLoadProgress([&](double fraction) { reportPart(fraction); })
+                             : lsampler::SampleLoadProgress{});
+                if(!alt) {if(error.isEmpty())error=altError;ok=false;finishPart();continue;}
                 slot.alternateSamples[size_t(sampleIndex-1)]=std::move(alt);
                 slot.alternateSampleFiles[size_t(sampleIndex-1)]=altFile;
+                finishPart();
             }
         }
         slot.sample = std::move(loaded);
@@ -1811,7 +1852,9 @@ bool LSampler24AudioProcessor::loadSlotPreset(const juce::File& presetFile, juce
         if (legacyName.startsWithIgnoreCase("Slot_")) legacyName = legacyName.substring(5);
         tree.setProperty("slotName", legacyName, nullptr);
     }
-    const bool ok = restoreSlotState(slotIndex, tree, error);
+    const bool ok = restoreSlotState(slotIndex, tree, error,
+        isFileTaskRunning() ? std::function<void(double)>([this](double f) { setFileTaskProgress(f); })
+                            : std::function<void(double)>{});
     if (ok)
     {
         juce::File actual;
@@ -1826,7 +1869,9 @@ bool LSampler24AudioProcessor::loadSlotPreset(const juce::File& presetFile, juce
     return ok;
 }
 
-bool LSampler24AudioProcessor::loadSlotPresetToSlot(const juce::File& presetFile, int slotIndex, juce::String& error)
+bool LSampler24AudioProcessor::loadSlotPresetToSlot(const juce::File& presetFile,
+                                                    int slotIndex, juce::String& error,
+                                                    std::function<void(double)> progress)
 {
     auto tree = readPreset(presetFile, error);
     if (!tree.hasType("LSampler24Slot"))
@@ -1841,7 +1886,9 @@ bool LSampler24AudioProcessor::loadSlotPresetToSlot(const juce::File& presetFile
         if (legacyName.startsWithIgnoreCase("Slot_")) legacyName = legacyName.substring(5);
         tree.setProperty("slotName", legacyName, nullptr);
     }
-    const bool ok = restoreSlotState(slotIndex, tree, error);
+    if (!progress && isFileTaskRunning())
+        progress = [this](double f) { setFileTaskProgress(f); };
+    const bool ok = restoreSlotState(slotIndex, tree, error, std::move(progress));
     if (ok)
     {
         juce::File actual;
@@ -1952,14 +1999,27 @@ bool LSampler24AudioProcessor::loadBankPreset(const juce::File& presetFile, juce
     bool ok = true;
     juce::String firstError;
     const int count = juce::jmin(slotCount, bank.getNumChildren());
+    int totalUnits = 0;
+    for (int i = 0; i < count; ++i)
+        totalUnits += slotLoadUnits(bank.getChild(i));
+    totalUnits = juce::jmax(1, totalUnits);
+    int completedUnits = 0;
     for (int i = 0; i < count; ++i)
     {
         juce::String slotError;
-        if (!restoreSlotState(i, bank.getChild(i), slotError))
+        const auto slotTree = bank.getChild(i);
+        const int units = slotLoadUnits(slotTree);
+        const int before = completedUnits;
+        const auto reportSlot = [this, before, units, totalUnits](double fraction) {
+            setFileTaskProgress((double(before) + double(units) * fraction) / double(totalUnits));
+        };
+        if (!restoreSlotState(i, slotTree, slotError, reportSlot))
         {
             ok = false;
             if (firstError.isEmpty()) firstError = slotError;
         }
+        completedUnits += units;
+        setFileTaskProgress(double(completedUnits) / double(totalUnits));
     }
     {
         const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
@@ -2185,15 +2245,18 @@ bool LSampler24AudioProcessor::exportLibraryFolderArchive(const juce::File& slot
     exportedSamples = 0;
     error.clear();
 
-    if (!slotFolder.isDirectory() || (slotFolder != library.slots() && !slotFolder.isAChildOf(library.slots())))
+    const bool singleSlot = slotFolder.existsAsFile() && slotFolder.hasFileExtension(LibraryManager::slotExtension);
+    if ((!slotFolder.isDirectory() && !singleSlot)
+        || (slotFolder != library.slots() && !slotFolder.isAChildOf(library.slots())))
     {
-        error = "Select a folder inside Library/Slots";
+        error = "Select a slot or folder inside Library/Slots";
         return false;
     }
 
     juce::Array<juce::File> slotFiles;
-    slotFolder.findChildFiles(slotFiles, juce::File::findFiles, true,
-                              "*" + juce::String(LibraryManager::slotExtension));
+    if (singleSlot) slotFiles.add(slotFolder);
+    else slotFolder.findChildFiles(slotFiles, juce::File::findFiles, true,
+                                   "*" + juce::String(LibraryManager::slotExtension));
 
     struct ExportSample { juce::File file; juce::String archivePath; };
     struct ExportSlot { juce::File slot; juce::String slotPath; std::vector<ExportSample> samples; };
@@ -2291,6 +2354,216 @@ bool LSampler24AudioProcessor::exportLibraryArchive(const juce::File& requestedT
                                                      juce::String& error)
 {
     return exportLibraryFolderArchive(library.slots(), requestedTarget, exportedSlots, exportedSamples, error);
+}
+
+// TEST106: a Bank export is a portable library package containing exactly one
+// bank preset and every external WAV referenced by its 24 slots / Sample Sets.
+// Do not change the active 24-slot audio state while packaging a saved Bank.
+bool LSampler24AudioProcessor::exportBankArchive(const juce::File& bankPreset,
+                                                const juce::File& requestedTarget,
+                                                int& exportedSamples, juce::String& error)
+{
+    exportedSamples = 0;
+    error.clear();
+    if (!bankPreset.existsAsFile() || !bankPreset.hasFileExtension(LibraryManager::bankExtension)
+        || !bankPreset.isAChildOf(library.banks()))
+    {
+        error = "Select a saved bank inside Library/Banks";
+        return false;
+    }
+
+    auto bank = readPreset(bankPreset, error);
+    if (!bank.hasType("LSampler24Bank"))
+    {
+        error = "Not an LSampler-24 bank";
+        return false;
+    }
+
+    struct ArchiveSample { juce::File source; juce::String path; };
+    std::vector<ArchiveSample> sources;
+    std::map<juce::String, juce::String> pathByFile;
+    const int totalSlots = juce::jmax(1, bank.getNumChildren());
+    for (int i = 0; i < bank.getNumChildren(); ++i)
+    {
+        setFileTaskProgress(0.10 + 0.60 * double(i) / double(totalSlots));
+        if (shouldStopFileTask()) { error = "Export stopped"; return false; }
+        auto slot = bank.getChild(i);
+        const auto prepareReference = [this, &sources, &pathByFile, &error](juce::ValueTree node,
+                                                                           bool primary) -> bool
+        {
+            auto ref = node.getProperty("sampleReference").toString();
+            if (ref.isEmpty() && primary) ref = node.getProperty("samplePath").toString();
+            if (ref.isEmpty()) return true;
+
+            const auto source = library.resolveSampleReference(ref, node.getProperty("sampleHash").toString());
+            if (!source.existsAsFile())
+            {
+                error = "Bank sample not found: " + juce::File(ref).getFileName();
+                return false;  // A portable export must not silently omit samples.
+            }
+            const auto hash = library.makeSampleHash(source);
+            if (hash.isEmpty()) { error = "Could not hash bank sample: " + source.getFileName(); return false; }
+            const auto key = source.getFullPathName().replaceCharacter('\\', '/').toLowerCase();
+            auto it = pathByFile.find(key);
+            juce::String relative;
+            if (it == pathByFile.end())
+            {
+                // Hash prefix prevents equal file names from overwriting each other.
+                // Full digest is used so path uniqueness does not depend on file names.
+                relative = "Library/Samples/BankPackages/" + hash + "_"
+                    + juce::File::createLegalFileName(source.getFileName());
+                pathByFile.emplace(key, relative);
+                sources.push_back({ source, relative });
+            }
+            else relative = it->second;
+
+            node.setProperty("sampleReference", relative, nullptr);
+            node.setProperty("sampleHash", hash, nullptr);
+            if (primary && node.hasProperty("samplePath")) node.removeProperty("samplePath", nullptr);
+            return true;
+        };
+
+        if (!prepareReference(slot, true)) return false;
+        const auto set = slot.getChildWithName("SampleSet");
+        for (int j = 0; j < set.getNumChildren(); ++j)
+            if (!prepareReference(set.getChild(j), false)) return false;
+    }
+
+    const auto staging = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("LSampler24_BankExport", juce::String(), true);
+    if (staging.createDirectory().failed()) { error = "Could not create temporary bank folder"; return false; }
+    struct Cleanup { juce::File dir; ~Cleanup() { if (dir.exists()) dir.deleteRecursively(); } } cleanup { staging };
+    const auto stagedBank = staging.getChildFile(bankPreset.getFileName());
+    if (!writePreset(stagedBank, bank, error)) return false;
+
+    juce::ZipFile::Builder builder;
+    builder.addFile(stagedBank, 9, "Library/Banks/" + stagedBank.getFileName());
+    for (int i = 0; i < static_cast<int>(sources.size()); ++i)
+    {
+        if (shouldStopFileTask()) { error = "Export stopped"; return false; }
+        builder.addFile(sources[size_t(i)].source, 0, sources[size_t(i)].path);
+        setFileTaskProgress(0.70 + 0.25 * double(i + 1) / double(juce::jmax(1, int(sources.size()))));
+    }
+    exportedSamples = static_cast<int>(sources.size());
+
+    auto target = requestedTarget;
+    if (!target.getFileName().endsWithIgnoreCase(".lsampler-24.ls24"))
+        target = target.getSiblingFile(target.getFileNameWithoutExtension() + ".lsampler-24.ls24");
+    target.getParentDirectory().createDirectory();
+    juce::TemporaryFile temporary(target);
+    auto stream = temporary.getFile().createOutputStream();
+    if (stream == nullptr) { error = "Could not create bank export"; return false; }
+    if (!builder.writeToStream(*stream, nullptr)) { error = "Could not write bank export"; return false; }
+    stream->flush();
+    if (stream->getStatus().failed()) { error = "Could not flush bank export"; return false; }
+    stream.reset();
+    if (!temporary.overwriteTargetFileWithTemporary()) { error = "Could not save bank export"; return false; }
+    setFileTaskProgress(1.0);
+    return true;
+}
+
+bool LSampler24AudioProcessor::importBankArchive(const juce::File& archiveFile,
+                                                juce::File& importedBank,
+                                                int& importedSamples, juce::String& error)
+{
+    importedBank = {};
+    importedSamples = 0;
+    error.clear();
+    if (!archiveFile.existsAsFile()) { error = "Bank archive not found"; return false; }
+
+    juce::ZipFile zip(archiveFile);
+    if (zip.getNumEntries() <= 0) { error = "Invalid LSampler-24 bank archive"; return false; }
+    // Reject unsafe archive member paths before extraction, including ZIP-slip.
+    for (int i = 0; i < zip.getNumEntries(); ++i)
+    {
+        const auto* entry = zip.getEntry(i);
+        if (entry == nullptr) { error = "Invalid bank archive entry"; return false; }
+        const auto raw = entry->filename.replaceCharacter('\\', '/');
+        const auto parts = juce::StringArray::fromTokens(raw, "/", "");
+        if (raw.isEmpty() || raw.startsWithChar('/') || raw.containsChar(':')
+            || parts.contains("..") || parts.contains(".")
+            || !(raw.startsWith("Library/Banks/") || raw.startsWith("Library/Samples/")))
+        {
+            error = "Unsafe or unsupported bank archive path";
+            return false;
+        }
+    }
+
+    const auto tempRoot = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("LSampler24_BankImport", juce::String(), true);
+    if (tempRoot.createDirectory().failed()) { error = "Could not create temporary bank import folder"; return false; }
+    struct Cleanup { juce::File dir; ~Cleanup() { if (dir.exists()) dir.deleteRecursively(); } } cleanup { tempRoot };
+    if (zip.uncompressTo(tempRoot, true).failed()) { error = "Could not extract LSampler-24 bank"; return false; }
+    const auto archivedBankDir = tempRoot.getChildFile("Library").getChildFile("Banks");
+    const auto archivedSampleDir = tempRoot.getChildFile("Library").getChildFile("Samples");
+    juce::Array<juce::File> archivedBanks;
+    archivedBankDir.findChildFiles(archivedBanks, juce::File::findFiles, true,
+                                   "*" + juce::String(LibraryManager::bankExtension));
+    if (archivedBanks.size() != 1)
+    {
+        error = "Bank archive must contain one bank";
+        return false;
+    }
+    auto bank = readPreset(archivedBanks.getFirst(), error);
+    if (!bank.hasType("LSampler24Bank")) { error = "Invalid bank preset in archive"; return false; }
+
+    const int slotTotal = juce::jmax(1, bank.getNumChildren());
+    for (int i = 0; i < bank.getNumChildren(); ++i)
+    {
+        if (shouldStopFileTask()) { error = "Import stopped"; return false; }
+        setFileTaskProgress(0.15 + 0.78 * double(i) / double(slotTotal));
+        auto slot = bank.getChild(i);
+        const auto installReference = [this, &tempRoot, &importedSamples, &error](juce::ValueTree node,
+                                                                                               bool primary) -> bool
+        {
+            auto reference = node.getProperty("sampleReference").toString();
+            if (reference.isEmpty() && primary) reference = node.getProperty("samplePath").toString();
+            if (reference.isEmpty()) return true;
+            const auto normalised = reference.replaceCharacter('\\', '/');
+            if (!normalised.startsWith("Library/Samples/"))
+            {
+                error = "Bank has an external or invalid sample reference";
+                return false;
+            }
+            const auto sample = tempRoot.getChildFile(normalised.replaceCharacter('/', juce::File::getSeparatorChar()));
+            if (!sample.existsAsFile() || !sample.isAChildOf(tempRoot.getChildFile("Library").getChildFile("Samples")))
+            {
+                error = "Bank archive sample missing: " + juce::File(reference).getFileName();
+                return false;
+            }
+            auto expected = node.getProperty("sampleHash").toString();
+            if (expected.isNotEmpty() && juce::SHA256(sample).toHexString() != expected)
+            {
+                error = "Bank archive sample checksum mismatch: " + sample.getFileName();
+                return false;
+            }
+            auto relative = sample.getRelativePathFrom(tempRoot.getChildFile("Library").getChildFile("Samples"));
+            const auto destination = library.samples().getChildFile(relative);
+            const bool alreadyPresent = destination.existsAsFile() && destination.getSize() == sample.getSize()
+                && library.makeSampleHash(destination) == library.makeSampleHash(sample);
+            juce::String localError;
+            const auto installed = library.materialiseSampleAtRelativePath(sample, relative, localError);
+            if (!installed.existsAsFile()) { error = localError; return false; }
+            if (!alreadyPresent) ++importedSamples;
+            node.setProperty("sampleReference", library.makeSampleReference(installed), nullptr);
+            node.setProperty("sampleHash", library.makeSampleHash(installed), nullptr);
+            if (primary && node.hasProperty("samplePath")) node.removeProperty("samplePath", nullptr);
+            return true;
+        };
+        if (!installReference(slot, true)) return false;
+        const auto set = slot.getChildWithName("SampleSet");
+        for (int j = 0; j < set.getNumChildren(); ++j)
+            if (!installReference(set.getChild(j), false)) return false;
+    }
+    const auto bankFileName = archivedBanks.getFirst().getFileName();
+    auto target = library.banks().getChildFile(bankFileName);
+    if (target.existsAsFile())
+        target = library.banks().getNonexistentChildFile(archivedBanks.getFirst().getFileNameWithoutExtension(),
+                                                       LibraryManager::bankExtension, false);
+    if (!writePreset(target, bank, error)) return false;
+    importedBank = target;
+    setFileTaskProgress(1.0);
+    return true;
 }
 
 bool LSampler24AudioProcessor::importLibraryArchive(const juce::File& archiveFile,

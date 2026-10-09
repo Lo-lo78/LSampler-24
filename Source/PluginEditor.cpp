@@ -1376,7 +1376,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
         if (code == juce::KeyPress::escapeKey)
         {
-            const bool wasExport = slotLibraryForExport;
+            const bool wasExport = slotLibraryForExport || slotLibraryForExportBank;
             const bool wasBank = slotLibraryForBank;
             const bool wasSampleSet = slotLibraryForSampleSet && sampleSetActive;
             leaveSlotLibraryBrowser(false);
@@ -1530,10 +1530,12 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             const auto& e = slotLibraryEntries[size_t(slotLibraryEntryIndex)];
             if (e.directory)
             {
-                if (slotLibraryForExport) { chooseExportFolder(); return true; }
+                if (slotLibraryForExport && !slotLibraryForExportFile) { chooseExportFolder(); return true; }
                 slotLibraryDirectorySelectionMemory[slotLibraryDirectory.getFullPathName()] = e.file.getFullPathName();
                 slotLibraryDirectory = e.file; refreshSlotLibraryEntries(); selectSlotLibraryEntry(slotLibraryEntryIndex, true); return true;
             }
+            if (slotLibraryForExportFile) { chooseExportFile(); return true; }
+            if (slotLibraryForExportBank) { chooseExportBank(); return true; }
             if (slotLibraryForExport) { lsampler::announceToActiveScreenReader(slotLibraryCell, "Select a folder to export"); return true; }
             commitSlotLibrarySelection(); return true;
         }
@@ -2557,6 +2559,10 @@ void LSampler24AudioProcessorEditor::setFileUiBusy(bool busy)
         }
         status.setVisible(true);
         status.setWantsKeyboardFocus(true);
+        // The status is the focused, readable line for NVDA+Up. No redundant
+        // "Status" heading while the task is in progress.
+        status.setTitle({});
+        status.setDescription({});
         status.setName(fileTaskTitle + ", 0 percent");
         if (isShowing() && (fileReturnFocus == nullptr || fileReturnFocus == this || isParentOf(fileReturnFocus.getComponent())))
             status.grabKeyboardFocus();
@@ -2565,6 +2571,8 @@ void LSampler24AudioProcessorEditor::setFileUiBusy(bool busy)
             if (child.first != nullptr) child.first->setEnabled(child.second);
         fileDisabledComponents.clear();
         status.setWantsKeyboardFocus(false);
+        status.setTitle("Status");
+        status.setDescription({});
         status.setName("Status");
         lastUiRevision = 0;
     }
@@ -2579,11 +2587,13 @@ void LSampler24AudioProcessorEditor::runFileTask(const juce::String& title,
     auto safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this);
     fileTaskOwned = true;
     fileTaskTitle = title;
-    lastFileTaskProgress = -1;
+    lastFileTaskProgress = 0;
+    lastProgressAnnouncementMs = juce::Time::getMillisecondCounter();
     setFileUiBusy(true);
     status.setText(title + ", 0 percent", juce::dontSendNotification);
     status.setName(title + ", 0 percent");
-    lsampler::announceToActiveScreenReader(status, title);
+    // One initial message; subsequent speech is rate-limited to four seconds.
+    lsampler::announceToActiveScreenReader(status, title + ", 0 percent");
     const bool started = processor.startFileTask(std::move(task), [safeThis, completion](FileTaskResult result) {
         if (safeThis == nullptr) return;
         const bool restoreFocus = safeThis->hasKeyboardFocus(true);
@@ -2620,14 +2630,29 @@ void LSampler24AudioProcessorEditor::refreshMeters()
 void LSampler24AudioProcessorEditor::timerCallback()
 {
     if (processor.isFileTaskRunning()) {
-        if (!fileUiBusy) { fileTaskTitle = "File operation"; setFileUiBusy(true); }
+        if (!fileUiBusy) {
+            fileTaskTitle = "File operation";
+            lastFileTaskProgress = -1;
+            lastProgressAnnouncementMs = juce::Time::getMillisecondCounter();
+            setFileUiBusy(true);
+        }
         const int percent = juce::jlimit(0, 100, int(std::round(processor.getFileTaskProgress() * 100.0)));
+        const auto progressText = fileTaskTitle + ", " + juce::String(percent) + " percent";
         if (percent != lastFileTaskProgress)
         {
             lastFileTaskProgress = percent;
-            const auto progressText = fileTaskTitle + ", " + juce::String(percent) + " percent";
             status.setText(progressText, juce::dontSendNotification);
             status.setName(progressText);
+        }
+        // NVDA+Up always reads the current percentage from the focused label,
+        // even between spoken updates. Never interrupt REAPER when this editor
+        // isn't the focused window. Repeat every 4 s, including slow/long WAVs.
+        const auto now = juce::Time::getMillisecondCounter();
+        if (isShowing() && status.hasKeyboardFocus(true)
+            && now - lastProgressAnnouncementMs >= 4000u)
+        {
+            lastProgressAnnouncementMs = now;
+            lsampler::announceToActiveScreenReader(status, progressText);
         }
         return;
     }
@@ -3971,8 +3996,50 @@ void LSampler24AudioProcessorEditor::chooseImportFiles()
             if (files.isEmpty()) { safeThis->returnToAdvancedAndAnnounce(); return; }
             safeThis->runFileTask("Import Files", [files](LSampler24AudioProcessor& p) {
                 FileTaskResult r;
-                r.ok = p.importFilesToLibrary(files, r.count, r.skipped, r.message);
-                if (r.ok) r.message = "Imported " + juce::String(r.count) + " slots, skipped " + juce::String(r.skipped);
+                juce::Array<juce::File> audioFiles;
+                juce::String firstError;
+                bool anyImported = false;
+                // Export File packages contain a Slot preset plus its WAVs.
+                // Accept them here as the inverse of Advanced > Export File.
+                for (const auto& file : files)
+                {
+                    if (file.hasFileExtension(".ls24"))
+                    {
+                        int imported = 0, samples = 0, skipped = 0;
+                        juce::String localError;
+                        if (p.importLibraryArchive(file, imported, samples, skipped, localError))
+                        {
+                            r.count += imported;
+                            r.skipped += skipped;
+                            anyImported = true;
+                        }
+                        else
+                        {
+                            ++r.skipped;
+                            if (firstError.isEmpty()) firstError = localError;
+                        }
+                    }
+                    else audioFiles.add(file);
+                }
+                if (!audioFiles.isEmpty())
+                {
+                    int imported = 0, skipped = 0;
+                    juce::String localError;
+                    if (p.importFilesToLibrary(audioFiles, imported, skipped, localError))
+                    {
+                        r.count += imported;
+                        r.skipped += skipped;
+                        anyImported = true;
+                    }
+                    else
+                    {
+                        r.skipped += audioFiles.size();
+                        if (firstError.isEmpty()) firstError = localError;
+                    }
+                }
+                r.ok = anyImported;
+                r.message = r.ok ? "Imported " + juce::String(r.count) + " slots, skipped " + juce::String(r.skipped)
+                                 : firstError.isNotEmpty() ? firstError : "No valid files imported";
                 return r;
             }, [safeThis, files](const FileTaskResult& r, bool) {
                 if (r.ok && !files.isEmpty()) {
@@ -4219,16 +4286,53 @@ void LSampler24AudioProcessorEditor::returnToButton(juce::TextButton& button)
 void LSampler24AudioProcessorEditor::returnToAdvancedAndAnnounce()
 {
     returnToButton(advancedButton);
+    // PopupMenu is destroyed as soon as a command is selected. Recreate it
+    // after the file chooser/browser finishes, with the invoking item selected.
+    if (advancedMenuReturnQueued) return;
+    advancedMenuReturnQueued = true;
+    juce::Timer::callAfterDelay(120, [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+    {
+        if (safeThis == nullptr) return;
+        safeThis->advancedMenuReturnQueued = false;
+        if (safeThis->isShowing() && !safeThis->slotLibraryActive && !safeThis->fileUiBusy)
+            safeThis->showAdvancedMenu();
+    });
 }
 
 void LSampler24AudioProcessorEditor::enterExportFolderBrowser()
 {
     if (!requireLibraryAvailable(&advancedButton, true)) return;
     slotLibraryForExport = true;
+    slotLibraryForExportFile = false;
+    slotLibraryForExportBank = false;
     enterSlotLibraryBrowser(false, false);
     if (!slotLibraryActive) slotLibraryForExport = false;
     else lsampler::announceToActiveScreenReader(slotLibraryCell,
         "Export Folder. Select a folder in the Slot Library and press Enter");
+}
+
+void LSampler24AudioProcessorEditor::enterExportFileBrowser()
+{
+    if (!requireLibraryAvailable(&advancedButton, true)) return;
+    slotLibraryForExport = true;
+    slotLibraryForExportFile = true;
+    slotLibraryForExportBank = false;
+    enterSlotLibraryBrowser(false, false);
+    if (!slotLibraryActive) { slotLibraryForExport = false; slotLibraryForExportFile = false; }
+    else lsampler::announceToActiveScreenReader(slotLibraryCell,
+        "Export File. Select a slot in the Slot Library and press Enter");
+}
+
+void LSampler24AudioProcessorEditor::enterExportBankBrowser()
+{
+    if (!requireLibraryAvailable(&advancedButton, true)) return;
+    slotLibraryForExportBank = true;
+    slotLibraryForExport = false;
+    slotLibraryForExportFile = false;
+    enterSlotLibraryBrowser(false, true);
+    if (!slotLibraryActive) slotLibraryForExportBank = false;
+    else lsampler::announceToActiveScreenReader(slotLibraryCell,
+        "Export Bank. Select a bank in the Bank Library and press Enter");
 }
 
 void LSampler24AudioProcessorEditor::showAdvancedMenu()
@@ -4253,17 +4357,23 @@ void LSampler24AudioProcessorEditor::showAdvancedMenu()
 
     menu.addSeparator();
     menu.addSectionHeader("Library Import and Export");
-    menu.addItem(10, "Import Files...");
+    menu.addItem(10, "Import File...");
+    menu.addItem(15, "Export File...");
     menu.addItem(11, "Import Folder...");
-    menu.addItem(12, "Import Library...");
     menu.addItem(13, "Export Folder...");
-    menu.addItem(14, "Export All...");
+    menu.addItem(16, "Import Bank...");
+    menu.addItem(17, "Export Bank...");
+    menu.addItem(12, "Import All Library...");
+    menu.addItem(14, "Export All Library...");
 
-    auto options = juce::PopupMenu::Options().withTargetComponent(&advancedButton);
+    auto options = juce::PopupMenu::Options().withTargetComponent(&advancedButton)
+                         .withInitiallySelectedItem(advancedMenuReturnItem);
     menu.showMenuAsync(options,
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), history](int result)
         {
             if (safeThis == nullptr) return;
+            if (result == 0) { safeThis->returnToButton(safeThis->advancedButton); return; }
+            safeThis->advancedMenuReturnItem = result;
             if (result == 1) safeThis->chooseLibraryFolder();
             else if (result == 2)
             {
@@ -4273,15 +4383,133 @@ void LSampler24AudioProcessorEditor::showAdvancedMenu()
                     lsampler::announceToActiveScreenReader(safeThis->advancedButton, "Cannot open Library Folder");
                 safeThis->returnToAdvancedAndAnnounce();
             }
-            else if (result == 3) safeThis->restoreDefaultLibraryFolder();
+            else if (result == 3) { safeThis->restoreDefaultLibraryFolder(); safeThis->returnToAdvancedAndAnnounce(); }
             else if (result == 10) safeThis->chooseImportFiles();
             else if (result == 11) safeThis->chooseImportFolder();
             else if (result == 12) safeThis->chooseImportLibrary();
             else if (result == 13) safeThis->enterExportFolderBrowser();
             else if (result == 14) safeThis->chooseExportLibrary();
+            else if (result == 15) safeThis->enterExportFileBrowser();
+            else if (result == 16) safeThis->chooseImportBank();
+            else if (result == 17) safeThis->enterExportBankBrowser();
             else if (result >= 100 && result < 100 + static_cast<int>(history.size()))
+            {
                 safeThis->activateLibraryRoot(history[static_cast<size_t>(result - 100)], true);
+                safeThis->returnToAdvancedAndAnnounce();
+            }
             else safeThis->returnToAdvancedAndAnnounce();
+        });
+}
+
+void LSampler24AudioProcessorEditor::chooseExportFile()
+{
+    if (!slotLibraryActive || !slotLibraryForExportFile || slotLibraryEntries.empty()
+        || slotLibraryEntryIndex < 0 || slotLibraryEntryIndex >= static_cast<int>(slotLibraryEntries.size())
+        || slotLibraryEntries[static_cast<size_t>(slotLibraryEntryIndex)].directory)
+        return;
+
+    const auto slotFile = slotLibraryEntries[static_cast<size_t>(slotLibraryEntryIndex)].file;
+    auto name = slotFile.getFileNameWithoutExtension();
+    if (name.startsWithIgnoreCase("Slot_")) name = name.substring(5);
+    const auto initial = processor.getLibrary().root().getChildFile(
+        juce::File::createLegalFileName(name) + ".lsampler-24.ls24");
+    chooser = std::make_unique<juce::FileChooser>("Export File: " + name, initial, "*");
+    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                         | juce::FileBrowserComponent::warnAboutOverwriting,
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), slotFile](const juce::FileChooser& fc)
+        {
+            if (safeThis == nullptr) return;
+            auto chosen = fc.getResult();
+            if (chosen.getFullPathName().isEmpty())
+            {
+                safeThis->leaveSlotLibraryBrowser(false);
+                safeThis->returnToAdvancedAndAnnounce();
+                return;
+            }
+            const auto suffix = juce::String(".lsampler-24.ls24");
+            auto name = chosen.getFileName();
+            if (name.endsWithIgnoreCase(suffix)) name = name.dropLastCharacters(suffix.length());
+            else if (name.endsWithIgnoreCase(".ls24")) name = name.dropLastCharacters(5);
+            name = juce::File::createLegalFileName(name.trim());
+            if (name.isEmpty()) name = "LSampler-24 Slot";
+            const auto target = chosen.getParentDirectory().getChildFile(name + suffix);
+            safeThis->runFileTask("Exporting file", [slotFile, target](LSampler24AudioProcessor& p) {
+                FileTaskResult r; int samples = 0;
+                r.ok = p.exportLibraryFolderArchive(slotFile, target, r.count, samples, r.message);
+                if (r.ok) r.message = "Exported " + juce::String(r.count) + " slot, " + juce::String(samples) + " samples";
+                return r;
+            }, [safeThis](const FileTaskResult&, bool)
+            {
+                if (safeThis == nullptr) return;
+                safeThis->leaveSlotLibraryBrowser(false);
+                safeThis->returnToAdvancedAndAnnounce();
+            });
+        });
+}
+
+void LSampler24AudioProcessorEditor::chooseExportBank()
+{
+    if (!slotLibraryActive || !slotLibraryForExportBank || slotLibraryEntries.empty()
+        || slotLibraryEntryIndex < 0 || slotLibraryEntryIndex >= static_cast<int>(slotLibraryEntries.size())
+        || slotLibraryEntries[static_cast<size_t>(slotLibraryEntryIndex)].directory)
+        return;
+
+    const auto bank = slotLibraryEntries[static_cast<size_t>(slotLibraryEntryIndex)].file;
+    auto name = bank.getFileNameWithoutExtension();
+    if (name.startsWithIgnoreCase("Bank_")) name = name.substring(5);
+    const auto initial = processor.getLibrary().root().getChildFile(
+        juce::File::createLegalFileName(name) + ".lsampler-24.ls24");
+    chooser = std::make_unique<juce::FileChooser>("Export Bank: " + name, initial, "*");
+    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                         | juce::FileBrowserComponent::warnAboutOverwriting,
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), bank](const juce::FileChooser& fc)
+        {
+            if (safeThis == nullptr) return;
+            auto chosen = fc.getResult();
+            if (chosen.getFullPathName().isEmpty())
+            {
+                safeThis->leaveSlotLibraryBrowser(false);
+                safeThis->returnToAdvancedAndAnnounce();
+                return;
+            }
+            const auto suffix = juce::String(".lsampler-24.ls24");
+            auto name = chosen.getFileName();
+            if (name.endsWithIgnoreCase(suffix)) name = name.dropLastCharacters(suffix.length());
+            else if (name.endsWithIgnoreCase(".ls24")) name = name.dropLastCharacters(5);
+            name = juce::File::createLegalFileName(name.trim());
+            if (name.isEmpty()) name = "LSampler-24 Bank";
+            const auto target = chosen.getParentDirectory().getChildFile(name + suffix);
+            safeThis->runFileTask("Exporting bank", [bank, target](LSampler24AudioProcessor& p) {
+                FileTaskResult r; int samples = 0;
+                r.ok = p.exportBankArchive(bank, target, samples, r.message);
+                if (r.ok) r.message = "Bank exported with " + juce::String(samples) + " samples";
+                return r;
+            }, [safeThis](const FileTaskResult&, bool)
+            {
+                if (safeThis == nullptr) return;
+                safeThis->leaveSlotLibraryBrowser(false);
+                safeThis->returnToAdvancedAndAnnounce();
+            });
+        });
+}
+
+void LSampler24AudioProcessorEditor::chooseImportBank()
+{
+    if (!requireLibraryAvailable(&advancedButton, true)) return;
+    chooser = std::make_unique<juce::FileChooser>("Import Bank", processor.getLibrary().banks(), "*.ls24");
+    chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const juce::FileChooser& fc)
+        {
+            if (safeThis == nullptr) return;
+            const auto source = fc.getResult();
+            if (!source.existsAsFile()) { safeThis->returnToAdvancedAndAnnounce(); return; }
+            safeThis->runFileTask("Importing bank", [source](LSampler24AudioProcessor& p) {
+                FileTaskResult r; int count = 0; juce::File imported;
+                r.ok = p.importBankArchive(source, imported, count, r.message);
+                if (r.ok) r.message = "Bank imported: " + imported.getFileNameWithoutExtension()
+                                       + ", " + juce::String(count) + " new samples";
+                return r;
+            }, [safeThis](const FileTaskResult&, bool) { if (safeThis != nullptr) safeThis->returnToAdvancedAndAnnounce(); });
         });
 }
 
@@ -4289,7 +4517,7 @@ void LSampler24AudioProcessorEditor::chooseExportLibrary()
 {
     if (!requireLibraryAvailable(&advancedButton, true)) return;
     auto initial = processor.getLibrary().root().getChildFile("LSampler-24 Full Library.lsampler-24.ls24");
-    chooser = std::make_unique<juce::FileChooser>("Export All", initial, "*");
+    chooser = std::make_unique<juce::FileChooser>("Export All Library", initial, "*");
     chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const juce::FileChooser& fc)
         {
@@ -4321,7 +4549,7 @@ void LSampler24AudioProcessorEditor::chooseExportLibrary()
 void LSampler24AudioProcessorEditor::chooseImportLibrary()
 {
     if (!requireLibraryAvailable(&advancedButton, true)) return;
-    chooser = std::make_unique<juce::FileChooser>("Import Library", processor.getLibrary().root(), "*.ls24;*.lsampler-24.ls24");
+    chooser = std::make_unique<juce::FileChooser>("Import All Library", processor.getLibrary().root(), "*.ls24;*.lsampler-24.ls24");
     chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const juce::FileChooser& fc) {
             if (safeThis == nullptr) return;
@@ -4402,7 +4630,7 @@ void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser(bool forSampleSet, 
         if (auto xml = doc.getDocumentElement(); xml != nullptr && xml->hasTagName("LSampler24Settings"))
             importPreviewEnabled = xml->getBoolAttribute("f3Preview", false);
     }
-    slotLibraryPreviewEnabled = (slotLibraryForBank || slotLibraryForSampleSet) ? false : importPreviewEnabled;
+    slotLibraryPreviewEnabled = (slotLibraryForBank || slotLibraryForSampleSet || slotLibraryForExport) ? false : importPreviewEnabled;
     sampleSetBrowserPreviewEnabled = false;
     slotLibraryShiftSelectionActive = false;
     slotLibrarySelection.clear();
@@ -4478,6 +4706,8 @@ void LSampler24AudioProcessorEditor::leaveSlotLibraryBrowser(bool announceSlot)
     slotLibraryForSampleSet = false;
     slotLibraryForBank = false;
     slotLibraryForExport = false;
+    slotLibraryForExportFile = false;
+    slotLibraryForExportBank = false;
     slotLibraryCell.setVisible(false);
     slotLibraryCell.setWantsKeyboardFocus(false);
     exportLibraryButton.setVisible(false);
@@ -4895,8 +5125,12 @@ void LSampler24AudioProcessorEditor::commitSlotLibrarySelection()
         if (auto* handler = safeThis->slotLibraryCell.getAccessibilityHandler()) handler->grabFocus();
         safeThis->runFileTask("Loading selected slots", [work](LSampler24AudioProcessor& p) {
             FileTaskResult r; r.ok = true;
-            for (const auto& item : work) {
-                if (p.shouldStopFileTask() || !p.loadSlotPresetToSlot(item.file, item.slot, r.message)) { r.ok = false; break; }
+            for (size_t i = 0; i < work.size(); ++i) {
+                const auto& item = work[i];
+                const auto progress = [&p, i, count = work.size()](double fraction) {
+                    p.setFileTaskProgress((double(i) + fraction) / double(count));
+                };
+                if (p.shouldStopFileTask() || !p.loadSlotPresetToSlot(item.file, item.slot, r.message, progress)) { r.ok = false; break; }
                 ++r.count; r.slot = juce::jmax(r.slot, item.slot);
             }
             if (r.ok) r.message = "Slots loaded";

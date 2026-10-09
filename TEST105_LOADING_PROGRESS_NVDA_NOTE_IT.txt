@@ -1,0 +1,41 @@
+LSampler-24 TEST105 - Avanzamento caricamento slot e banco per NVDA
+
+Base: TEST104 (cache SHA-256 invariata).
+
+Cosa cambia:
+- Il caricamento di un banco aggiorna la percentuale contando realmente gli
+  elementi da ripristinare nei 24 slot, inclusi i Sample Set (max 16/slot).
+- Il caricamento di un singolo slot e di un file WAV lungo aggiorna la
+  percentuale durante la decodifica: per WAV la lettura avviene a blocchi
+  di 262144 frame, non solo al termine del file.
+- La lettura a blocchi WAV calcola peak e DC nello stesso passaggio, evitando
+  una scansione completa successiva. E' un'ottimizzazione circoscritta;
+  il guadagno di tempo reale dipende da disco, cache e RAM.
+- La UI mostra e rende leggibile via NVDA+Freccia Su la riga:
+  "Loading bank, 42 percent" oppure "Loading slot, 42 percent".
+- All'avvio il messaggio e' "Loading bank, 0 percent" (o l'operazione
+  equivalente); ogni 4 secondi annuncia la percentuale aggiornata,
+  anche se non cambia. Gli annunci automatici sono inviati soltanto quando
+  il campo Stato del plugin mantiene il focus, evitando interruzioni in REAPER.
+- Al completamento si conserva il messaggio di successo/errore esistente e
+  si ripristina il focus al controllo precedente.
+- I caricamenti di slot multipli mantengono una percentuale crescente globale.
+
+Limiti:
+- I progressi quantificano campioni e frame decodificati, non il tempo
+  rimanente. Verifiche SHA o ricerche di campioni spostati possono lasciare
+  temporaneamente la percentuale invariata.
+- Il ripristino dello stato della sessione comandato direttamente dall'host
+  (setStateInformation) non puo' mostrare questo contatore, poiche' non
+  passa dal caricamento asincrono avviato nell'editor.
+- Il percorso di lettura originale resta invariato per audio non-WAV e per
+  ripristini host senza avanzamento; non cambiano DSP, MIDI e formati banco.
+- Nessuna garanzia di riduzione dei 20 secondi senza prova sul computer reale.
+
+Verifica:
+- Statici: verify-test59-reference.py PASS, verify-vst3-automation-source.py PASS.
+- NON compilato per espressa regola del progetto.
+- Testare in REAPER con banco Salamander da 384 WAV, attendere i messaggi
+  ogni 4 secondi e premere NVDA+Freccia Su durante il caricamento.
+- Verificare anche un singolo WAV lungo, Alt+S, selezione multipla,
+  riapertura GUI, ritorno del focus e fedelta' audio.

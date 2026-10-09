@@ -1,0 +1,25 @@
+LSampler-24 TEST106 - Advanced, Export File/Bank e navigazione NVDA
+
+BASE: TEST105 (include correzione blocco REAPER TEST104 e progressi NVDA TEST105).
+
+- Al termine o dopo l'annullamento di un comando Advanced, riapre il menu
+  sulla stessa voce selezionata tramite PopupMenu::Options::withInitiallySelectedItem.
+  Esc nel popup Advanced chiude il menu, ritornando al pulsante Advanced.
+- Voci uniformate e ordinate per coppie:
+  Import Files / Export File, Import Folder / Export Folder,
+  Import Bank / Export Bank, Import All Library / Export All Library.
+- Export File: browser interno Slots, selezione di un singolo slot; salva
+  un pacchetto .lsampler-24.ls24 con preset e tutti i WAV del Sample Set.
+- Import Files: accetta ora anche i pacchetti .ls24 di slot singoli,
+  oltre ai normali file audio, installandoli nella Library.
+- Export Folder e Export All Library: conservata la struttura esistente.
+- Export Bank: browser interno Banks, selezione di un banco salvato;
+  salva un pacchetto .lsampler-24.ls24 con il banco .lsampler-24-b
+  e tutti i WAV necessari; nessun cambiamento al banco originale.
+- Import Bank: file picker di Windows per il pacchetto; convalida
+  il contenuto, installa WAV nella Library/Samples e il banco in
+  Library/Banks, aggiornando tutti i riferimenti e proteggendo
+  da sovrascritture di banchi omonimi. Si carica poi con Load Bank.
+- Export Folder: resta sulla cartella selezionata nel browser Slots.
+- File task asincroni; nessuna modifica a DSP/MIDI/Sample Set/automazioni.
+- ATTENZIONE: i test sono statici; compilazione deliberatamente non eseguita.

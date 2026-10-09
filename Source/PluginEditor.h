@@ -340,6 +340,8 @@ private:
     // Advanced popup while REAPER's FX Chain still owns keyboard focus; wait
     // until the user actually enters the plug-in editor.
     bool pendingAdvancedOpen = false;
+    int advancedMenuReturnItem = 1;
+    bool advancedMenuReturnQueued = false;
     juce::Component::SafePointer<juce::Component> propertiesReturnFocus;
     juce::Component::SafePointer<juce::Component> sliceReturnFocus;
     void openSliceEditor(bool sequencer);
@@ -416,12 +418,17 @@ private:
     void chooseImportFiles();
     void chooseImportFolder();
     void chooseExportFolder();
+    void chooseExportFile();
+    void chooseExportBank();
+    void chooseImportBank();
     void chooseExportLibrary();
     void chooseImportLibrary();
     void showAdvancedMenu();
     void returnToAdvancedAndAnnounce();
     void returnToButton(juce::TextButton& button);
     void enterExportFolderBrowser();
+    void enterExportFileBrowser();
+    void enterExportBankBrowser();
     bool isLibraryAvailable() const;
     juce::String unavailableLibraryMessage() const;
     bool requireLibraryAvailable(juce::Component* focusTarget = nullptr, bool openAdvancedAfterOk = true);
@@ -519,6 +526,7 @@ private:
     juce::Label status;
     juce::String fileTaskTitle;
     int lastFileTaskProgress = -1;
+    juce::uint32 lastProgressAnnouncementMs = 0;
 
     LSamplerParameterComboBox parameterSelector;
     LSamplerValueSlider parameterValue;
@@ -587,6 +595,8 @@ private:
     bool slotLibraryForSampleSet = false;
     bool slotLibraryForBank = false;
     bool slotLibraryForExport = false;
+    bool slotLibraryForExportFile = false;
+    bool slotLibraryForExportBank = false;
     bool slotLibraryPreviewEnabled = false;
     bool slotLibraryShiftSelectionActive = false;
     juce::juce_wchar slotLibraryLastInitial = 0;

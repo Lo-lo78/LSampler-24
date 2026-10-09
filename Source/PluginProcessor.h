@@ -87,7 +87,8 @@ public:
     bool saveSlotPreset(const juce::File& presetFile, juce::String& error);
     bool saveSlotPresetAt(const juce::File& presetFile, int slot, juce::String& error);
     bool loadSlotPreset(const juce::File& presetFile, juce::String& error);
-    bool loadSlotPresetToSlot(const juce::File& presetFile, int slotIndex, juce::String& error);
+    bool loadSlotPresetToSlot(const juce::File& presetFile, int slotIndex, juce::String& error,
+                              std::function<void(double)> progress = {});
     bool prepareLibrarySlotPreview(const juce::File& presetFile, juce::String& error);
     void requestLibraryPreviewToggle() noexcept { libraryPreviewToggleRequested.store(true); }
     void requestLibraryPreviewStop() noexcept { libraryPreviewStopRequested.store(true); }
@@ -99,6 +100,8 @@ public:
     bool exportLibraryArchive(const juce::File& targetFile, int& exportedSlots, int& exportedSamples, juce::String& error);
     bool exportLibraryFolderArchive(const juce::File& slotFolder, const juce::File& targetFile, int& exportedSlots, int& exportedSamples, juce::String& error);
     bool importLibraryArchive(const juce::File& archiveFile, int& importedSlots, int& importedSamples, int& skippedItems, juce::String& error);
+    bool exportBankArchive(const juce::File& bankPreset, const juce::File& targetFile, int& exportedSamples, juce::String& error);
+    bool importBankArchive(const juce::File& archiveFile, juce::File& importedBank, int& importedSamples, juce::String& error);
 
     bool copyCurrentSlot();
     bool cutCurrentSlot();
@@ -256,7 +259,8 @@ private:
     bool restoringHostState = false; // accessed under stateLock only
 
     juce::ValueTree makeSlotState(int slotIndex, const juce::String& type) const;
-    bool restoreSlotState(int slotIndex, const juce::ValueTree& tree, juce::String& error);
+    bool restoreSlotState(int slotIndex, const juce::ValueTree& tree, juce::String& error,
+                          std::function<void(double)> progress = {});
     bool writePreset(const juce::File& file, const juce::ValueTree& tree, juce::String& error) const;
     juce::ValueTree readPreset(const juce::File& file, juce::String& error) const;
     bool materialiseSlotSample(int slotIndex, juce::String& error);
