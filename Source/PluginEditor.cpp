@@ -2145,8 +2145,13 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                     const bool loopWillBeOn = current != 0.0;
                     processor.setSlotParameter(i, loopWillBeOn ? 0.0 : 1.0);
                     refreshParameterGrid();
-                    auto* announceSource = source != nullptr ? source : static_cast<juce::Component*>(&status);
-                    lsampler::announceToActiveScreenReader(*announceSource, loopWillBeOn ? "Loop On" : "Loop Off");
+                    // ScreenReaderAnnouncer sets the source component's accessibility
+                    // description.  Do not use the focused control here: when Alt+Shift+L
+                    // is pressed from Slice Editor or Sample Set, that would replace the
+                    // button's stable shortcut (Alt+E / Alt+M) with "Loop On/Off".
+                    // The dedicated Status component can broadcast the notification
+                    // without modifying the accessible label of a focused button.
+                    lsampler::announceToActiveScreenReader(status, loopWillBeOn ? "Loop On" : "Loop Off");
                     return true;
                 }
         }
