@@ -2365,10 +2365,10 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         if (ch == 'v')
         {
             if (!processor.hasCopiedSlot()) return true;
-            auto paste = [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+            auto paste = [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), announceCurrentSlot]
             {
                 if (safeThis != nullptr && safeThis->processor.pasteCurrentSlot())
-                    safeThis->announceCurrentSlot();
+                    announceCurrentSlot();
             };
             if (processor.isSlotOccupied(currentSlot))
                 confirmOverwrite("Slot " + juce::String(currentSlot + 1) + ", "
