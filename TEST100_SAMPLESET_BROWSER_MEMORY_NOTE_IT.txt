@@ -1,0 +1,25 @@
+LSampler-24 0.99.11 — TEST100 — Memoria browser Sample Set (Alt+M)
+
+Base: sorgente TEST99 con anteprima persistente.
+
+Correzioni:
+1. Il browser audio aperto da Alt+M ora salva separatamente la cartella corrente,
+   l'indice di selezione e il percorso dell'ultimo file/cartella selezionato.
+   Le chiavi utente in settings.xml sono f6Directory, f6Index e f6EntryPath.
+2. La navigazione si ripristina all'apertura successiva del browser, anche
+   passando tra i 16 campioni dello stesso Slot e riaprendo il plugin.
+3. I percorsi memorizzati sono accettati solo se ancora all'interno della
+   Library\\Samples attualmente configurata. In caso contrario si usa la radice.
+4. Alt+O aggiorna le proprie impostazioni senza cancellare quelle di Alt+S,
+   Alt+B, Alt+M o la cronologia Library.
+5. Nessuna modifica a DSP, preview, caricamento, preset o tasti esistenti.
+
+Prova consigliata in REAPER con NVDA:
+- Alt+M, F1, scegli Sample 2, apri il browser, entra in una sottocartella,
+  seleziona un file e caricalo con Invio.
+- Seleziona Sample 3, riapri il browser: deve tornare nella stessa cartella,
+  sullo stesso file (o sulla voce valida piu' vicina se il file e' scomparso).
+- Ripeti annullando con Esc. Prova anche chiudendo e riaprendo l'editor.
+- Verifica che Alt+O, Alt+S e Alt+B mantengano le loro memorie indipendenti.
+
+NON COMPILATO LOCALMENTE. Da verificare con GitHub Actions / REAPER.

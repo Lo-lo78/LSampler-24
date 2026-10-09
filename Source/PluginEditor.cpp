@@ -3305,49 +3305,41 @@ void LSampler24AudioProcessorEditor::saveImportSettings(bool resetPreviewPositio
     if (!importBrowserActive && !importDirectory.isDirectory()) return;
     auto file = importSettingsFile();
 
-    juce::String savedSlotDirectory, savedSlotEntryPath, savedLibraryRoot;
-    int savedSlotIndex = 0;
-    std::vector<juce::String> savedLibraryHistory;
+    // Preserve the other browsers' independent positions (f4/f5/f6), the
+    // configured Library and its history. Updating Alt+O must not erase them.
+    std::unique_ptr<juce::XmlElement> xml;
     if (file.existsAsFile())
     {
         juce::XmlDocument doc(file);
-        if (auto oldXml = doc.getDocumentElement(); oldXml != nullptr && oldXml->hasTagName("LSampler24Settings"))
-        {
-            savedSlotDirectory = oldXml->getStringAttribute("f4Directory");
-            savedSlotEntryPath = oldXml->getStringAttribute("f4EntryPath");
-            savedSlotIndex = oldXml->getIntAttribute("f4Index", 0);
-            savedLibraryRoot = oldXml->getStringAttribute("libraryRoot");
-            for (auto* child = oldXml->getFirstChildElement(); child != nullptr; child = child->getNextElement())
-                if (child->hasTagName("LibraryHistory")) savedLibraryHistory.push_back(child->getStringAttribute("path"));
-        }
+        xml = doc.getDocumentElement();
     }
+    if (xml == nullptr || !xml->hasTagName("LSampler24Settings"))
+        xml = std::make_unique<juce::XmlElement>("LSampler24Settings");
 
-    juce::XmlElement xml("LSampler24Settings");
-    xml.setAttribute("f3Directory", importDirectory.getFullPathName());
-    xml.setAttribute("f3Index", importEntryIndex);
-    xml.setAttribute("f3Preview", importPreviewEnabled);
+    xml->setAttribute("f3Directory", importDirectory.getFullPathName());
+    xml->setAttribute("f3Index", importEntryIndex);
+    xml->setAttribute("f3Preview", importPreviewEnabled);
     juce::String selectedPath;
     if (!importRecentPathsMode && !importEntries.empty() && importEntryIndex >= 0 && importEntryIndex < static_cast<int>(importEntries.size()))
         selectedPath = importEntries[static_cast<size_t>(importEntryIndex)].file.getFullPathName();
-    xml.setAttribute("f3EntryPath", selectedPath);
-    xml.setAttribute("f3Position", resetPreviewPosition ? 0.0 : processor.getImportPreviewPositionSeconds());
-    xml.setAttribute("f3LastInitial", static_cast<int>(importLastInitial));
+    xml->setAttribute("f3EntryPath", selectedPath);
+    xml->setAttribute("f3Position", resetPreviewPosition ? 0.0 : processor.getImportPreviewPositionSeconds());
+    xml->setAttribute("f3LastInitial", static_cast<int>(importLastInitial));
+
+    // Only replace Alt+O's Recent entries. All other settings remain intact.
+    for (auto* child = xml->getFirstChildElement(); child != nullptr;)
+    {
+        auto* next = child->getNextElement();
+        if (child->hasTagName("Recent")) xml->removeChildElement(child, true);
+        child = next;
+    }
     int count = 0;
     for (const auto& p : importRecentPaths)
     {
         if (!p.isDirectory() || count++ >= 20) continue;
-        auto* child = xml.createNewChildElement("Recent"); child->setAttribute("path", p.getFullPathName());
+        auto* child = xml->createNewChildElement("Recent"); child->setAttribute("path", p.getFullPathName());
     }
-    if (savedSlotDirectory.isNotEmpty()) xml.setAttribute("f4Directory", savedSlotDirectory);
-    if (savedSlotEntryPath.isNotEmpty()) xml.setAttribute("f4EntryPath", savedSlotEntryPath);
-    xml.setAttribute("f4Index", savedSlotIndex);
-    if (savedLibraryRoot.isNotEmpty()) xml.setAttribute("libraryRoot", savedLibraryRoot);
-    for (const auto& path : savedLibraryHistory)
-    {
-        auto* child = xml.createNewChildElement("LibraryHistory");
-        child->setAttribute("path", path);
-    }
-    xml.writeTo(file);
+    xml->writeTo(file);
 }
 
 void LSampler24AudioProcessorEditor::addImportRecentPath(const juce::File& directory)
@@ -4252,11 +4244,13 @@ void LSampler24AudioProcessorEditor::saveSlotLibraryNavigationState()
     if (xml == nullptr || !xml->hasTagName("LSampler24Settings"))
         xml = std::make_unique<juce::XmlElement>("LSampler24Settings");
 
-    if (slotLibraryForSampleSet) return;
-    if (!slotLibraryForBank)
+    // Each browser remembers its own directory/file in user settings:
+    // f4 = Load Slot, f5 = Load Bank, f6 = Alt+M Sample Set audio browser.
+    if (!slotLibraryForBank && !slotLibraryForSampleSet)
         xml->setAttribute("f3Preview", slotLibraryPreviewEnabled);
 
-    const auto prefix = slotLibraryForBank ? juce::String("f5") : juce::String("f4");
+    const auto prefix = slotLibraryForSampleSet ? juce::String("f6")
+                       : slotLibraryForBank ? juce::String("f5") : juce::String("f4");
     if (slotLibraryDirectory.isDirectory())
         xml->setAttribute(prefix + "Directory", slotLibraryDirectory.getFullPathName());
     xml->setAttribute(prefix + "Index", slotLibraryEntryIndex);
@@ -4316,16 +4310,19 @@ void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser(bool forSampleSet, 
         juce::XmlDocument doc(settings);
         if (auto xml = doc.getDocumentElement(); xml != nullptr && xml->hasTagName("LSampler24Settings"))
         {
-            const auto prefix = slotLibraryForBank ? juce::String("f5") : juce::String("f4");
+            const auto prefix = slotLibraryForSampleSet ? juce::String("f6")
+                               : slotLibraryForBank ? juce::String("f5") : juce::String("f4");
             rememberedSlotDirectory = xml->getStringAttribute(prefix + "Directory");
             rememberedSlotEntryPath = xml->getStringAttribute(prefix + "EntryPath");
             rememberedSlotIndex = xml->getIntAttribute(prefix + "Index", 0);
         }
     }
 
-    if (!slotLibraryForSampleSet && rememberedSlotDirectory.isNotEmpty())
+    if (rememberedSlotDirectory.isNotEmpty())
     {
         const juce::File candidate(rememberedSlotDirectory);
+        // Never restore a folder outside this browser's Library root, including
+        // an old external Library location that is no longer configured.
         if (candidate.isDirectory() && (candidate == slotLibraryRoot || candidate.isAChildOf(slotLibraryRoot)))
             slotLibraryDirectory = candidate;
     }
@@ -4361,7 +4358,8 @@ void LSampler24AudioProcessorEditor::leaveSlotLibraryBrowser(bool announceSlot)
 {
     if (!slotLibraryActive) return;
     const bool returningToSampleSet = slotLibraryForSampleSet && sampleSetActive;
-    if (!returningToSampleSet) saveSlotLibraryNavigationState();
+    // Also save Alt+M on Escape, cancellation and successful loading.
+    saveSlotLibraryNavigationState();
     processor.requestLibraryPreviewStop();
     processor.requestImportPreviewStop();
     sampleSetBrowserPreviewEnabled = false;
