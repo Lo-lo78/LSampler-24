@@ -1,0 +1,32 @@
+LSampler-24 TEST107 - Export Bank con cartella e nomi WAV leggibili
+
+BASE: TEST106 (include TEST104: SHA cache e TEST105: progressi NVDA).
+
+Correzione esclusiva di Advanced > Export Bank:
+- Mantiene Library/Banks/<nome_banco>.lsampler-24-b senza modificarne il nome.
+- Salva i campioni sotto Library/Samples/<nome_banco>/, anziche' BankPackages/.
+  Il nome e' quello del banco salvato (senza l'eventuale prefisso Bank_).
+- Conserva il nome originale del file WAV, senza premettere il digest SHA-256.
+- Se un WAV proviene da un precedente Import Bank TEST106 e porta il prefisso
+  <SHA256>_, lo elimina solo se corrisponde all'hash verificato del file.
+- Due WAV di sorgente diversi con lo stesso identico nome sono disambiguati
+  aggiungendo _2, _3 ecc. prima dell'estensione; nessuno viene sovrascritto.
+- Il file del banco nell'archivio viene aggiornato con i nuovi percorsi e
+  continua a contenere i sampleHash per l'integrita'; il banco salvato
+  nella Library e i campioni originali non vengono modificati.
+- Import Bank supporta senza variazioni sia gli archivi vecchi con
+  BankPackages che quelli nuovi con nome banco. La risoluzione dei campioni
+  continua a essere basata su percorso e hash.
+- Nessuna modifica ad altri comandi Advanced, DSP, MIDI, Sample Set, NVDA,
+  salvataggio host e automazioni.
+
+Verifiche statiche eseguite:
+- Tools/verify-test59-reference.py: PASS
+- Tools/verify-vst3-automation-source.py: PASS
+
+Compilazione NON eseguita. Verificare con GitHub Actions e REAPER:
+1) Export Bank del Salamander con 384 WAV.
+2) Nell'archivio, controllare Library/Banks e Library/Samples/Salamander...;
+   verificare D7v12.wav e l'assenza di hash_ all'inizio dei nomi.
+3) Import Bank dell'archivio, Load Bank, prova MIDI e sustain.
+4) Re-export di un banco importato da TEST106: nuovi nomi leggibili.

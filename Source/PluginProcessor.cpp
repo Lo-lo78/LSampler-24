@@ -2379,17 +2379,29 @@ bool LSampler24AudioProcessor::exportBankArchive(const juce::File& bankPreset,
         return false;
     }
 
+    // Package WAVs under the bank's own name, not in the generic BankPackages
+    // directory. Match the readable bank name used by the internal browser.
+    auto sampleFolderName = bankPreset.getFileNameWithoutExtension().trim();
+    if (sampleFolderName.startsWithIgnoreCase("Bank_"))
+        sampleFolderName = sampleFolderName.substring(5);
+    sampleFolderName = juce::File::createLegalFileName(sampleFolderName.trim());
+    if (sampleFolderName.isEmpty() || sampleFolderName == "." || sampleFolderName == "..")
+        sampleFolderName = "LSampler-24 Bank";
+    const auto sampleArchiveFolder = "Library/Samples/" + sampleFolderName + "/";
+
     struct ArchiveSample { juce::File source; juce::String path; };
     std::vector<ArchiveSample> sources;
     std::map<juce::String, juce::String> pathByFile;
+    std::set<juce::String> usedArchivePaths;
     const int totalSlots = juce::jmax(1, bank.getNumChildren());
     for (int i = 0; i < bank.getNumChildren(); ++i)
     {
         setFileTaskProgress(0.10 + 0.60 * double(i) / double(totalSlots));
         if (shouldStopFileTask()) { error = "Export stopped"; return false; }
         auto slot = bank.getChild(i);
-        const auto prepareReference = [this, &sources, &pathByFile, &error](juce::ValueTree node,
-                                                                           bool primary) -> bool
+        const auto prepareReference = [this, &sources, &pathByFile, &usedArchivePaths,
+                                       &sampleArchiveFolder, &error](juce::ValueTree node,
+                                                                    bool primary) -> bool
         {
             auto ref = node.getProperty("sampleReference").toString();
             if (ref.isEmpty() && primary) ref = node.getProperty("samplePath").toString();
@@ -2408,10 +2420,39 @@ bool LSampler24AudioProcessor::exportBankArchive(const juce::File& bankPreset,
             juce::String relative;
             if (it == pathByFile.end())
             {
-                // Hash prefix prevents equal file names from overwriting each other.
-                // Full digest is used so path uniqueness does not depend on file names.
-                relative = "Library/Samples/BankPackages/" + hash + "_"
-                    + juce::File::createLegalFileName(source.getFileName());
+                // Keep the WAV's original, readable filename. TEST106 prefixed
+                // SHA-256 to filenames, so strip that prefix when re-exporting
+                // samples already imported from an older Bank package. Only
+                // remove a prefix equal to the verified hash of this very file.
+                auto filename = source.getFileName();
+                const auto oldPrefix = hash + "_";
+                while (filename.startsWithIgnoreCase(oldPrefix)
+                       && filename.length() > oldPrefix.length())
+                    filename = filename.substring(oldPrefix.length());
+                filename = juce::File::createLegalFileName(filename);
+                if (filename.isEmpty() || filename == "." || filename == "..")
+                {
+                    error = "Invalid bank sample filename";
+                    return false;
+                }
+
+                relative = sampleArchiveFolder + filename;
+                // A bank may reference two different WAVs with the same name.
+                // Preserve original names unless there is a genuine collision;
+                // only then append _2, _3 etc. before the extension.
+                if (usedArchivePaths.find(relative.toLowerCase()) != usedArchivePaths.end())
+                {
+                    const int dot = filename.lastIndexOfChar('.');
+                    const auto stem = dot > 0 ? filename.substring(0, dot) : filename;
+                    const auto extension = dot > 0 ? filename.substring(dot) : juce::String();
+                    int suffix = 2;
+                    do
+                    {
+                        relative = sampleArchiveFolder + stem + "_" + juce::String(suffix++) + extension;
+                    }
+                    while (usedArchivePaths.find(relative.toLowerCase()) != usedArchivePaths.end());
+                }
+                usedArchivePaths.insert(relative.toLowerCase());
                 pathByFile.emplace(key, relative);
                 sources.push_back({ source, relative });
             }
