@@ -363,6 +363,11 @@ private:
     std::vector<std::pair<juce::Component::SafePointer<juce::Component>, bool>> fileDisabledComponents;
     void chooseSample();
     void enterSampleSetEditor();
+    void switchSampleSetPage(int page);
+    void confirmOverwrite(const juce::String& message, std::function<void()> confirmed,
+                          std::function<void()> cancelled);
+    juce::String replacementSlotName(int slot) const;
+    int occupiedBankSlotCount() const;
     void leaveSampleSetEditor();
     void refreshSampleSetCell(bool announce = false);
     void moveSampleSetEntry(int direction);
@@ -522,6 +527,7 @@ private:
     bool sampleSetReturnWasParameterPage = false;
     int sampleSetIndex = 0;
     int sampleSetField = 0; // Parameter grid: Velocity Low, Velocity High, Variation Mode
+    int sampleSetPage = 0; // F1 samples, F2 per-sample, F3 global
     bool sampleSetGridFocus = false;
     bool sampleSetValueFocus = false;
     juce::Component::SafePointer<juce::Component> sampleSetReturnFocus;
@@ -570,6 +576,7 @@ private:
     int slotLibraryEntryIndex = 0;
     int slotLibraryStartSlot = 0;
     bool slotLibraryActive = false;
+    bool sampleSetBrowserPreviewPlaying = false;
     bool slotLibraryForSampleSet = false;
     bool slotLibraryForBank = false;
     bool slotLibraryForExport = false;

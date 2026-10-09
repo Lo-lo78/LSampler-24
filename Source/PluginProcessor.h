@@ -103,6 +103,7 @@ public:
     bool copyCurrentSlot();
     bool cutCurrentSlot();
     bool pasteCurrentSlot();
+    bool hasCopiedSlot() const noexcept { const juce::ScopedLock lock(stateLock); return slotClipboardHasData; }
     void clearCurrentSlot();
     void clearBank();
     bool slotHasSample(int slotIndex) const;

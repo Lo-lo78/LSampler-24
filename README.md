@@ -36,5 +36,18 @@ Ogni Slot puo' ora contenere fino a 16 campioni. Alt+M apre il Sample Set Editor
 
 Il DSP resta condiviso dallo Slot e per ogni Note On viene scelta una sola sorgente. I vecchi Slot a campione singolo restano compatibili come Sample 1 con Variation Mode Off. Slice Engine/Edit/Sequencer restano legati a Sample 1 in questa prova. Vedere `SAMPLE_SET_TEST62_NOTE_IT.txt`.
 
+## TEST98: Sample Set a tre pagine e caricamenti protetti
+
+Alt+M apre il Sample Set dello Slot corrente. Tre pagine navigabili con F1, F2, F3 oppure Tab / Shift+Tab:
+- F1 Samples: le 16 posizioni campione; Invio apre il browser; Space ascolta il campione gia' caricato secondo il motore esistente.
+- F2 Sample Parameters: Velocity Low e Velocity High relativi alla posizione selezionata, con Grid e Value (Invio, Alt+V, frecce e step).
+- F3 Global Parameters: Variation Mode riferito allo Slot intero, con le cinque voci Off, Round Robin, Random, Random No Repeat, Shuffle No Repeat.
+
+Il browser aperto da F1 riprende la navigazione accessibile di Alt+S ma e' confinato dentro `Library\Samples`. Elenca esclusivamente file audio e cartelle. In questo browser Space fa Play/Stop del file originale tramite il trasporto raw, senza Slice, filtro, inviluppo, pitch o effetti di Slot; Invio lo carica nella posizione Sample Set selezionata. Il browser non modifica lo Slot quando si naviga o si ascolta.
+
+Quando una destinazione e' gia' occupata, i caricamenti Alt+O (file singolo o import pianificato), Alt+S (preset singolo o selezioni multiple), Alt+B (intero banco), Alt+M F1 (Sample Set) e Paste Slot richiedono una conferma modale con Yes (Y), No (N), Esc (annulla). Le operazioni su una posizione libera restano immediate. Le conferme sono risolte prima di avviare i worker asincroni. Per i banchi viene indicato il numero di Slot occupati e il nome del banco selezionato.
+
+Non modificato DSP, ID di automazione, formato preset, logica Shuffle. Non compilato localmente.
+
 ## TEST74: Stretch smoothing nel Slice Sequencer
 Il percorso overlap-add di Stretch Amount/Frequency ora è condiviso anche da Slice Engine / Alt+E. Il processing resta confinato alla slice corrente e rispetta Reverse; a Stretch Amount 0 resta bypassato.

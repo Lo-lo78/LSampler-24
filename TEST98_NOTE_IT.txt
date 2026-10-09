@@ -1,0 +1,17 @@
+LSampler-24 TEST98 — sorgente completo (non compilato)
+
+1. Alt+M, F1/F2/F3 e Tab/Shift+Tab per passare da Samples a parametri individuali (velocity) a globali (Variation Mode).
+2. In F1, Invio apre il browser con navigazione come Alt+S ma confinato a Library\Samples. Space avvia o ferma il campione audio originale, senza DSP di Slot o Slice. Invio carica nella posizione selezionata.
+3. Conferme di sovrascrittura Y/N/Esc per Alt+O, Alt+S, Alt+B, F1 del Sample Set e incolla Slot. Mostra i nomi prima della sostituzione. Caricamenti liberi senza conferma.
+4. Il DSP e' invariato, compreso Shuffle No Repeat. In caso di N/Esc nessun caricamento deve partire.
+5. Collaudo richiesto in REAPER + NVDA. Il progetto NON e' stato compilato.
+
+Prove:
+- Alt+M: Tab F1 -> F2 -> F3 -> F1 e Shift+Tab all'indietro; F1/F2/F3 diretti; Grid/Value (Invio, Esc).
+- F2 velocity varia per campione, F3 Variation Mode vale per tutto lo Slot.
+- F1 Samples -> Invio; provare destra/sinistra, Backspace radice, Space Play/Stop su WAV, Esc e caricare il file in sample 1 o 2.
+- Verificare preview senza effetti su file che era processato nello Slot originale.
+- Caricare su Slot occupato con Alt+O, Alt+S, Alt+B e Alt+V incolla: Y conferma, N/Esc annullano.
+- Con Alt+B contare gli Slot occupati e annunciare il nome del banco.
+- Con Alt+M sostituire un campione esistente e annullare; assicurarsi che rimanga identico.
+- Controllare che la GUI e il focus tornino a controlli accessibili con NVDA.
