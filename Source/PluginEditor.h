@@ -342,6 +342,8 @@ private:
     bool pendingAdvancedOpen = false;
     int advancedMenuReturnItem = 1;
     bool advancedMenuReturnQueued = false;
+    // Remember how the main command was opened so Esc has a predictable target.
+    bool actionOpenedByShortcut = false;
     juce::Component::SafePointer<juce::Component> propertiesReturnFocus;
     juce::Component::SafePointer<juce::Component> sliceReturnFocus;
     void openSliceEditor(bool sequencer);
@@ -426,6 +428,7 @@ private:
     void showAdvancedMenu();
     void returnToAdvancedAndAnnounce();
     void returnToButton(juce::TextButton& button);
+    void returnToActionOrigin(juce::TextButton& button);
     void enterExportFolderBrowser();
     void enterExportFileBrowser();
     void enterExportBankBrowser();

@@ -1,0 +1,24 @@
+LSampler-24 TEST108 - Accessibilita' e ritorno del focus
+Base: TEST107 (include TEST104-TEST107).
+
+1. Alt+L nella finestra principale porta alla selezione Slots, anche se vuota.
+   Nell'editor parametri dello slot Alt+L continua a portare alla Grid.
+2. Delete annuncia la pulizia dello slot senza lasciare una descrizione
+   persistente nel relativo controllo accessibile.
+3. Alt+Delete svuota il banco, sposta il cursore reale allo Slot 1 e annuncia
+   la pulizia senza appiccicare il messaggio all'etichetta dello slot.
+4. Annullamento con Esc in Load Sample/Slot/Bank, Save Slot/Bank, About, Help
+   e Advanced: se aperti da un pulsante con Invio si torna a quel pulsante;
+   se aperti da scorciatoia si torna allo slot selezionato. Advanced continua
+   a riaprire la voce precedente dopo la chiusura di un suo comando; Esc dal
+   menu' vero e proprio torna alla posizione di origine.
+5. Comportamento DSP, MIDI, formati banco e campioni invariati.
+
+VERIFICHE STATICHE (senza compilare):
+- Tools/verify-test59-reference.py: PASS
+- Tools/verify-vst3-automation-source.py: PASS (6629 automazioni)
+
+Da provare in REAPER con NVDA: Alt+L dalla finestra Slots e da Grid/Value,
+Delete/Alt+Delete con lettura NVDA+Freccia Su e navigazione con le frecce,
+Esc dopo apertura con Invio vs scorciatoie, Esc da Advanced e sottocomandi.
+Non e' stata eseguita alcuna build.

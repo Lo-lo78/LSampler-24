@@ -194,13 +194,13 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     saveBank.setDescription("Alt+Shift+B");
     help.setButtonText("Help");
     help.setDescription("Alt+H");
-    help.onClick = [this] { showHelpLanguageMenu(); };
+    help.onClick = [this] { actionOpenedByShortcut = false; showHelpLanguageMenu(); };
     aboutButton.setButtonText("About");
     aboutButton.setDescription("Alt+A");
-    aboutButton.onClick = [this] { openAbout(); };
+    aboutButton.onClick = [this] { actionOpenedByShortcut = false; openAbout(); };
     advancedButton.setButtonText("Advanced");
     advancedButton.setDescription("Alt+T");
-    advancedButton.onClick = [this] { showAdvancedMenu(); };
+    advancedButton.onClick = [this] { actionOpenedByShortcut = false; showAdvancedMenu(); };
 
     // Keep the text free of the shortcut so the screen reader announces
     // "Slice Editor, button, Alt+E" / "Sample Set, button, Alt+M".
@@ -372,11 +372,11 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     addChildComponent(importLibraryButton);
     importLibraryButton.setVisible(false);
 
-    loadSample.onClick = [this] { enterImportBrowser(); };
-    loadSlot.onClick   = [this] { enterSlotLibraryBrowser(); };
-    saveSlot.onClick   = [this] { chooseSaveSlot(); };
-    loadBank.onClick   = [this] { enterSlotLibraryBrowser(false, true); };
-    saveBank.onClick   = [this] { chooseSaveBank(); };
+    loadSample.onClick = [this] { actionOpenedByShortcut = false; enterImportBrowser(); };
+    loadSlot.onClick   = [this] { actionOpenedByShortcut = false; enterSlotLibraryBrowser(); };
+    saveSlot.onClick   = [this] { actionOpenedByShortcut = false; chooseSaveSlot(); };
+    loadBank.onClick   = [this] { actionOpenedByShortcut = false; enterSlotLibraryBrowser(false, true); };
+    saveBank.onClick   = [this] { actionOpenedByShortcut = false; chooseSaveBank(); };
     exportLibraryButton.onClick = [this] { chooseExportFolder(); };
     exportAllLibraryButton.onClick = [this] { chooseExportLibrary(); };
     importLibraryButton.onClick = [this] { chooseImportLibrary(); };
@@ -414,7 +414,7 @@ void LSampler24AudioProcessorEditor::paint(juce::Graphics& g)
     if(!importBrowserActive && !slotLibraryActive && !sampleSetActive) {
         rackgui::frame(g, {16,72,352,490}, "SLOTS / 01-24");
         g.setColour(rackgui::muted);g.setFont(13.0f);
-        g.drawText(globalOpen?"Enter: Confirm  /  Esc: Cancel  /  Alt+V: Value":parameterPage?"Alt+L: Grid  /  Alt+Shift+L: Loop On-Off  /  Alt+M: Sample Set  /  Alt+E: Slice":"Enter: Edit selected slot  /  Alt+T: Advanced  /  Alt+M: Sample Set  /  Alt+E: Slice",384,588,getWidth()-400,24,juce::Justification::centredLeft);
+        g.drawText(globalOpen?"Enter: Confirm  /  Esc: Cancel  /  Alt+V: Value":parameterPage?"Alt+L: Grid  /  Alt+Shift+L: Loop On-Off  /  Alt+M: Sample Set  /  Alt+E: Slice":"Alt+L: Slots  /  Enter: Edit selected slot  /  Alt+T: Advanced  /  Alt+M: Sample Set  /  Alt+E: Slice",384,588,getWidth()-400,24,juce::Justification::centredLeft);
     }
 }
 
@@ -558,29 +558,33 @@ void LSampler24AudioProcessorEditor::showHelpLanguageMenu()
     auto* popupTarget = help.isShowing() ? static_cast<juce::Component*>(&help)
                                        : juce::Component::getCurrentlyFocusedComponent();
     const juce::Component::SafePointer<juce::Component> returnFocus(popupTarget);
+    const bool invokedByShortcut = actionOpenedByShortcut;
     auto options = juce::PopupMenu::Options();
     if (popupTarget != nullptr)
         options = options.withTargetComponent(popupTarget);
 
     menu.showMenuAsync(options,
-        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), returnFocus](int result)
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), returnFocus, invokedByShortcut](int result)
         {
             if (safeThis == nullptr)
                 return;
 
             if (result == 0)
             {
-                juce::Timer::callAfterDelay(50,
-                    [returnFocus]
-                    {
-                        if (returnFocus == nullptr)
-                            return;
-                        returnFocus->grabKeyboardFocus();
-                        if (auto* handler = returnFocus->getAccessibilityHandler())
-                            handler->grabFocus();
-                    });
+                if (invokedByShortcut)
+                    safeThis->returnToActionOrigin(safeThis->help);
+                else
+                    juce::Timer::callAfterDelay(50,
+                        [returnFocus]
+                        {
+                            if (returnFocus == nullptr) return;
+                            returnFocus->grabKeyboardFocus();
+                            if (auto* handler = returnFocus->getAccessibilityHandler())
+                                handler->grabFocus();
+                        });
                 return;
             }
+            safeThis->actionOpenedByShortcut = false;
 
             static constexpr const char* codes[] { "en", "it", "es", "pt", "fr", "ru", "zh", "ja" };
             if (juce::isPositiveAndBelow(result - 1, static_cast<int>(std::size(codes))))
@@ -673,6 +677,8 @@ void LSampler24AudioProcessorEditor::refreshSlotCells()
         auto& cell = slotCells[static_cast<size_t>(i)];
         const auto label = processor.getSlotLabel(i);
         cell.setSlotText(label);
+        // Notification text must never become part of the persistent slot line.
+        cell.setDescription({});
         const auto name=processor.getSlotName(i);
         cell.setVisualState(i+1,name.isNotEmpty()?name:(processor.slotHasSample(i)?"Sample":"Empty"),processor.slotHasSample(i),i==selected);
         cell.setWantsKeyboardFocus(!parameterPage && i == selected);
@@ -953,14 +959,14 @@ void LSampler24AudioProcessorEditor::focusParameterGrid()
 
 void LSampler24AudioProcessorEditor::focusMainParameterGrid()
 {
-    // Alt+L has one meaning on the ordinary editor surfaces: return to the
-    // selected Slot's main parameter grid, retaining the shared grid cursor.
-    // Respect modal dialogs/browsers: they handle their own navigation.
+    // Alt+L on the main window is the Slots locator, even in an empty bank.
+    // Alt+L within a slot's parameter editor is the Grid locator.
+    // Modal dialogs and browser pages intercept keys before reaching here.
     if (globalOpen)
         closeGlobal(true);
 
     if (!parameterPage)
-        enterSlotParameters();
+        returnToCurrentSlotAndAnnounce();
     else
         focusParameterGrid();
 }
@@ -1064,6 +1070,12 @@ void LSampler24AudioProcessorEditor::closeAbout()
     setMainControlsEnabled(true);
     repaint();
 
+    if (actionOpenedByShortcut)
+    {
+        aboutReturnFocus = nullptr;
+        returnToActionOrigin(aboutButton);
+        return;
+    }
     auto* target = aboutReturnFocus.getComponent();
     if (target == nullptr || !target->isShowing() || !target->isEnabled()) target = &aboutButton;
     aboutReturnFocus = nullptr;
@@ -1382,7 +1394,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             leaveSlotLibraryBrowser(false);
             if (wasSampleSet) return true;
             if (wasExport) returnToAdvancedAndAnnounce();
-            else returnToButton(wasBank ? loadBank : loadSlot);
+            else returnToActionOrigin(wasBank ? loadBank : loadSlot);
             return true;
         }
 
@@ -1563,7 +1575,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             if (importRecentPathsMode) { leaveImportRecentPaths(); return true; }
             const bool returningToSampleSet = importForSampleSet && sampleSetActive;
             leaveImportBrowser(false, true);
-            if (!returningToSampleSet) returnToButton(loadSample);
+            if (!returningToSampleSet) returnToActionOrigin(loadSample);
             return true;
         }
         if (importForSampleSet)
@@ -1894,8 +1906,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         return true; // Sample Set is modal: never leak shortcuts to REAPER.
     }
 
-    // Unified Grid shortcut across Slots, main action buttons, Grid, Value,
-    // and the two accessible editor buttons. The manual numeric text field
+    // Contextual Alt+L on Slots or on the selected Slot's Grid/Value.
+    // The manual numeric text field
     // commits its value before leaving, further below in sourceIsValueEditor.
     if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown()
         && !mods.isCommandDown() && ch == 'l' && !sourceIsValueEditor)
@@ -1907,6 +1919,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     if (!mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown()
         && mods.isAltDown() && ch == 't' && !parameterPage)
     {
+        actionOpenedByShortcut = true;
         advancedButton.grabKeyboardFocus();
         if (auto* handler = advancedButton.getAccessibilityHandler()) handler->grabFocus();
         showAdvancedMenu();
@@ -1916,6 +1929,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     if (!mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown()
         && mods.isAltDown() && ch == 'h')
     {
+        actionOpenedByShortcut = true;
         showHelpLanguageMenu();
         return true;
     }
@@ -1923,6 +1937,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     if (!mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown()
         && mods.isAltDown() && ch == 'a')
     {
+        actionOpenedByShortcut = true;
         openAbout();
         return true;
     }
@@ -1999,6 +2014,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown() && ch == 's')
     {
+        actionOpenedByShortcut = true;
         if (mods.isShiftDown())
             chooseSaveBank();
         else
@@ -2129,14 +2145,14 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
     {
-        if (ch == 'o' && !mods.isShiftDown()) { enterImportBrowser(); return true; }
-        if (ch == 's' && !mods.isShiftDown()) { enterSlotLibraryBrowser(); return true; }
-        if (ch == 'b' && !mods.isShiftDown()) { enterSlotLibraryBrowser(false, true); return true; }
-        if (ch == 's' && mods.isShiftDown()) { chooseSaveSlot(); return true; }
-        if (ch == 'b' && mods.isShiftDown()) { chooseSaveBank(); return true; }
+        if (ch == 'o' && !mods.isShiftDown()) { actionOpenedByShortcut = true; enterImportBrowser(); return true; }
+        if (ch == 's' && !mods.isShiftDown()) { actionOpenedByShortcut = true; enterSlotLibraryBrowser(); return true; }
+        if (ch == 'b' && !mods.isShiftDown()) { actionOpenedByShortcut = true; enterSlotLibraryBrowser(false, true); return true; }
+        if (ch == 's' && mods.isShiftDown()) { actionOpenedByShortcut = true; chooseSaveSlot(); return true; }
+        if (ch == 'b' && mods.isShiftDown()) { actionOpenedByShortcut = true; chooseSaveBank(); return true; }
         if (ch == 'v' && parameterPage && !sourceIsValueEditor) { focusValue(); return true; }
         // The old Alt+L loop toggle is retained as Alt+Shift+L; plain Alt+L
-        // now focuses the main parameter Grid from every ordinary surface.
+        // now locates Slots on the main page or Grid inside the slot editor.
         if (ch == 'l' && mods.isShiftDown() && parameterPage && !globalOpen)
         {
             for (int i = 0; i < static_cast<int>(lsampler::grid.size()); ++i)
@@ -2502,15 +2518,18 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         if (mods.isAltDown())
         {
             processor.clearBank();
-            refreshSlotCells();
-            lsampler::announceToActiveScreenReader(slotCells[static_cast<size_t>(currentSlot)], "Bank cleared");
+            // The next bank starts at the first slot, not the previously selected one.
+            selectSlot(0, true);
+            lsampler::announceToActiveScreenReader(status, processor.getSlotLabel(0) + ". Bank cleared");
         }
         else
         {
             processor.clearCurrentSlot();
             refreshSlotCells();
-            lsampler::announceToActiveScreenReader(slotCells[static_cast<size_t>(currentSlot)],
-                                                   "Slot " + juce::String(currentSlot + 1) + " cleared");
+            // Speak the result without attaching it to the slot accessibility
+            // description: NVDA+Up and later arrow navigation stay concise.
+            lsampler::announceToActiveScreenReader(status,
+                processor.getSlotLabel(currentSlot) + ". Slot " + juce::String(currentSlot + 1) + " cleared");
         }
         return true;
     }
@@ -3942,7 +3961,7 @@ void LSampler24AudioProcessorEditor::commitImportPlan()
             {
                 if (safeThis == nullptr) return;
                 safeThis->leaveImportBrowser(false, true);
-                safeThis->returnToButton(safeThis->loadSample);
+                safeThis->returnToActionOrigin(safeThis->loadSample);
             });
     else load();
 }
@@ -3973,11 +3992,11 @@ void LSampler24AudioProcessorEditor::chooseSample()
                     safeThis->confirmOverwrite("Slot " + juce::String(slot + 1) + ", "
                         + safeThis->replacementSlotName(slot) + ", is occupied. Replace it with "
                         + file.getFileNameWithoutExtension() + "? Press Y or N.", std::move(load),
-                        [safeThis] { if (safeThis != nullptr) safeThis->returnToButton(safeThis->loadSample); });
+                        [safeThis] { if (safeThis != nullptr) safeThis->returnToActionOrigin(safeThis->loadSample); });
                 else load();
                 return;
             }
-            safeThis->returnToButton(safeThis->loadSample);
+            safeThis->returnToActionOrigin(safeThis->loadSample);
         });
 }
 
@@ -4283,6 +4302,19 @@ void LSampler24AudioProcessorEditor::returnToButton(juce::TextButton& button)
         handler->grabFocus();
 }
 
+void LSampler24AudioProcessorEditor::returnToActionOrigin(juce::TextButton& button)
+{
+    const bool shortcut = actionOpenedByShortcut;
+    actionOpenedByShortcut = false;
+    if (shortcut)
+    {
+        if (parameterPage && !globalOpen) leaveSlotParameters();
+        returnToCurrentSlotAndAnnounce();
+    }
+    else
+        returnToButton(button);
+}
+
 void LSampler24AudioProcessorEditor::returnToAdvancedAndAnnounce()
 {
     returnToButton(advancedButton);
@@ -4372,7 +4404,7 @@ void LSampler24AudioProcessorEditor::showAdvancedMenu()
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), history](int result)
         {
             if (safeThis == nullptr) return;
-            if (result == 0) { safeThis->returnToButton(safeThis->advancedButton); return; }
+            if (result == 0) { safeThis->returnToActionOrigin(safeThis->advancedButton); return; }
             safeThis->advancedMenuReturnItem = result;
             if (result == 1) safeThis->chooseLibraryFolder();
             else if (result == 2)
@@ -5064,7 +5096,7 @@ void LSampler24AudioProcessorEditor::commitSlotLibrarySelection()
                     if (safeThis != nullptr)
                     {
                         safeThis->leaveSlotLibraryBrowser(false);
-                        safeThis->returnToButton(safeThis->loadBank);
+                        safeThis->returnToActionOrigin(safeThis->loadBank);
                     }
                 });
         else load();
@@ -5165,7 +5197,7 @@ void LSampler24AudioProcessorEditor::commitSlotLibrarySelection()
                 if (safeThis != nullptr)
                 {
                     safeThis->leaveSlotLibraryBrowser(false);
-                    safeThis->returnToButton(safeThis->loadSlot);
+                    safeThis->returnToActionOrigin(safeThis->loadSlot);
                 }
             });
     else load();
@@ -5230,11 +5262,11 @@ void LSampler24AudioProcessorEditor::chooseLoadSlot()
                     safeThis->confirmOverwrite("Slot " + juce::String(slot + 1) + ", "
                         + safeThis->replacementSlotName(slot) + ", is occupied. Replace it with "
                         + file.getFileNameWithoutExtension() + "? Press Y or N.", std::move(load),
-                        [safeThis] { if (safeThis != nullptr) safeThis->returnToButton(safeThis->loadSlot); });
+                        [safeThis] { if (safeThis != nullptr) safeThis->returnToActionOrigin(safeThis->loadSlot); });
                 else load();
                 return;
             }
-            safeThis->returnToButton(safeThis->loadSlot);
+            safeThis->returnToActionOrigin(safeThis->loadSlot);
         });
 }
 
@@ -5275,7 +5307,7 @@ void LSampler24AudioProcessorEditor::chooseSaveSlot()
                 }, [safeThis](const FileTaskResult&, bool focus) { if (focus) safeThis->returnToCurrentSlotAndAnnounce(); });
                 return;
             }
-            safeThis->returnToButton(safeThis->saveSlot);
+            safeThis->returnToActionOrigin(safeThis->saveSlot);
         });
 }
 
@@ -5305,11 +5337,11 @@ void LSampler24AudioProcessorEditor::chooseLoadBank()
                     safeThis->confirmOverwrite("The current bank contains " + juce::String(occupied)
                         + " occupied slots. Replace it with " + file.getFileNameWithoutExtension()
                         + "? Press Y or N.", std::move(load),
-                        [safeThis] { if (safeThis != nullptr) safeThis->returnToButton(safeThis->loadBank); });
+                        [safeThis] { if (safeThis != nullptr) safeThis->returnToActionOrigin(safeThis->loadBank); });
                 else load();
                 return;
             }
-            safeThis->returnToButton(safeThis->loadBank);
+            safeThis->returnToActionOrigin(safeThis->loadBank);
         });
 }
 
@@ -5333,7 +5365,7 @@ void LSampler24AudioProcessorEditor::chooseSaveBank()
                 }, [safeThis](const FileTaskResult&, bool focus) { if (focus) safeThis->returnToCurrentSlotAndAnnounce(); });
                 return;
             }
-            safeThis->returnToButton(safeThis->saveBank);
+            safeThis->returnToActionOrigin(safeThis->saveBank);
         });
 }
 
