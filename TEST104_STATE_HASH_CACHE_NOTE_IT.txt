@@ -1,0 +1,19 @@
+LSampler-24 TEST104 - Cache SHA-256 dei campioni, nessuna modifica al DSP
+
+Problema oggetto del test
+- Con un banco da 384 WAV, REAPER e NVDA possono bloccarsi per molto tempo quando si chiude l'editor, nonostante il motore audio continui a riprodurre note e sustain.
+- Un potenziale collo di bottiglia verificato nel sorgente e' la generazione sincrona dello stato VST3: getStateInformation -> makeSlotState -> LibraryManager::makeSampleHash, chiamato anche due volte per il campione principale dello slot.
+- Prima di TEST104 veniva riletta per intero ogni volta la sorgente WAV per calcolarne SHA-256.
+
+Modifica mirata
+- Source/LibraryManager.cpp: introduce una cache condivisa SHA-256 in memoria basata sul percorso, dimensione e data di modifica del file.
+- La prima lettura calcola il vero SHA-256, le successive usano il valore gia' verificato se il file non e' cambiato.
+- Anche resolveSampleReference riutilizza la stessa cache: gli hash gia' verificati all'apertura del banco rimangono disponibili per il salvataggio dello stato di REAPER.
+- Conservati i campi sampleHash nei preset, la ricerca dei file spostati e il controllo dei campioni diversi.
+- Nessuna modifica a parametri, voci, ADSR, filtri, MIDI, audio, editor o versioni del formato banco.
+
+Limiti e verifica
+- TEST104 e' una correzione mirata a un collo di bottiglia, non una dimostrazione della causa unica del blocco; la conferma richiede una prova in REAPER.
+- La prima lettura di un file senza hash cache continua a costare quanto prima; file sostituiti/aggiornati vengono ricalcolati.
+- Non compilato. Preparato come sorgente per GitHub Actions.
+- Test: aprire la sessione col Salamander da 384 campioni, suonare sustain, Esc nella FX Chain, misurare tempo al ritorno di NVDA; riaprire e richiudere. Verificare poi salvataggio/riapertura della sessione e dei banchi.

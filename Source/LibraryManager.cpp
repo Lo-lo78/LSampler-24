@@ -1,5 +1,57 @@
 #include "LibraryManager.h"
 #include <juce_cryptography/juce_cryptography.h>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+
+namespace
+{
+// TEST104: One disk read per unchanged file, rather than re-hashing every
+// Sample Set entry on every host state snapshot. REAPER may ask for a VST3
+// state synchronously on its message thread, including near editor closure.
+// The full SHA-256 remains in presets for relocation/integrity checking.
+struct CachedSampleHash
+{
+    juce::String hash;
+    juce::int64 size = -1;
+    juce::int64 modificationTime = 0;
+};
+
+juce::String sampleHashCached(const juce::File& file)
+{
+    if (!file.existsAsFile())
+        return {};
+
+    // The on-disk file is the identity; its modification time and size are
+    // checked before using a cached SHA. The cache is shared across instances.
+    const auto key = file.getFullPathName().toStdString();
+    const auto size = file.getSize();
+    const auto modified = file.getLastModificationTime().toMilliseconds();
+
+    static std::mutex cacheMutex;
+    static std::unordered_map<std::string, CachedSampleHash> hashes;
+    {
+        const std::lock_guard<std::mutex> lock(cacheMutex);
+        const auto found = hashes.find(key);
+        if (found != hashes.end() && found->second.size == size
+            && found->second.modificationTime == modified)
+            return found->second.hash;
+    }
+
+    // Read outside the mutex: never hold the cache lock during disk I/O.
+    const auto digest = juce::SHA256(file).toHexString();
+    if (file.existsAsFile() && file.getSize() == size
+        && file.getLastModificationTime().toMilliseconds() == modified)
+    {
+        const std::lock_guard<std::mutex> lock(cacheMutex);
+        // Bound memory use when browsing many unrelated sample libraries.
+        if (hashes.size() >= 4096 && hashes.find(key) == hashes.end())
+            hashes.clear();
+        hashes[key] = {digest, size, modified};
+    }
+    return digest;
+}
+} // namespace
 
 LibraryManager::LibraryManager(const juce::File& rootOverride)
 {
@@ -46,12 +98,12 @@ juce::File LibraryManager::materialiseSample(const juce::File& source, juce::Str
     // The audio file is shared raw material. Reuse an existing Library file
     // when its contents are identical, even if another slot/bank saved it first.
     const auto sourceSize = source.getSize();
-    const juce::SHA256 sourceHash(source);
+    const auto sourceHash = sampleHashCached(source);
     juce::Array<juce::File> existing;
     samplesDir.findChildFiles(existing, juce::File::findFiles, true);
     for (const auto& candidate : existing)
     {
-        if (candidate.getSize() == sourceSize && juce::SHA256(candidate).toHexString() == sourceHash.toHexString())
+        if (candidate.getSize() == sourceSize && sampleHashCached(candidate) == sourceHash)
             return candidate;
     }
 
@@ -83,11 +135,11 @@ juce::File LibraryManager::materialiseSampleAtRelativePath(const juce::File& sou
     desired.getParentDirectory().createDirectory();
 
     const auto sourceSize = source.getSize();
-    const juce::SHA256 sourceHash(source);
+    const auto sourceHash = sampleHashCached(source);
 
     if (desired.existsAsFile())
     {
-        if (desired.getSize() == sourceSize && juce::SHA256(desired).toHexString() == sourceHash.toHexString())
+        if (desired.getSize() == sourceSize && sampleHashCached(desired) == sourceHash)
             return desired;
 
         desired = uniqueDestination(desired.getParentDirectory(), desired.getFileName());
@@ -163,7 +215,7 @@ juce::String LibraryManager::makeSampleHash(const juce::File& sampleFile) const
 {
     if (!sampleFile.existsAsFile())
         return {};
-    return juce::SHA256(sampleFile).toHexString();
+    return sampleHashCached(sampleFile);
 }
 
 juce::File LibraryManager::resolveSampleReference(const juce::String& reference, const juce::String& expectedHash) const
@@ -177,7 +229,7 @@ juce::File LibraryManager::resolveSampleReference(const juce::String& reference,
 
         if (direct.existsAsFile())
         {
-            if (expectedHash.isEmpty() || juce::SHA256(direct).toHexString().equalsIgnoreCase(expectedHash))
+            if (expectedHash.isEmpty() || sampleHashCached(direct).equalsIgnoreCase(expectedHash))
                 return direct;
         }
     }
@@ -191,7 +243,7 @@ juce::File LibraryManager::resolveSampleReference(const juce::String& reference,
         juce::Array<juce::File> files;
         samplesDir.findChildFiles(files, juce::File::findFiles, true);
         for (const auto& candidate : files)
-            if (juce::SHA256(candidate).toHexString().equalsIgnoreCase(expectedHash))
+            if (sampleHashCached(candidate).equalsIgnoreCase(expectedHash))
                 return candidate;
     }
 
