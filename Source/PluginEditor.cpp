@@ -414,7 +414,7 @@ void LSampler24AudioProcessorEditor::paint(juce::Graphics& g)
     if(!importBrowserActive && !slotLibraryActive && !sampleSetActive) {
         rackgui::frame(g, {16,72,352,490}, "SLOTS / 01-24");
         g.setColour(rackgui::muted);g.setFont(13.0f);
-        g.drawText(globalOpen?"Enter: Confirm  /  Esc: Cancel  /  Alt+V: Value":parameterPage?"Alt+V: Value  /  Alt+L: Loop On-Off  /  Alt+M: Sample Set  /  Alt+E: Slice":"Enter: Edit selected slot  /  Alt+T: Advanced  /  Alt+M: Sample Set  /  Alt+E: Slice",384,588,getWidth()-400,24,juce::Justification::centredLeft);
+        g.drawText(globalOpen?"Enter: Confirm  /  Esc: Cancel  /  Alt+V: Value":parameterPage?"Alt+L: Grid  /  Alt+Shift+L: Loop On-Off  /  Alt+M: Sample Set  /  Alt+E: Slice":"Enter: Edit selected slot  /  Alt+T: Advanced  /  Alt+M: Sample Set  /  Alt+E: Slice",384,588,getWidth()-400,24,juce::Justification::centredLeft);
     }
 }
 
@@ -528,7 +528,7 @@ void LSampler24AudioProcessorEditor::returnToCurrentSlotAndAnnounce()
 
     // Moving keyboard/accessibility focus to the slot already makes NVDA announce
     // the slot title.  Do not send a second explicit announcement here: doing both
-    // caused the same slot message to overlap itself after Alt+L and after closing
+    // caused the same slot message to overlap itself after navigation and closing
     // modal pages such as Properties.
     juce::Timer::callAfterDelay(60,
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), slot]
@@ -949,6 +949,20 @@ void LSampler24AudioProcessorEditor::focusParameterGrid()
     refreshParameterGrid();
     parameterSelector.setEntryAccessibility();
     parameterSelector.grabKeyboardFocus();
+}
+
+void LSampler24AudioProcessorEditor::focusMainParameterGrid()
+{
+    // Alt+L has one meaning on the ordinary editor surfaces: return to the
+    // selected Slot's main parameter grid, retaining the shared grid cursor.
+    // Respect modal dialogs/browsers: they handle their own navigation.
+    if (globalOpen)
+        closeGlobal(true);
+
+    if (!parameterPage)
+        enterSlotParameters();
+    else
+        focusParameterGrid();
 }
 
 void LSampler24AudioProcessorEditor::focusParameterActionButton(juce::TextButton& button)
@@ -1878,6 +1892,16 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         return true; // Sample Set is modal: never leak shortcuts to REAPER.
     }
 
+    // Unified Grid shortcut across Slots, main action buttons, Grid, Value,
+    // and the two accessible editor buttons. The manual numeric text field
+    // commits its value before leaving, further below in sourceIsValueEditor.
+    if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown()
+        && !mods.isCommandDown() && ch == 'l' && !sourceIsValueEditor)
+    {
+        focusMainParameterGrid();
+        return true;
+    }
+
     if (!mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown()
         && mods.isAltDown() && ch == 't' && !parameterPage)
     {
@@ -2109,7 +2133,9 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         if (ch == 's' && mods.isShiftDown()) { chooseSaveSlot(); return true; }
         if (ch == 'b' && mods.isShiftDown()) { chooseSaveBank(); return true; }
         if (ch == 'v' && parameterPage && !sourceIsValueEditor) { focusValue(); return true; }
-        if (ch == 'l' && parameterPage && !globalOpen)
+        // The old Alt+L loop toggle is retained as Alt+Shift+L; plain Alt+L
+        // now focuses the main parameter Grid from every ordinary surface.
+        if (ch == 'l' && mods.isShiftDown() && parameterPage && !globalOpen)
         {
             for (int i = 0; i < static_cast<int>(lsampler::grid.size()); ++i)
                 if (lsampler::grid[static_cast<size_t>(i)].parameter == int(lsampler::P::global_one_shot)
@@ -2163,6 +2189,15 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 });
         };
 
+        if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown()
+            && !mods.isCommandDown() && ch == 'l')
+        {
+            // Finish the typed value, hide the transient editor and only then
+            // transfer focus; this is the same safe sequencing used by Tab.
+            commitEditorValue();
+            closeEditorThen([this] { focusMainParameterGrid(); }, false);
+            return true;
+        }
         if (mods.isAltDown() && ch == 'v' && !mods.isCtrlDown() && !mods.isCommandDown())
         {
             commitEditorValue();
@@ -2345,12 +2380,6 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (isActionButton(source))
     {
-        if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown() && ch == 'l')
-        {
-            returnToCurrentSlotAndAnnounce();
-            return true;
-        }
-
         if (code == juce::KeyPress::tabKey)
         {
             std::array<juce::Component*, 8> buttons {

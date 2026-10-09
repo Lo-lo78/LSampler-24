@@ -1,0 +1,11 @@
+LSampler-24 TEST102 - Alt+L Grid
+
+- Alt+L porta alla griglia principale dei parametri dall'elenco Slot, dai pulsanti della prima pagina, dalla griglia, da Value e dai pulsanti Slice Editor/Sample Set della pagina parametri.
+- Se sei nel campo di editazione numerica, Alt+L conferma prima il valore e poi rimette il focus sulla griglia (come Tab).
+- Se la pagina Global Output e aperta, Alt+L la conferma e torna alla griglia dello Slot; rimane il parametro selezionato in precedenza.
+- Alt+Shift+L mantiene la funzione preesistente Loop On/Off. Alt+L non cambia piu il playback mode.
+- Browser, Slice Editor, Sample Set, Properties, About e popup sono modalita dedicate: non vengono forzati a chiudersi tramite Alt+L.
+- Aggiornata la guida HTML nelle otto lingue e la riga guida della GUI.
+- Non sono stati modificati i parametri VST3, il DSP o i dati dei preset.
+- Prova in REAPER con NVDA: da Slot, pulsante, Grid, Value, campo edit, Alt+L deve focalizzare Grid; Alt+Shift+L alterna Loop; Shift+Tab/Tab restano invariati.
+- Nessuna compilazione locale effettuata.

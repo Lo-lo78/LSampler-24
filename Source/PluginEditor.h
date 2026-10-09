@@ -467,6 +467,7 @@ private:
     void configureValueForSelectedParameter();
     void focusValue();
     void focusParameterGrid();
+    void focusMainParameterGrid();
     void focusParameterActionButton(juce::TextButton& button);
     void changeSelectedParameterValue(int direction, bool coarse);
     void setSelectedParameterBoundary(bool maximum);
