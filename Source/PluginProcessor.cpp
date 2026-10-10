@@ -6,7 +6,160 @@
 #include <set>
 #include <map>
 #include <juce_cryptography/juce_cryptography.h>
+
+// REAPER-specific VST3 extension, following JUCE ReaperEmbeddedViewPluginDemo.
+// This header is available in the JUCE 8 VST3 target.
+JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE("-Wnon-virtual-dtor")
+#include <pluginterfaces/base/funknown.h>
+#include <pluginterfaces/vst/ivsthostapplication.h>
+JUCE_END_IGNORE_WARNINGS_GCC_LIKE
+
 using namespace lsampler;
+
+// Separate visibility from actual automation activity. Hiding a REAPER lane
+// leaves its envelope ACTIVE and locks the plugin's control in Read mode.
+// REAPER's documented GetSetEnvelopeInfo_String("ACTIVE") can disable it while
+// preserving the user-recorded points; "VISIBLE" merely affects the UI.
+namespace lsampler_reaper {
+using namespace Steinberg;
+class IReaperHostApplication : public FUnknown
+{
+public:
+    virtual void* PLUGIN_API getReaperApi(CStringA name) = 0;
+    virtual void* PLUGIN_API getReaperParent(uint32 type) = 0;
+    virtual void* PLUGIN_API reaperExtended(uint32 call, void*, void*, void*) = 0;
+    static const FUID iid;
+};
+DEF_CLASS_IID(IReaperHostApplication)
+}
+
+class LSamplerReaperHostExtension final : public juce::VST3ClientExtensions
+{
+public:
+    ~LSamplerReaperHostExtension() override
+    {
+        if (host != nullptr) host->release();
+    }
+    void setIHostApplication(Steinberg::FUnknown* application) override
+    {
+        if (host != nullptr) { host->release(); host = nullptr; }
+        if (application == nullptr) return;
+        void* result = nullptr;
+        if (application->queryInterface(lsampler_reaper::IReaperHostApplication::iid, &result)
+            == Steinberg::kResultOk)
+            host = static_cast<lsampler_reaper::IReaperHostApplication*>(result);
+    }
+    bool available() const noexcept { return host != nullptr; }
+
+    int getActive(const LSampler24AudioProcessor& processor, juce::AudioProcessorParameter* param) const
+    {
+        const auto fx = findFocusedFx(processor, param);
+        if (!fx) return -1;
+        const auto getEnvelope = getApi<void* (*)(void*, int, int, bool)>("GetFXEnvelope");
+        const auto attribute = getApi<bool (*)(void*, const char*, char*, bool)>("GetSetEnvelopeInfo_String");
+        if (!getEnvelope || !attribute) return -1;
+        auto* envelope = getEnvelope(fx.track, fx.index, fx.parameter, false);
+        if (envelope == nullptr) return 0; // Not created: it cannot automate.
+        char active[32] = {};
+        if (!attribute(envelope, "ACTIVE", active, false)) return -1;
+        return active[0] == '1' ? 1 : active[0] == '0' ? 0 : -1;
+    }
+
+    bool toggle(LSampler24AudioProcessor& processor, juce::AudioProcessorParameter* param)
+    {
+        const auto fx = findFocusedFx(processor, param);
+        if (!fx) return false;
+        const auto getEnvelope = getApi<void* (*)(void*, int, int, bool)>("GetFXEnvelope");
+        const auto attribute = getApi<bool (*)(void*, const char*, char*, bool)>("GetSetEnvelopeInfo_String");
+        if (!getEnvelope || !attribute) return false;
+        // Check existence/ACTIVE first; enabling a missing envelope creates it.
+        void* env = getEnvelope(fx.track, fx.index, fx.parameter, false);
+        bool wasActive = false;
+        if (env != nullptr)
+        {
+            char active[32] = {};
+            if (!attribute(env, "ACTIVE", active, false)) return false;
+            if (active[0] != '0' && active[0] != '1') return false;
+            wasActive = active[0] == '1';
+        }
+        if (!wasActive && env == nullptr)
+            env = getEnvelope(fx.track, fx.index, fx.parameter, true);
+        if (env == nullptr) return false;
+        auto set = [attribute, env] (const char* name, const char* value)
+        {
+            char text[2] { value[0], 0 };
+            return attribute(env, name, text, true);
+        };
+        // ACTIVE must succeed before touching VISIBLE. An invisible, active
+        // envelope must never be mistaken for a disabled one.
+        if (!set("ACTIVE", wasActive ? "0" : "1")) return false;
+        if (wasActive)
+        {
+            set("ARM", "0");
+            set("VISIBLE", "0");
+        }
+        else
+        {
+            set("VISIBLE", "1");
+            set("ARM", "1");
+        }
+        if (auto adjust = getApi<void (*)(bool)>("TrackList_AdjustWindows")) adjust(false);
+        if (auto update = getApi<void (*)()>("UpdateArrange")) update();
+        return true;
+    }
+private:
+    template <class T> T getApi(const char* name) const
+    {
+        return host != nullptr ? reinterpret_cast<T>(host->getReaperApi(name)) : nullptr;
+    }
+    struct FocusedFx { void* track = nullptr; int index = -1; int parameter = -1;
+        explicit operator bool() const { return track != nullptr && index >= 0 && parameter >= 0; } };
+    FocusedFx findFocusedFx(const LSampler24AudioProcessor& processor,
+                            juce::AudioProcessorParameter* param) const
+    {
+        if (host == nullptr || param == nullptr) return {};
+        // Never address another instance when several LSampler-24 FX are open.
+        // The host supplies the owning track for THIS VST3 instance.
+        auto* owner = host->getReaperParent(1);
+        if (owner == nullptr) return {};
+        const auto focused = getApi<bool (*)(int, int*, int*, int*, int*, int*)>("GetTouchedOrFocusedFX");
+        const auto getTrack = getApi<void* (*)(void*, int)>("GetTrack");
+        const auto getMaster = getApi<void* (*)(void*)>("GetMasterTrack");
+        const auto getParamName = getApi<bool (*)(void*, int, int, char*, int)>("TrackFX_GetParamName");
+        if (!focused || !getTrack || !getMaster || !getParamName) return {};
+        int trackIdx = -2, itemIdx = -2, takeIdx = -2, fxIdx = -1, ignored = -1;
+        if (!focused(1, &trackIdx, &itemIdx, &takeIdx, &fxIdx, &ignored)
+            || itemIdx != -1 || fxIdx < 0) return {};
+        void* focusedTrack = trackIdx == -1 ? getMaster(nullptr) : getTrack(nullptr, trackIdx);
+        if (focusedTrack == nullptr || focusedTrack != owner) return {};
+        const int parameter = processor.getParameters().indexOf(param);
+        if (parameter < 0) return {};
+        char name[512] = {};
+        if (!getParamName(owner, fxIdx, parameter, name, int(sizeof(name)))) return {};
+        // Guard the parameter index against host-specific reordering.
+        if (!juce::String::fromUTF8(name).trim().equalsIgnoreCase(param->getName(512).trim())) return {};
+        return { owner, fxIdx, parameter };
+    }
+    lsampler_reaper::IReaperHostApplication* host = nullptr;
+};
+
+juce::VST3ClientExtensions* LSampler24AudioProcessor::getVST3ClientExtensions()
+{
+    return reaperHostExtension.get();
+}
+bool LSampler24AudioProcessor::hasReaperEnvelopeApi() const noexcept
+{
+    return reaperHostExtension != nullptr && reaperHostExtension->available();
+}
+int LSampler24AudioProcessor::getReaperEnvelopeActive(juce::AudioProcessorParameter* p) const
+{
+    return reaperHostExtension != nullptr ? reaperHostExtension->getActive(*this, p) : -1;
+}
+bool LSampler24AudioProcessor::toggleReaperEnvelopeActive(juce::AudioProcessorParameter* p)
+{
+    return reaperHostExtension != nullptr && reaperHostExtension->toggle(*this, p);
+}
+
 
 namespace {
 
@@ -105,6 +258,7 @@ LSampler24AudioProcessor::LSampler24AudioProcessor(const juce::File& libraryRoot
     static_assert(std::atomic<int>::is_always_lock_free);
     static_assert(std::atomic<unsigned>::is_always_lock_free);
     createHostParameters();
+    reaperHostExtension = std::make_unique<LSamplerReaperHostExtension>();
     markAudioStateDirty();
 }
 

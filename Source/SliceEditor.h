@@ -15,6 +15,7 @@ public:
     std::function<bool(juce::AudioProcessorParameter*, juce::Component*)> onToggleHostAutomationEnvelope;
     std::function<int(juce::AudioProcessorParameter*)> onHostAutomationEnvelopeState;
     void refreshAutomationIndicator();
+    juce::String automationAnnouncement() const { return currentLine(); }
     bool keyPressed(const juce::KeyPress&) override;
     bool keyStateChanged(bool) override {return true;}
     void paint(juce::Graphics&) override;

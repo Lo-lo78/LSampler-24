@@ -1411,7 +1411,7 @@ int LSampler24AudioProcessorEditor::slotCellIndex(const juce::Component* compone
 // while the menu is still alive, on the UI/message thread.
 namespace
 {
-enum class HostEnvelopeCommand { none, show, hide, toggle };
+enum class HostEnvelopeCommand { none, show, hide, toggle, activate, deactivate };
 
 HostEnvelopeCommand classifyHostEnvelopeItem(const juce::String& original)
 {
@@ -1433,6 +1433,10 @@ HostEnvelopeCommand classifyHostEnvelopeItem(const juce::String& original)
                        || label.contains("automationsspur");
     if (!envelope) return HostEnvelopeCommand::none;
 
+    if (label.startsWith("disable ") || label.startsWith("deactivate ") || label.startsWith("bypass ")
+        || label.startsWith("disattiva ")) return HostEnvelopeCommand::deactivate;
+    if (label.startsWith("enable ") || label.startsWith("activate ")
+        || label.startsWith("attiva ")) return HostEnvelopeCommand::activate;
     if (label.startsWith("hide ") || label.startsWith("remove ")
         || label.startsWith("nascondi ") || label.startsWith("ocultar ")
         || label.startsWith("masquer ") || label.contains(" ausblenden"))
@@ -1454,6 +1458,9 @@ HostEnvelopeCommand classifyHostEnvelopeItem(const juce::String& original)
 // The host may describe the action as Show/Hide, or provide a ticked toggle.
 int LSampler24AudioProcessorEditor::getHostAutomationEnvelopeState(juce::AudioProcessorParameter* param) const
 {
+    if (processor.hasReaperEnvelopeApi())
+        return processor.getReaperEnvelopeActive(param);
+
     if (param == nullptr) return -1;
     auto* host = getHostContext();
     if (host == nullptr) return -1;
@@ -1472,12 +1479,9 @@ int LSampler24AudioProcessorEditor::getHostAutomationEnvelopeState(juce::AudioPr
         if (kind == HostEnvelopeCommand::none) continue;
         ++matches;
         if (matches > 1) return -1; // ambiguous: don't label the wrong parameter
-        if (kind == HostEnvelopeCommand::hide)
-            state = 1;
-        else if (kind == HostEnvelopeCommand::toggle)
-            state = item.isTicked ? 1 : 0;
-        else
-            state = item.isTicked ? 1 : 0; // show item ticked only when active
+        if (kind == HostEnvelopeCommand::deactivate) state = 1;
+        else if (kind == HostEnvelopeCommand::activate) state = 0;
+        else state = -1; // show/hide means only visibility, not activity
     }
     return matches == 1 ? state : -1;
 }
@@ -1534,51 +1538,59 @@ void LSampler24AudioProcessorEditor::syncSampleSetAutomationIndicator(bool force
 }
 
 bool LSampler24AudioProcessorEditor::toggleHostAutomationEnvelope(juce::AudioProcessorParameter* param,
-                                                                   juce::Component*)
+                                                                   juce::Component* source)
 {
     if (param == nullptr) return false;
+
+    auto announceCompact = [this, param, source]()
+    {
+        syncSelectedAutomationIndicator(true);
+        syncSampleSetAutomationIndicator(true);
+        if (sliceEditor) sliceEditor->refreshAutomationIndicator();
+        juce::String line;
+        if (sampleSetActive) line = sampleSetParameterText();
+        else if (parameterPage) line = parameterCellText(selectedParameter);
+        else if (sliceEditor) line = sliceEditor->automationAnnouncement();
+        else line = param->getName(160);
+        lsampler::announceToActiveScreenReader(source != nullptr ? *source : status, line);
+    };
+
+    if (processor.hasReaperEnvelopeApi())
+    {
+        // REAPER extension: ACTIVE off actually releases control of the FX
+        // parameter; VISIBLE off alone (TEST115) only concealed the lane.
+        if (processor.toggleReaperEnvelopeActive(param))
+        {
+            announceCompact();
+            return true;
+        }
+        lsampler::announceToActiveScreenReader(source != nullptr ? *source : status,
+            "Automation unavailable for this FX");
+        return true; // Never fall through to the misleading Hide-only action.
+    }
+
     auto* host = getHostContext();
     if (host == nullptr) return false;
     auto context = host->getContextMenuForParameter(param);
     if (context == nullptr) return false;
-
     const auto menu = context->getEquivalentPopupMenu();
     juce::PopupMenu::MenuItemIterator iterator(menu, true);
     std::function<void()> command;
-    auto kind = HostEnvelopeCommand::none;
-    bool checked = false;
     int matches = 0;
     while (iterator.next())
     {
         const auto& item = iterator.getItem();
-        if (!item.isEnabled || !item.action || item.isSeparator || item.isSectionHeader)
-            continue;
-        const auto candidate = classifyHostEnvelopeItem(item.text);
-        if (candidate == HostEnvelopeCommand::none) continue;
-        ++matches;
-        if (matches != 1) break; // Ambiguous host menu: don't guess.
+        if (!item.isEnabled || !item.action || item.isSeparator || item.isSectionHeader) continue;
+        const auto kind = classifyHostEnvelopeItem(item.text);
+        // For all other DAWs prefer a REAL activation/deactivation action.
+        // Never call Hide, which leaves automation active and the value locked.
+        if (kind != HostEnvelopeCommand::activate && kind != HostEnvelopeCommand::deactivate) continue;
+        if (++matches > 1) break;
         command = item.action;
-        kind = candidate;
-        checked = item.isTicked;
     }
-
     if (matches != 1 || !command) return false;
-    // JUCE 8.0.15 captures the host's IContextMenu in this action. The action
-    // must be invoked now, before both context and menu are destroyed.
-    command();
-    const bool hiding = kind == HostEnvelopeCommand::hide
-                     || (kind != HostEnvelopeCommand::hide && checked);
-    const juce::String statusText = hiding ? "Automation lane: hide requested"
-                                           : "Automation lane: show requested";
-    lsampler::announceToActiveScreenReader(status, statusText + ". " + param->getName(160));
-    juce::Timer::callAfterDelay(120,
-        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
-        {
-            if (safeThis == nullptr) return;
-            safeThis->syncSelectedAutomationIndicator(true);
-            safeThis->syncSampleSetAutomationIndicator(true);
-            if (safeThis->sliceEditor) safeThis->sliceEditor->refreshAutomationIndicator();
-        });
+    command(); // callback must run while host context is alive
+    announceCompact();
     return true;
 }
 

@@ -9,6 +9,8 @@
 #include <vector>
 #include <functional>
 
+class LSamplerReaperHostExtension;
+
 class LSampler24AudioProcessor : public juce::AudioProcessor, private juce::AsyncUpdater
 {
 public:
@@ -33,6 +35,12 @@ public:
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
+    juce::VST3ClientExtensions* getVST3ClientExtensions() override;
+
+    // REAPER-only host integration: true envelope ACTIVE state, not lane visibility.
+    bool hasReaperEnvelopeApi() const noexcept;
+    int getReaperEnvelopeActive(juce::AudioProcessorParameter*) const; // -1 unknown
+    bool toggleReaperEnvelopeActive(juce::AudioProcessorParameter*);
 
     const juce::String getName() const override { return JucePlugin_Name; }
     bool acceptsMidi() const override { return true; }
@@ -401,5 +409,6 @@ private:
     SlotState slotClipboard;
     bool slotClipboardHasData = false;
 
+    std::unique_ptr<LSamplerReaperHostExtension> reaperHostExtension;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LSampler24AudioProcessor)
 };

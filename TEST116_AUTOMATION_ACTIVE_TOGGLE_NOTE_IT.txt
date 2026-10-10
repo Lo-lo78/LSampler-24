@@ -1,0 +1,29 @@
+TEST116 - Ctrl+Shift+A: disattivazione reale automazione e messaggi sintetici
+
+Partenza: TEST115. Nessuna compilazione eseguita.
+
+DIFFERENZA: REAPER mantiene ACTIVE=1 anche quando VISIBLE=0. TEST115 nascondeva
+la lane, lasciando la lettura dell’automazione a controllare il parametro.
+
+REAPER VST3: integrazione IReaperHostApplication secondo il demo ufficiale JUCE.
+Solo dopo aver verificato il track pointer dell'istanza e l'indice/nome del
+parametro, il comando Ctrl+Shift+A legge/modifica ACTIVE, VISIBLE e ARM mediante
+GetFXEnvelope e GetSetEnvelopeInfo_String.
+
+Prima pressione: ACTIVE=1, VISIBLE=1, ARM=1.
+Seconda pressione: ACTIVE=0, VISIBLE=0, ARM=0.
+Le curve e i punti registrati NON vengono cancellati: la disattivazione libera
+il parametro e consente in futuro di riattivare i dati registrati.
+
+NVDA: unicamente 'Nome, valore, Auto' se ACTIVE=1; altrimenti 'Nome, valore'.
+Il testo del controllo contiene lo stato, disponibile per NVDA+Freccia Su.
+
+Altre DAW: il menu standard viene usato solo se offre esplicitamente una voce
+Activate/Deactivate; un semplice Show/Hide non viene piu' utilizzato per
+fingere la disattivazione.
+
+TEST IN REAPER: applicare a un parametro con envelope, disattivare con
+Ctrl+Shift+A e verificare la possibilita' di muovere nuovamente il valore,
+anche durante Play/Read. Verificare la visibilita' e il ritorno di Auto.
+Controllare anche piu' istanze dello stesso VST3: la verifica del nome FX/parametro
+impedisce interventi sull'effetto sbagliato.
