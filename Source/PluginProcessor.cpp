@@ -3,6 +3,7 @@
 #include "HostSlicePreparation.h"
 #include "SamplePoolProgress.h"
 #include <cmath>
+#include <limits>
 #include <set>
 #include <map>
 #include <juce_cryptography/juce_cryptography.h>
@@ -1403,35 +1404,105 @@ void LSampler24AudioProcessor::requestSampleBoundaryAudition(bool endBoundary, b
 }
 
 void LSampler24AudioProcessor::applyZeroCrossing(bool loopWindow,int loopIndex) {
-    // A native UI command: no audio-thread scan, bridge, pulse or request/result state.
+    // UI-only operation. Keep the existing command, percentages and destructive
+    // Sample Window trim; improve only how the nearest zero crossings are picked.
     const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
-    auto& slot=slots[size_t(currentSlot.load())]; if(!slot.sample || slot.sample->audio.getNumSamples()<2)return;
+    auto& slot=slots[size_t(currentSlot.load())];
+    if(!slot.sample || slot.sample->audio.getNumSamples()<3)return;
     auto& p=slot.parameters; const auto& a=slot.sample->audio;
     const int count=a.getNumSamples();
     const int first=loopWindow?std::clamp(int(count*p[P::sample_start]*.01),0,count-2):0;
-    const int last=loopWindow?std::clamp(int(count*p[P::sample_end]*.01),first+1,count):count;
-    auto snap=[&](double pct) {
-        const int target=std::clamp(first+int(std::round((last-first)*pct*.01)),first,last-1);
-        auto crosses=[&](int at) {return sampleCrossesZero(a,at,first,last);};
-        int found=target;
-        for(int distance=0;distance<last-first;++distance) {
-            if(crosses(target-distance)){found=target-distance;break;}
-            if(crosses(target+distance)){found=target+distance;break;}
+    const int last=loopWindow?std::clamp(int(count*p[P::sample_end]*.01),first+2,count):count;
+    if(last-first<3)return;
+
+    // Stay close to the boundaries chosen by the user. A full-file scan could
+    // silently move an endpoint seconds away if there is no suitable crossing.
+    // 40 ms covers even rather low fundamentals; it is capped for very high
+    // source rates, and is never used in the audio callback.
+    const double sourceRate=slot.sample->sourceSampleRate>1.0
+        ?slot.sample->sourceSampleRate:44100.0;
+    const int radius=juce::jlimit(32,4096,int(std::ceil(sourceRate*.040)));
+    const double peak=std::max(1.0e-5,slot.sample->peak);
+    struct Crossing {int frame; double score;};
+    auto candidates=[&](int target) {
+        std::vector<Crossing> choices;
+        const int from=std::max(first+1,target-radius);
+        const int to=std::min(last-1,target+radius);
+        const int channels=a.getNumChannels();
+        for(int i=from;i<=to;++i) {
+            if(!sampleCrossesZero(a,i,first,last))continue;
+            double amplitude=0.0;
+            for(int ch=0;ch<channels;++ch)
+                amplitude+=std::abs(double(a.getSample(ch,i-1)))
+                          +std::abs(double(a.getSample(ch,i)));
+            // Prefer a nearby crossing that is also quiet on BOTH channels.
+            // The old criterion could accept a crossing on only one stereo side.
+            const double nearZero=amplitude/(2.0*channels*peak);
+            const double proximity=double(std::abs(i-target))/radius;
+            choices.push_back({i,proximity*.8+std::min(2.0,nearZero)*.2});
         }
-        return 100.0*(found-first)/(last-first);
+        std::sort(choices.begin(),choices.end(),[](const Crossing& x,const Crossing& y) {
+            return x.score<y.score;
+        });
+        if(choices.size()>32)choices.resize(32);
+        // No good candidate nearby: do not relocate the cut across the sample.
+        if(choices.empty())choices.push_back({target,0.0});
+        return choices;
     };
+    auto targetFrame=[&](double percent) {
+        return std::clamp(first+int(std::round((last-first)*percent*.01)),first+1,last-1);
+    };
+
     if(loopWindow) {
         auto& l=p.loops[size_t(juce::jlimit(0,9,loopIndex))];
-        l[size_t(L::start)]=snap(l[size_t(L::start)]);l[size_t(L::end)]=snap(l[size_t(L::end)]);
+        const auto starts=candidates(targetFrame(l[size_t(L::start)]));
+        const auto ends=candidates(targetFrame(l[size_t(L::end)]));
+        int bestStart=-1,bestEnd=-1;
+        double bestScore=std::numeric_limits<double>::infinity();
+        for(const auto& st:starts)for(const auto& en:ends) {
+            if(en.frame<=st.frame+1)continue;
+            // Equal-polarity slopes and similar waveforms across the splice
+            // are more useful than two unrelated points at zero amplitude.
+            double waveformMismatch=0.0;
+            int comparisons=0;
+            int oppositeSlopes=0;
+            for(int ch=0;ch<a.getNumChannels();++ch) {
+                const double startSlope=double(a.getSample(ch,st.frame))
+                                       -double(a.getSample(ch,st.frame-1));
+                const double endSlope=double(a.getSample(ch,en.frame))
+                                     -double(a.getSample(ch,en.frame-1));
+                if(startSlope*endSlope<0.0)++oppositeSlopes;
+                for(int offset=-6;offset<=6;++offset) {
+                    if(st.frame+offset<first || st.frame+offset>=last
+                       ||en.frame+offset<first || en.frame+offset>=last)continue;
+                    waveformMismatch+=std::min(2.0,std::abs(double(a.getSample(ch,st.frame+offset))
+                                                            -double(a.getSample(ch,en.frame+offset)))/peak);
+                    ++comparisons;
+                }
+            }
+            const double averageMismatch=comparisons>0?waveformMismatch/comparisons:0.0;
+            const double slopePenalty=double(oppositeSlopes)/a.getNumChannels();
+            const double score=st.score+en.score+.8*averageMismatch+.65*slopePenalty;
+            if(score<bestScore) {bestScore=score;bestStart=st.frame;bestEnd=en.frame;}
+        }
+        if(bestStart<0)return;
+        l[size_t(L::start)]=100.0*(bestStart-first)/(last-first);
+        l[size_t(L::end)]=100.0*(bestEnd-first)/(last-first);
     } else {
-        // Sample-window Zero Crossing is a destructive trim command. Snap the
-        // selected window to zero crossings, keep only that audio, then make
-        // the resulting sample the new full 0..100 % window.
-        const double snappedStart = snap(p[P::sample_start]);
-        const double snappedEnd = snap(p[P::sample_end]);
-        const int startSample = std::clamp(int(std::floor(count * snappedStart * .01)), 0, count - 2);
-        const int endSample = std::clamp(int(std::ceil(count * snappedEnd * .01)), startSample + 1, count);
-        const int newCount = endSample - startSample;
+        // Use the exact integer frame boundaries after snapping. Converting a
+        // chosen crossing to a percentage and then floor/ceil-ing it again
+        // could move the cut OFF that crossing by one sample.
+        const auto starts=candidates(targetFrame(p[P::sample_start]));
+        const auto ends=candidates(targetFrame(p[P::sample_end]));
+        int startSample=-1,endSample=-1;
+        double bestScore=std::numeric_limits<double>::infinity();
+        for(const auto& st:starts)for(const auto& en:ends) {
+            if(en.frame<=st.frame+1)continue;
+            const double score=st.score+en.score;
+            if(score<bestScore) {bestScore=score;startSample=st.frame;endSample=en.frame;}
+        }
+        if(startSample<0)return;
+        const int newCount=endSample-startSample;
 
         auto trimmed = std::make_shared<SharedSample>();
         trimmed->audio.setSize(a.getNumChannels(), newCount, false, false, true);

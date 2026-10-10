@@ -1,0 +1,33 @@
+LSampler-24 TEST121 - Ricerca Zero Crossing migliorata
+
+Base: TEST120. Sorgente soltanto, senza compilazione locale.
+
+Modifica circoscritta a Source/PluginProcessor.cpp.
+Nessun cambiamento a comandi, parametri, ID VST3, motore audio o salvataggio banchi.
+
+- Il pulsante Zero Crossing resta raggiungibile come prima: si regolano
+  Sample Start e Sample End (oppure Loop Start/End), poi si preme Invio.
+- La ricerca valuta crossing vicini agli estremi scelti (40 ms, limite 4096
+  campioni), senza attraversare arbitrariamente un WAV lungo in cerca di uno zero.
+- I candidati sono confrontati per vicinanza e livello residuo su tutti i
+  canali. Nei loop si considera anche la direzione della pendenza e la
+  somiglianza di 13 campioni attorno alla giunzione.
+- Per il taglio distruttivo Sample Window la copia usa direttamente i frame
+  selezionati: non si ricalcola il punto passando dai percentuali, evitando
+  scostamenti di un campione.
+- Se non esiste alcuna coppia di punti valida, non si applica un nuovo taglio.
+- Non vengono creati loop, modificati inviluppi o cambiati gli altri effetti.
+
+Nota: due zero crossing non garantiscono un loop completamente trasparente,
+soprattutto con suoni evolutivi o stereo con fasi differenti. Questa versione
+rimane un affinamento del comando manuale, non un Auto Loop.
+
+Verifiche statiche effettuate:
+- Tools/verify-test59-reference.py: PASS
+- Tools/verify-vst3-automation-source.py: PASS
+- Tools/verify-bank-macro-test110.py: PASS
+- Tools/verify-test114-ctrl-shift-a.py: PASS
+
+Test consigliato in REAPER: confrontare tagli Start/End su WAV mono e stereo,
+verificare che lo snapping non alteri troppo gli estremi, ascoltare note lunghe
+con Loop Crossfade sia a zero sia maggiore di zero, e risalvare/ricaricare lo Slot.
