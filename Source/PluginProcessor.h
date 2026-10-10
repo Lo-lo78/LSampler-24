@@ -104,6 +104,7 @@ public:
     bool isLibraryPreviewPlaying() const noexcept { return libraryPreviewPlayingAtomic.load(std::memory_order_relaxed); }
     bool saveBankPreset(const juce::File& presetFile, juce::String& error);
     bool loadBankPreset(const juce::File& presetFile, juce::String& error);
+    juce::String getCurrentBankName() const; // Name of last loaded/saved Bank, for Save As.
     bool importFilesToLibrary(const juce::Array<juce::File>& sourceFiles, int& importedSlots, int& skippedFiles, juce::String& error);
     bool importFolderToLibrary(const juce::File& sourceFolder, int& importedSlots, int& skippedFiles, juce::String& error);
     bool exportLibraryArchive(const juce::File& targetFile, int& exportedSlots, int& exportedSamples, juce::String& error);
@@ -406,6 +407,7 @@ private:
     bool libraryPreviewPlaying = false;
     int libraryPreviewNote = 60;
     LibraryManager library;
+    juce::String currentBankName; // Metadata only; protected by stateLock.
     SlotState slotClipboard;
     bool slotClipboardHasData = false;
 

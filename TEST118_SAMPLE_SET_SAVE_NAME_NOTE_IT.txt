@@ -1,0 +1,13 @@
+LSampler-24 0.99.11 TEST118 - Sample Set, preview browser e nomi di salvataggio
+
+Modifiche rispetto a TEST117:
+1. Alt+M, F2: Ctrl+Freccia Su/Giu seleziona Sample precedente/successivo (1-16), mantenendo F2 e la selezione del parametro; bordi silenziosi.
+2. Alt+M, F2/F3: bordi silenziosi per cursore e variazioni ai valori limite. F3 ha solo Variation Mode: rimosse due celle fantasma.
+3. Alt+M, F1, browser Samples: stato Preview On/Off memorizzato nella preferenza f6Preview delle impostazioni utente; conservato dopo caricamento/annullamento Esc e successive aperture dell'editor. Lo stop dell'audio all'uscita e' distinto dalla preferenza.
+4. Alt+Shift+B: dialogo Save Bank propone il nome dell'ultimo banco caricato/salvato, recuperato anche dallo stato REAPER dopo la riapertura del progetto.
+5. Alt+Shift+S: dialogo Save Slot propone il nome dello slot/campione/preset in uso, evitando nomi basati su data quando un campione e' disponibile.
+6. Save Slot e Save Bank: conferma esplicita prima della sovrascrittura del file di destinazione effettivo. Per lo Slot il nome reale ha il prefisso Slot_ e l'estensione .lsampler-24-s.
+
+Compatibilita': parametri VST3 e DSP invariati; nessuna compilazione locale.
+Verifiche statiche: verify-test59-reference.py, verify-vst3-automation-source.py, verify-bank-macro-test110.py, verify-test114-ctrl-shift-a.py - PASS.
+Da provare in REAPER/NVDA: focus e navigazione F2/F3, persistenza Preview F1, Load Bank->Save Bank, Import WAV->Save Slot, annullamento alla conferma di sovrascrittura.

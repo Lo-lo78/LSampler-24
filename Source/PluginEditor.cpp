@@ -1936,6 +1936,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             if (slotLibraryForSampleSet)
             {
                 sampleSetBrowserPreviewEnabled = !sampleSetBrowserPreviewEnabled;
+                saveSlotLibraryNavigationState(); // Persist On/Off even after closing the editor.
                 if (!sampleSetBrowserPreviewEnabled)
                 {
                     processor.requestImportPreviewStop();
@@ -2255,6 +2256,26 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 return true;
             }
         }
+        // TEST119: Ctrl+Up/Down changes the current sample on F2 and F3 only.
+        // Keep the current page, selected parameter (sampleSetField), Grid/Value
+        // mode and keyboard focus intact, so editing immediately targets the
+        // corresponding parameter of the newly selected sample.  F1 is excluded.
+        // The edges at Sample 1/16 are silent.
+        if ((sampleSetPage == 1 || sampleSetPage == 2)
+            && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
+            && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
+        {
+            const int next = sampleSetIndex + (code == juce::KeyPress::upKey ? -1 : 1);
+            if (juce::isPositiveAndBelow(next, LSampler24AudioProcessor::sampleSetSize))
+            {
+                sampleSetIndex = next;
+                refreshSampleSetCell(false);
+                lsampler::announceToActiveScreenReader(sampleSetCell,
+                    "Sample " + juce::String(sampleSetIndex + 1) + ", " + sampleSetParameterText());
+                previewSampleSetEntry(false);
+            }
+            return true;
+        }
         if (sampleSetGridFocus && mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown() && !mods.isCommandDown() && ch == 'v')
         {
             sampleSetValueFocus = !sampleSetValueFocus;
@@ -2343,6 +2364,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 if (code == juce::KeyPress::rightKey)    { moveSampleSetGridColumn(1); return true; }
                 if (code == juce::KeyPress::pageUpKey)   { moveSampleSetGridColumn(-1); return true; }
                 if (code == juce::KeyPress::pageDownKey) { moveSampleSetGridColumn(1); return true; }
+                if (sampleSetPage == 2 && (code == juce::KeyPress::homeKey
+                    || code == juce::KeyPress::endKey)) return true; // Single global parameter: silent borders.
                 if (code == juce::KeyPress::homeKey)
                 {
                     constexpr int rows = 8;
@@ -3591,9 +3614,9 @@ void LSampler24AudioProcessorEditor::moveSampleSetEntry(int direction)
 
 void LSampler24AudioProcessorEditor::moveSampleSetField(int direction)
 {
-    if (!sampleSetGridFocus || sampleSetValueFocus) return;
+    if (!sampleSetGridFocus || sampleSetValueFocus || sampleSetPage == 2) return;
     constexpr int rows = 8;
-    const int total = sampleSetPage == 2 ? 3 : 2;
+    const int total = 2;
     const int column = sampleSetField / rows;
     const int columnStart = column * rows;
     const int columnEnd = juce::jmin(total - 1, columnStart + rows - 1);
@@ -3605,9 +3628,9 @@ void LSampler24AudioProcessorEditor::moveSampleSetField(int direction)
 
 void LSampler24AudioProcessorEditor::moveSampleSetGridColumn(int direction)
 {
-    if (!sampleSetGridFocus || sampleSetValueFocus) return;
+    if (!sampleSetGridFocus || sampleSetValueFocus || sampleSetPage == 2) return;
     constexpr int rows = 8;
-    const int total = sampleSetPage == 2 ? 3 : 2;
+    const int total = 2;
     const int next = sampleSetField + (direction < 0 ? -rows : rows);
     if (next < 0 || next >= total) return;
     sampleSetField = next;
@@ -3619,21 +3642,24 @@ void LSampler24AudioProcessorEditor::setSampleSetBoundary(bool maximum)
     if (!sampleSetGridFocus) return;
     const int slot = processor.getCurrentSlot();
     const auto info = processor.getSampleSetEntry(slot, sampleSetIndex);
-    if (sampleSetField == 0)
+    if (sampleSetPage == 2)
     {
-        processor.setSampleSetVelocityRange(slot, sampleSetIndex,
-            maximum ? info.velocityHigh : 1, info.velocityHigh);
+        const int next = maximum ? LSampler24AudioProcessor::variationShuffleNoRepeat
+                                 : LSampler24AudioProcessor::variationOff;
+        if (processor.getVariationMode(slot) == next) return; // Silent boundary.
+        processor.setVariationMode(slot, next);
+    }
+    else if (sampleSetField == 0)
+    {
+        const int next = maximum ? info.velocityHigh : 1;
+        if (info.velocityLow == next) return;
+        processor.setSampleSetVelocityRange(slot, sampleSetIndex, next, info.velocityHigh);
     }
     else if (sampleSetField == 1)
     {
-        processor.setSampleSetVelocityRange(slot, sampleSetIndex, info.velocityLow,
-            maximum ? 127 : info.velocityLow);
-    }
-    else
-    {
-        processor.setVariationMode(slot, maximum
-            ? LSampler24AudioProcessor::variationShuffleNoRepeat
-            : LSampler24AudioProcessor::variationOff);
+        const int next = maximum ? 127 : info.velocityLow;
+        if (info.velocityHigh == next) return;
+        processor.setSampleSetVelocityRange(slot, sampleSetIndex, info.velocityLow, next);
     }
     refreshSampleSetCell(true);
 }
@@ -3642,23 +3668,29 @@ void LSampler24AudioProcessorEditor::changeSampleSetValue(int direction, bool co
 {
     if (!sampleSetGridFocus) return;
     const int slot = processor.getCurrentSlot();
-    auto info = processor.getSampleSetEntry(slot, sampleSetIndex);
+    const auto info = processor.getSampleSetEntry(slot, sampleSetIndex);
     const int amount = stepWidths[static_cast<size_t>(stepWidthIndex)] * (coarse ? valuePageStep : 1);
-    if (sampleSetField == 0)
+    if (sampleSetPage == 2)
     {
-        const int next = juce::jlimit(1, info.velocityHigh, info.velocityLow + (direction < 0 ? -amount : amount));
+        const int current = processor.getVariationMode(slot);
+        const int next = juce::jlimit<int>(LSampler24AudioProcessor::variationOff,
+            LSampler24AudioProcessor::variationShuffleNoRepeat, current + (direction < 0 ? -1 : 1));
+        if (next == current) return; // Silent at the minimum and maximum.
+        processor.setVariationMode(slot, next);
+    }
+    else if (sampleSetField == 0)
+    {
+        const int next = juce::jlimit(1, info.velocityHigh,
+            info.velocityLow + (direction < 0 ? -amount : amount));
+        if (next == info.velocityLow) return;
         processor.setSampleSetVelocityRange(slot, sampleSetIndex, next, info.velocityHigh);
     }
     else if (sampleSetField == 1)
     {
-        const int next = juce::jlimit(info.velocityLow, 127, info.velocityHigh + (direction < 0 ? -amount : amount));
+        const int next = juce::jlimit(info.velocityLow, 127,
+            info.velocityHigh + (direction < 0 ? -amount : amount));
+        if (next == info.velocityHigh) return;
         processor.setSampleSetVelocityRange(slot, sampleSetIndex, info.velocityLow, next);
-    }
-    else
-    {
-        const int current = processor.getVariationMode(slot);
-        processor.setVariationMode(slot, juce::jlimit<int>(LSampler24AudioProcessor::variationOff,
-            LSampler24AudioProcessor::variationShuffleNoRepeat, current + (direction < 0 ? -1 : 1)));
     }
     refreshSampleSetCell(true);
 }
@@ -5270,6 +5302,8 @@ void LSampler24AudioProcessorEditor::saveSlotLibraryNavigationState()
     // f4 = Load Slot, f5 = Load Bank, f6 = Alt+M Sample Set audio browser.
     if (!slotLibraryForBank && !slotLibraryForSampleSet)
         xml->setAttribute("f3Preview", slotLibraryPreviewEnabled);
+    if (slotLibraryForSampleSet)
+        xml->setAttribute("f6Preview", sampleSetBrowserPreviewEnabled);
 
     const auto prefix = slotLibraryForSampleSet ? juce::String("f6")
                        : slotLibraryForBank ? juce::String("f5") : juce::String("f4");
@@ -5317,7 +5351,16 @@ void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser(bool forSampleSet, 
             importPreviewEnabled = xml->getBoolAttribute("f3Preview", false);
     }
     slotLibraryPreviewEnabled = (slotLibraryForBank || slotLibraryForSampleSet || slotLibraryForExport) ? false : importPreviewEnabled;
-    sampleSetBrowserPreviewEnabled = false;
+    if (slotLibraryForSampleSet)
+    {
+        sampleSetBrowserPreviewEnabled = false;
+        if (auto settings = importSettingsFile(); settings.existsAsFile())
+        {
+            juce::XmlDocument doc(settings);
+            if (auto xml = doc.getDocumentElement(); xml != nullptr && xml->hasTagName("LSampler24Settings"))
+                sampleSetBrowserPreviewEnabled = xml->getBoolAttribute("f6Preview", false);
+        }
+    }
     slotLibraryShiftSelectionActive = false;
     slotLibrarySelection.clear();
     slotLibraryStartSlot = processor.getCurrentSlot();
@@ -5384,7 +5427,7 @@ void LSampler24AudioProcessorEditor::leaveSlotLibraryBrowser(bool announceSlot)
     saveSlotLibraryNavigationState();
     processor.requestLibraryPreviewStop();
     processor.requestImportPreviewStop();
-    sampleSetBrowserPreviewEnabled = false;
+    // Keep the F1 Sample Browser preview preference; only stop its audio.
     slotLibraryPendingPreview = {};
     slotLibraryPreviewDelayTicks = 0;
     slotLibraryPreviewEnabled = false;
@@ -5929,13 +5972,28 @@ void LSampler24AudioProcessorEditor::chooseSaveSlot()
     if (!requireLibraryAvailable(&saveSlot, true)) return;
     // The native Save dialog shows only the editable logical slot name.
     // Prefix and LSampler extension are added after the user confirms.
-    auto logicalName = processor.getSlotName(processor.getCurrentSlot());
+    auto logicalName = processor.getSlotName(processor.getCurrentSlot()).trim();
+    if (logicalName.startsWithIgnoreCase("Slot_"))
+        logicalName = logicalName.substring(5);
+    // Prefer the name of the actual loaded preset/sample over a generated date.
     if (logicalName.isEmpty())
-        logicalName = LibraryManager::defaultName("Slot");
+    {
+        const auto preset = processor.getCurrentSlotPresetFile();
+        if (preset.existsAsFile())
+        {
+            logicalName = preset.getFileNameWithoutExtension();
+            if (logicalName.startsWithIgnoreCase("Slot_")) logicalName = logicalName.substring(5);
+        }
+    }
+    if (logicalName.isEmpty())
+        logicalName = processor.getCurrentSampleFile().getFileNameWithoutExtension();
+    if (logicalName.isEmpty())
+        logicalName = "Slot " + juce::String(processor.getCurrentSlot() + 1);
+    logicalName = juce::File::createLegalFileName(logicalName);
 
     auto initial = processor.getLibrary().slots().getChildFile(logicalName);
     chooser = std::make_unique<juce::FileChooser>("Save Slot", initial, "*");
-    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
+    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const juce::FileChooser& fc)
         {
             if (safeThis == nullptr) return;
@@ -5953,12 +6011,25 @@ void LSampler24AudioProcessorEditor::chooseSaveSlot()
                     enteredName = "Slot";
 
                 auto file = chosen.getParentDirectory().getChildFile("Slot_" + enteredName + LibraryManager::slotExtension);
-                safeThis->processor.setSlotName(safeThis->processor.getCurrentSlot(), enteredName);
-                safeThis->runFileTask("Saving slot", [file, slot = safeThis->processor.getCurrentSlot()](LSampler24AudioProcessor& p) {
-                    FileTaskResult r; r.ok = p.saveSlotPresetAt(file, slot, r.message);
-                    if (r.ok) r.message = "Slot saved: " + file.getFileNameWithoutExtension();
-                    return r;
-                }, [safeThis](const FileTaskResult&, bool focus) { if (focus) safeThis->returnToCurrentSlotAndAnnounce(); });
+                const int slot = safeThis->processor.getCurrentSlot();
+                const auto save = [safeThis, file, slot, enteredName]
+                {
+                    if (safeThis == nullptr) return;
+                    safeThis->processor.setSlotName(slot, enteredName);
+                    safeThis->runFileTask("Saving slot", [file, slot](LSampler24AudioProcessor& p) {
+                        FileTaskResult r; r.ok = p.saveSlotPresetAt(file, slot, r.message);
+                        if (r.ok) r.message = "Slot saved: " + file.getFileNameWithoutExtension();
+                        return r;
+                    }, [safeThis](const FileTaskResult&, bool focus) {
+                        if (safeThis != nullptr && focus) safeThis->returnToCurrentSlotAndAnnounce();
+                    });
+                };
+                // The displayed name is transformed to Slot_<name>.  The native
+                // chooser cannot reliably warn about that final destination.
+                if (file.existsAsFile())
+                    safeThis->confirmOverwrite("Slot " + enteredName + " already exists. Overwrite? Press Y or N.",
+                        save, [safeThis] { if (safeThis != nullptr) safeThis->returnToActionOrigin(safeThis->saveSlot); });
+                else save();
                 return;
             }
             safeThis->returnToActionOrigin(safeThis->saveSlot);
@@ -6002,9 +6073,12 @@ void LSampler24AudioProcessorEditor::chooseLoadBank()
 void LSampler24AudioProcessorEditor::chooseSaveBank()
 {
     if (!requireLibraryAvailable(&saveBank, true)) return;
-    auto initial = processor.getLibrary().banks().getChildFile(LibraryManager::defaultName("Bank") + LibraryManager::bankExtension);
+    auto bankName = processor.getCurrentBankName().trim();
+    if (bankName.isEmpty()) bankName = LibraryManager::defaultName("Bank");
+    auto initial = processor.getLibrary().banks().getChildFile(
+        juce::File::createLegalFileName(bankName) + LibraryManager::bankExtension);
     chooser = std::make_unique<juce::FileChooser>("Save Bank", initial, "*.lsampler-24-b");
-    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
+    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const juce::FileChooser& fc)
         {
             if (safeThis == nullptr) return;
@@ -6012,11 +6086,22 @@ void LSampler24AudioProcessorEditor::chooseSaveBank()
             if (file.getFullPathName().isNotEmpty())
             {
                 if (!file.hasFileExtension(LibraryManager::bankExtension)) file = file.withFileExtension(LibraryManager::bankExtension);
-                safeThis->runFileTask("Saving bank", [file](LSampler24AudioProcessor& p) {
-                    FileTaskResult r; r.ok = p.saveBankPreset(file, r.message);
-                    if (r.ok) r.message = "Bank saved: " + file.getFileNameWithoutExtension();
-                    return r;
-                }, [safeThis](const FileTaskResult&, bool focus) { if (focus) safeThis->returnToCurrentSlotAndAnnounce(); });
+                const auto save = [safeThis, file]
+                {
+                    if (safeThis == nullptr) return;
+                    safeThis->runFileTask("Saving bank", [file](LSampler24AudioProcessor& p) {
+                        FileTaskResult r; r.ok = p.saveBankPreset(file, r.message);
+                        if (r.ok) r.message = "Bank saved: " + file.getFileNameWithoutExtension();
+                        return r;
+                    }, [safeThis](const FileTaskResult&, bool focus) {
+                        if (safeThis != nullptr && focus) safeThis->returnToCurrentSlotAndAnnounce();
+                    });
+                };
+                if (file.existsAsFile())
+                    safeThis->confirmOverwrite("Bank " + file.getFileNameWithoutExtension()
+                        + " already exists. Overwrite? Press Y or N.", save,
+                        [safeThis] { if (safeThis != nullptr) safeThis->returnToActionOrigin(safeThis->saveBank); });
+                else save();
                 return;
             }
             safeThis->returnToActionOrigin(safeThis->saveBank);

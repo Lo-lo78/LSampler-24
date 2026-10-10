@@ -1,0 +1,10 @@
+LSampler-24 TEST119 - Navigazione campioni su Alt+M
+
+- Ctrl+Freccia Su/Giu: seleziona il campione precedente/successivo SOLO su F2 e F3.
+- F1: nessun cambio campione con Ctrl+Freccia Su/Giu.
+- F2 e F3: mantengono invariati pagina, parametro selezionato, Grid/Value e focus.
+- Cambiando campione, NVDA annuncia "Sample N, <parametro>, <valore>".
+- Ai bordi Sample 1 e Sample 16, nessun annuncio ripetuto.
+- In F3, Variation Mode rimane una funzione globale dello slot, non del singolo campione.
+
+Nessuna modifica a DSP o ID dei parametri. Non compilato localmente.

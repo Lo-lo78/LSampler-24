@@ -1512,6 +1512,7 @@ void LSampler24AudioProcessor::clearBank()
     const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     for (auto& slot : slots)
         slot = SlotState{};
+    currentBankName.clear();
     markAudioStateDirty();
     stopVoicesMask.fetch_or(0xffffffu, std::memory_order_release);
 }
@@ -2240,7 +2241,15 @@ bool LSampler24AudioProcessor::saveBankPreset(const juce::File& presetFile, juce
         bank.addChild(makeSlotState(i, "Slot"), -1, nullptr);
     saveBankMacroState(bank);
 
-    return writePreset(presetFile, bank, error);
+    if (!writePreset(presetFile, bank, error)) return false;
+    { const juce::ScopedLock lock(stateLock); currentBankName = presetFile.getFileNameWithoutExtension(); }
+    return true;
+}
+
+juce::String LSampler24AudioProcessor::getCurrentBankName() const
+{
+    const juce::ScopedLock lock(stateLock);
+    return currentBankName;
 }
 
 bool LSampler24AudioProcessor::loadBankPreset(const juce::File& presetFile, juce::String& error)
@@ -2290,6 +2299,11 @@ bool LSampler24AudioProcessor::loadBankPreset(const juce::File& presetFile, juce
     restoreBankMacroState(bank);
     resetOutputEnvelope.store(true, std::memory_order_release);
     markAudioStateDirty();
+    if (ok)
+    {
+        const juce::ScopedLock lock(stateLock);
+        currentBankName = presetFile.getFileNameWithoutExtension();
+    }
     error = firstError;
     return ok;
 }
@@ -3035,6 +3049,7 @@ void LSampler24AudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     state.setProperty("formatVersion", 5, nullptr);
     state.setProperty("slotCount", slotCount, nullptr);
     state.setProperty("currentSlot", currentSlot.load(), nullptr);
+    state.setProperty("currentBankName", getCurrentBankName(), nullptr);
     for (int i = 0; i < globalParameterCount; ++i)
         state.setProperty(globalParameters[size_t(i)].key,
                           getGlobalOutputParameter(static_cast<GlobalP>(i)), nullptr);
@@ -3052,6 +3067,8 @@ void LSampler24AudioProcessor::setStateInformation(const void* data, int sizeInB
     {
         auto state = juce::ValueTree::fromXml(*xml);
         juce::String error;
+        { const juce::ScopedLock lock(stateLock);
+          currentBankName = state.getProperty("currentBankName", juce::String()).toString(); }
 
         if (state.hasType("LSampler24State") && state.getNumChildren() > 0)
         {
