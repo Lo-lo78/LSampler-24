@@ -1,0 +1,21 @@
+LSampler-24 TEST120 - Bank Macro Grid: readable values and choices
+
+Base: TEST119, all changes retained.
+
+Alt+K Relative previously exposed raw signed offsets for every control.
+For macros with identical effective values across the occupied Slots, Grid and
+Value now show the resulting regular parameter value and the relative movement.
+This includes the original named choices for enums (On/Off, LFO waveform, etc.)
+instead of displaying raw signed enum offsets as a menu index.
+
+If the occupied Slots have different effective values, the screen reader says
+"Mixed values", followed by "increase by" or "decrease by" where applicable.
+This preserves the actual relative mechanism without misleading negative
+settings on normally nonnegative parameters. The underlying signed offset is
+unchanged: it is still what REAPER automates and what the bank stores.
+
+LFO frequency labels avoid assuming that the currently selected Slot's BPM
+sync state applies to every occupied Slot.
+
+No changes to DSP, MIDI, serialization, 6746 VST3 parameter IDs, or frozen TEST59.
+No local build. Compile via GitHub Actions and test with NVDA in REAPER.

@@ -788,18 +788,87 @@ juce::String LSampler24AudioProcessorEditor::formatParameter(int index,double va
     }
     return juce::String(value,d.decimals)+(juce::String(d.unit).isEmpty()?juce::String():" "+juce::String(d.unit));
 }
+juce::String LSampler24AudioProcessorEditor::bankMacroRelativeText(int gridIndex, double offset) const
+{
+    const auto& entry = lsampler::grid[size_t(gridIndex)];
+    const auto& d = descriptor(entry);
+    const int parameter = entry.parameter;
+    const bool isChoice = d.kind == Kind::enumeration;
+
+    // Relative macro values are offsets, not the underlying setting.  Show the
+    // actual result when every occupied slot agrees, including the real enum
+    // label (Off/On, filter mode, LFO waveform, etc.).  When slots differ,
+    // explain the direction of the offset instead of announcing a misleading
+    // signed "raw" value or enum index.
+    bool hasSlot = false;
+    bool matches = true;
+    double common = 0.0;
+    for (int slot = 0; slot < LSampler24AudioProcessor::slotCount; ++slot)
+    {
+        if (!bankMacroReference.occupied[size_t(slot)]) continue;
+        const double result = sanitise(d,
+            bankMacroReference.values[size_t(slot)][size_t(parameter)] + offset);
+        if (!hasSlot) { common = result; hasSlot = true; }
+        else if (std::abs(result - common) > 1.0e-8) matches = false;
+    }
+    if (!hasSlot) return "No loaded slots";
+
+    const double magnitude = std::abs(offset);
+    const bool neutral = magnitude < 1.0e-9;
+    juce::String change = "unchanged";
+    if (!neutral)
+    {
+        const juce::String unit = juce::String(d.unit);
+        const juce::String amount = juce::String(magnitude, d.decimals);
+        if (isChoice)
+            change = (offset > 0.0 ? "next option" : "previous option")
+                     + juce::String(" by ") + amount;
+        else
+            change = (offset > 0.0 ? "increase by " : "decrease by ")
+                     + amount + (unit.isEmpty() ? juce::String() : " " + unit);
+    }
+
+    if (!matches)
+        return neutral ? "Mixed values" : "Mixed values, " + change;
+
+    // LFO frequency units depend on each slot's BPM Sync setting. Avoid using
+    // the currently selected slot's state as though it applied to the bank.
+    juce::String resultText;
+    if (parameter == int(P::lfo1_rate) || parameter == int(P::lfo2_rate))
+    {
+        const int sync = parameter == int(P::lfo1_rate)
+            ? int(P::lfo1_bpm_sync) : int(P::lfo2_bpm_sync);
+        bool syncSeen = false;
+        bool allSync = true, allFree = true;
+        for (int slot = 0; slot < LSampler24AudioProcessor::slotCount; ++slot)
+        {
+            if (!bankMacroReference.occupied[size_t(slot)]) continue;
+            const bool active = bankMacroReference.values[size_t(slot)][size_t(sync)] != 0.0;
+            syncSeen = true;
+            allSync &= active;
+            allFree &= !active;
+        }
+        resultText = juce::String(common, d.decimals)
+                   + (syncSeen && allFree ? " Hz" : syncSeen && allSync
+                      ? " (BPM Sync)" : " (mixed BPM Sync)");
+    }
+    else resultText = formatParameter(gridIndex, common);
+
+    // Include the movement as well as the result, so that even when a setting
+    // is clamped at its limit the user can tell a non-neutral macro is stored.
+    return neutral ? resultText : resultText + ", " + change;
+}
 juce::String LSampler24AudioProcessorEditor::bankMacroValueText(int gridIndex) const
 {
-    const auto& d = descriptor(lsampler::grid[size_t(gridIndex)]);
-    const auto parameter = lsampler::grid[size_t(gridIndex)].parameter;
+    const auto& entry = lsampler::grid[size_t(gridIndex)];
+    const int parameter = entry.parameter;
     const auto value = bankMacroUniform ? bankMacroAmounts[size_t(parameter)]
                                         : processor.getBankMacroOffset(parameter);
     if (bankMacroUniform)
         return formatParameter(gridIndex, value);
-    const juce::String sign = value > 0.0 ? "+" : "";
-    const auto amount = juce::String(value, d.decimals);
-    return sign + amount + (juce::String(d.unit).isEmpty() ? juce::String() : " " + juce::String(d.unit));
+    return bankMacroRelativeText(gridIndex, value);
 }
+
 juce::String LSampler24AudioProcessorEditor::selectedParameterValueText() const {
     return bankMacroOpen ? bankMacroValueText(selectedParameter) :
         formatParameter(selectedParameter,getSelectedParameterValue());
@@ -857,11 +926,8 @@ void LSampler24AudioProcessorEditor::configureValueForSelectedParameter() {
         bankMacroOpen && !bankMacroUniform ? offsetLimit : d.maximum,
         d.kind==Kind::integer||d.kind==Kind::enumeration||d.kind==Kind::note||d.kind==Kind::action?1.0:0.0);
     parameterValue.textFromValueFunction=[this](double v){
-        if (bankMacroOpen && !bankMacroUniform) {
-            const auto& d = descriptor(selectedEntry());
-            return (v > 0 ? juce::String("+") : juce::String()) + juce::String(v, d.decimals)
-                   + (juce::String(d.unit).isEmpty() ? juce::String() : " " + juce::String(d.unit));
-        }
+        if (bankMacroOpen && !bankMacroUniform)
+            return bankMacroRelativeText(selectedParameter, v);
         return formatParameter(selectedParameter,v);
     };
     parameterValue.valueFromTextFunction=[this](const juce::String& text) {

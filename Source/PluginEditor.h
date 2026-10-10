@@ -647,6 +647,7 @@ private:
     void moveBankMacroPage(int direction);
     void toggleBankMacroUniform();
     void resetSelectedBankMacro();
+    juce::String bankMacroRelativeText(int gridIndex, double offset) const;
     juce::String bankMacroValueText(int gridIndex) const;
     bool globalReturnWasParameterPage = false;
     int globalReturnSelectedParameter = 0;
