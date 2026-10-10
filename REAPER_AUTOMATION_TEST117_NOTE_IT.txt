@@ -1,0 +1,14 @@
+TEST117 - Correzione compilazione della integrazione REAPER VST3
+
+Origine: TEST116. La build Windows falliva in Source/PluginProcessor.cpp(33):
+error C2065: IReaperHostApplication_iid undeclared identifier.
+
+Causa: DEF_CLASS_IID era usato senza una precedente DECLARE_CLASS_IID.
+Rimedio: dichiarazione del GUID ufficiale di REAPER per IReaperHostApplication
+(79655E36-77EE-4267-A573-FEF74912C27C), quindi DEF_CLASS_IID.
+
+Nessuna modifica al DSP, agli ID dei parametri, al comportamento di
+Ctrl+Shift+A o ai messaggi NVDA della TEST116.
+
+Nessuna compilazione locale effettuata. Eseguire GitHub Actions e verificare
+il toggle ACTIVE/VISIBLE/ARM tramite REAPER, perche' il fix e' statico.

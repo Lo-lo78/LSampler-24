@@ -30,7 +30,11 @@ public:
     virtual void* PLUGIN_API reaperExtended(uint32 call, void*, void*, void*) = 0;
     static const FUID iid;
 };
-DEF_CLASS_IID(IReaperHostApplication)
+// Official REAPER VST3 host-extension IID (reaper_vst3_interfaces.h).
+// DECLARE_CLASS_IID must precede DEF_CLASS_IID, otherwise the VST3 SDK
+// cannot resolve the generated IReaperHostApplication_iid symbol on MSVC.
+DECLARE_CLASS_IID (IReaperHostApplication, 0x79655E36, 0x77EE4267, 0xA573FEF7, 0x4912C27C)
+DEF_CLASS_IID (IReaperHostApplication)
 }
 
 class LSamplerReaperHostExtension final : public juce::VST3ClientExtensions
