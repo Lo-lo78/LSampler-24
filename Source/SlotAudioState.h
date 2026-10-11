@@ -53,6 +53,9 @@ struct SlotAudioState {
     int start = 0, length = 0, downsampleHold = 1;
     double downsampleScale = 1, level = 1, panL = 1, panR = 1, normalize = 1;
     double fadeIn = 0, fadeOut = 0, edgeFade = 0, delayL = 0, delayR = 0;
+    // Legacy TEST59 reference renderer still reads SlotAudioState::crossfade.
+    // Keep this compatibility field at zero: TEST130 uses only per-subloop crossfades.
+    double crossfade = 0;
     double stretchFactor = 1, grain = 16, portamento = 1, smooth = 1;
     EnvelopeSettings amp, lpEnv, hpEnv;
     std::array<LfoSettings, 2> lfo;
