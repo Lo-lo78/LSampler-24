@@ -1870,8 +1870,25 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             });
         };
 
+        // Identical filesystem commands in Alt+S / Alt+B and Save browsers.
+        // Sample Set F1 browsing deliberately keeps its specialised behaviour.
+        if (!slotLibraryForSampleSet && !slotLibraryForExport
+            && !slotLibraryForExportFile && !slotLibraryForExportBank)
+        {
+            if (code == juce::KeyPress::F10Key && mods.isShiftDown()
+                && !mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown())
+            { showSlotLibraryContextMenu(); return true; }
+            if (code == juce::KeyPress::F2Key && !mods.isCtrlDown()
+                && !mods.isAltDown() && !mods.isShiftDown() && !mods.isCommandDown())
+            { renameSlotLibraryEntry(); return true; }
+            if (code == juce::KeyPress::deleteKey && !mods.isCtrlDown()
+                && !mods.isAltDown() && !mods.isShiftDown() && !mods.isCommandDown())
+            { deleteSlotLibraryEntry(); return true; }
+        }
+
         if (code == juce::KeyPress::tabKey)
         {
+            if (slotLibrarySaving) { focusSlotLibrary(); return true; }
             if (slotLibraryForSampleSet || slotLibraryForBank)
             {
                 focusSlotLibrary();
@@ -1897,12 +1914,14 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         if (code == juce::KeyPress::escapeKey)
         {
             const bool wasExport = slotLibraryForExport || slotLibraryForExportBank;
+            const bool wasSave = slotLibrarySaving;
             const bool wasBank = slotLibraryForBank;
             const bool wasSampleSet = slotLibraryForSampleSet && sampleSetActive;
             leaveSlotLibraryBrowser(false);
             if (wasSampleSet) return true;
             if (wasExport) returnToAdvancedAndAnnounce();
-            else returnToActionOrigin(wasBank ? loadBank : loadSlot);
+            else returnToActionOrigin(wasSave ? (wasBank ? saveBank : saveSlot)
+                                                   : (wasBank ? loadBank : loadSlot));
             return true;
         }
 
@@ -1917,19 +1936,19 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             }
             return true;
         }
-        if (!slotLibraryForSampleSet && !slotLibraryForBank && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown())
+        if (!slotLibrarySaving && !slotLibraryForSampleSet && !slotLibraryForBank && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown())
         {
             const auto ctrlChar = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
             if (ctrlChar == 'c') { copySlotLibraryEntry(false); return true; }
             if (ctrlChar == 'x') { copySlotLibraryEntry(true); return true; }
             if (ctrlChar == 'v') { pasteSlotLibraryEntry(); return true; }
         }
-        if (!slotLibraryForSampleSet && !slotLibraryForBank && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
+        if (!slotLibrarySaving && !slotLibraryForSampleSet && !slotLibraryForBank && mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown()
             && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
         {
             moveSlotLibraryDestination(code == juce::KeyPress::upKey ? -1 : 1); return true;
         }
-        if (!slotLibraryForSampleSet && !slotLibraryForBank && mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown()
+        if (!slotLibrarySaving && !slotLibraryForSampleSet && !slotLibraryForBank && mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown()
             && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
         {
             shiftSelectSlotLibraryEntry(code == juce::KeyPress::upKey ? -1 : 1); return true;
@@ -1994,11 +2013,11 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             selectSlotLibraryEntry(slotLibraryEntryIndex, true);
             return true;
         }
-        if (!slotLibraryForSampleSet && !slotLibraryForBank && code == juce::KeyPress::spaceKey && mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown())
+        if (!slotLibrarySaving && !slotLibraryForSampleSet && !slotLibraryForBank && code == juce::KeyPress::spaceKey && mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown())
         { toggleSlotLibrarySelection(); return true; }
         if (code == juce::KeyPress::spaceKey && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown())
         {
-            if (slotLibraryForBank) return true; // Banks have no audio preview.
+            if (slotLibraryForBank || slotLibrarySaving) return true; // Save mode and Banks have no audio preview.
             if (slotLibraryForSampleSet)
             {
                 sampleSetBrowserPreviewEnabled = !sampleSetBrowserPreviewEnabled;
@@ -2047,6 +2066,10 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         }
         if (code == juce::KeyPress::returnKey)
         {
+            // Save: Enter ALWAYS confirms the current directory, even when
+            // the first child folder is merely highlighted by default.
+            // Right opens a highlighted subfolder.  Left/Backspace goes up.
+            if (slotLibrarySaving) { commitLibrarySave(); return true; }
             if (slotLibraryEntries.empty()) return true;
             const auto& e = slotLibraryEntries[size_t(slotLibraryEntryIndex)];
             if (e.directory)
@@ -3524,15 +3547,15 @@ void LSampler24AudioProcessorEditor::enterSampleSetEditor()
 // prompt or an invisible key handler on REAPER's FX Chain.
 void LSampler24AudioProcessorEditor::confirmOverwrite(
     const juce::String& message, std::function<void()> confirmed,
-    std::function<void()> cancelled)
+    std::function<void()> cancelled, const juce::String& title)
 {
-    auto* warning = new juce::AlertWindow("Confirm replacement", message,
+    auto* warning = new juce::AlertWindow(title, message,
                                           juce::MessageBoxIconType::WarningIcon);
     warning->addButton("Yes", 1, juce::KeyPress('y'));
     warning->addButton("No", 0, juce::KeyPress('n'), juce::KeyPress(juce::KeyPress::escapeKey));
     warning->setAccessible(true);
-    warning->setName("Confirm replacement");
-    warning->setTitle("Confirm replacement");
+    warning->setName(title);
+    warning->setTitle(title);
     if (auto* noButton = warning->getButton("No"))
         noButton->setWantsKeyboardFocus(true);
     warning->enterModalState(true, juce::ModalCallbackFunction::create(
@@ -5364,6 +5387,8 @@ void LSampler24AudioProcessorEditor::saveSlotLibraryNavigationState()
     if (xml == nullptr || !xml->hasTagName("LSampler24Settings"))
         xml = std::make_unique<juce::XmlElement>("LSampler24Settings");
 
+    // A Save As never overwrites a Load browser's remembered location.
+    if (slotLibrarySaving) return;
     // Each browser remembers its own directory/file in user settings:
     // f4 = Load Slot, f5 = Load Bank, f6 = Alt+M Sample Set audio browser.
     if (!slotLibraryForBank && !slotLibraryForSampleSet)
@@ -5416,7 +5441,7 @@ void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser(bool forSampleSet, 
         if (auto xml = doc.getDocumentElement(); xml != nullptr && xml->hasTagName("LSampler24Settings"))
             importPreviewEnabled = xml->getBoolAttribute("f3Preview", false);
     }
-    slotLibraryPreviewEnabled = (slotLibraryForBank || slotLibraryForSampleSet || slotLibraryForExport) ? false : importPreviewEnabled;
+    slotLibraryPreviewEnabled = (slotLibrarySaving || slotLibraryForBank || slotLibraryForSampleSet || slotLibraryForExport) ? false : importPreviewEnabled;
     if (slotLibraryForSampleSet)
     {
         sampleSetBrowserPreviewEnabled = false;
@@ -5459,8 +5484,10 @@ void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser(bool forSampleSet, 
     }
     if (!slotLibraryDirectory.isDirectory() || (slotLibraryDirectory != slotLibraryRoot && !slotLibraryDirectory.isAChildOf(slotLibraryRoot)))
         slotLibraryDirectory = slotLibraryRoot;
-    slotLibraryEntryIndex = rememberedSlotIndex;
-    if (rememberedSlotEntryPath.isNotEmpty())
+    // A Save As must never silently inherit an old subfolder destination.
+    if (slotLibrarySaving) slotLibraryDirectory = slotLibraryRoot;
+    slotLibraryEntryIndex = slotLibrarySaving ? 0 : rememberedSlotIndex;
+    if (rememberedSlotEntryPath.isNotEmpty() && !slotLibrarySaving)
         slotLibraryDirectorySelectionMemory[slotLibraryDirectory.getFullPathName()] = rememberedSlotEntryPath;
 
     for (auto& cell : slotCells) { cell.setVisible(false); cell.setWantsKeyboardFocus(false); }
@@ -5481,7 +5508,15 @@ void LSampler24AudioProcessorEditor::enterSlotLibraryBrowser(bool forSampleSet, 
     juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
     {
         if (safeThis != nullptr && safeThis->slotLibraryActive)
-            safeThis->announceSlotLibraryEntry();
+        {
+            if (safeThis->slotLibrarySaving)
+                lsampler::announceToActiveScreenReader(safeThis->slotLibraryCell,
+                    "Save " + juce::String(safeThis->slotLibraryForBank ? "Bank " : "Slot ")
+                    + safeThis->slotLibrarySaveName + ". In "
+                    + safeThis->slotLibraryDirectory.getFileName()
+                    + ". Enter saves here; Right opens a subfolder; Backspace goes up; Shift+F10 opens menu.");
+            else safeThis->announceSlotLibraryEntry();
+        }
     });
 }
 
@@ -5498,6 +5533,8 @@ void LSampler24AudioProcessorEditor::leaveSlotLibraryBrowser(bool announceSlot)
     slotLibraryPreviewDelayTicks = 0;
     slotLibraryPreviewEnabled = false;
     slotLibraryActive = false;
+    slotLibrarySaving = false;
+    slotLibrarySaveName.clear();
     slotLibraryForSampleSet = false;
     slotLibraryForBank = false;
     slotLibraryForExport = false;
@@ -5573,13 +5610,16 @@ void LSampler24AudioProcessorEditor::refreshSlotLibraryEntries()
     if (it != slotLibraryDirectorySelectionMemory.end())
         for (int i = 0; i < static_cast<int>(slotLibraryEntries.size()); ++i)
             if (slotLibraryEntries[size_t(i)].file.getFullPathName() == it->second) { slotLibraryEntryIndex = i; break; }
-    if (slotLibraryEntries.empty()) slotLibraryCell.setBrowserText("Empty folder");
+    if (slotLibraryEntries.empty()) slotLibraryCell.setBrowserText(
+        slotLibrarySaving ? "Empty folder. Enter saves here" : "Empty folder");
     else selectSlotLibraryEntry(slotLibraryEntryIndex, false);
 }
 
 void LSampler24AudioProcessorEditor::selectSlotLibraryEntry(int index, bool announce)
 {
-    if (slotLibraryEntries.empty()) { slotLibraryCell.setBrowserText("Empty folder"); exportLibraryButton.setButtonText("Export Folder"); return; }
+    if (slotLibraryEntries.empty()) { slotLibraryCell.setBrowserText(
+        slotLibrarySaving ? "Empty folder. Enter saves here" : "Empty folder");
+        exportLibraryButton.setButtonText("Export Folder"); return; }
     slotLibraryEntryIndex = juce::jlimit(0, int(slotLibraryEntries.size()) - 1, index);
     const auto& e = slotLibraryEntries[size_t(slotLibraryEntryIndex)];
     juce::String text;
@@ -5612,10 +5652,11 @@ void LSampler24AudioProcessorEditor::selectSlotLibraryEntry(int index, bool anno
 
 void LSampler24AudioProcessorEditor::announceSlotLibraryEntry()
 {
-    if (slotLibraryEntries.empty())
-        lsampler::announceToActiveScreenReader(slotLibraryCell, "Empty folder");
-    else
-        lsampler::announceToActiveScreenReader(slotLibraryCell, slotLibraryCell.getBrowserText());
+    const auto selected = slotLibraryEntries.empty()
+        ? juce::String(slotLibrarySaving ? "Empty folder. Enter saves here" : "Empty folder")
+        : slotLibraryCell.getBrowserText();
+    lsampler::announceToActiveScreenReader(slotLibraryCell,
+        slotLibrarySaving ? "In " + slotLibraryDirectory.getFileName() + ". " + selected : selected);
     slotLibraryCell.setDescription({});
 }
 
@@ -6035,70 +6076,296 @@ void LSampler24AudioProcessorEditor::chooseLoadSlot()
 
 void LSampler24AudioProcessorEditor::chooseSaveSlot()
 {
-    if (!requireLibraryAvailable(&saveSlot, true)) return;
-    // The native Save dialog shows only the editable logical slot name.
-    // Prefix and LSampler extension are added after the user confirms.
-    auto logicalName = processor.getSlotName(processor.getCurrentSlot()).trim();
-    if (logicalName.startsWithIgnoreCase("Slot_"))
-        logicalName = logicalName.substring(5);
-    // Prefer the name of the actual loaded preset/sample over a generated date.
-    if (logicalName.isEmpty())
-    {
-        const auto preset = processor.getCurrentSlotPresetFile();
-        if (preset.existsAsFile())
-        {
-            logicalName = preset.getFileNameWithoutExtension();
-            if (logicalName.startsWithIgnoreCase("Slot_")) logicalName = logicalName.substring(5);
-        }
-    }
-    if (logicalName.isEmpty())
-        logicalName = processor.getCurrentSampleFile().getFileNameWithoutExtension();
-    if (logicalName.isEmpty())
-        logicalName = "Slot " + juce::String(processor.getCurrentSlot() + 1);
-    logicalName = juce::File::createLegalFileName(logicalName);
+    promptLibrarySaveName(false);
+}
 
-    auto initial = processor.getLibrary().slots().getChildFile(logicalName);
-    chooser = std::make_unique<juce::FileChooser>("Save Slot", initial, "*");
-    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
-        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const juce::FileChooser& fc)
+// Two-stage, screen-reader-friendly Save As.  The name is committed before
+// opening the *same* internal browser used by Alt+S / Alt+B.  No native OS
+// file chooser can escape the two Library roots.
+void LSampler24AudioProcessorEditor::promptLibrarySaveName(bool forBank)
+{
+    if (!requireLibraryAvailable(forBank ? static_cast<juce::Component*>(&saveBank)
+                                         : static_cast<juce::Component*>(&saveSlot), true)) return;
+    if (slotLibraryActive) return;
+    auto name = juce::String();
+    if (forBank)
+    {
+        name = processor.getCurrentBankName().trim();
+        if (name.isEmpty()) name = LibraryManager::defaultName("Bank");
+    }
+    else
+    {
+        // Use the CURRENT SLOT PRESET filename first.  An edited slot can
+        // retain that preset filename even when its display label differs.
+        auto preset = processor.getCurrentSlotPresetFile();
+        if (preset.getFullPathName().isNotEmpty())
+            name = cleanLibrarySlotName(preset);
+        if (name.isEmpty()) name = processor.getSlotName(processor.getCurrentSlot()).trim();
+        if (name.isEmpty()) name = processor.getCurrentSampleFile().getFileNameWithoutExtension();
+        if (name.isEmpty()) name = "Slot " + juce::String(processor.getCurrentSlot() + 1);
+    }
+    if (forBank && name.endsWithIgnoreCase(LibraryManager::bankExtension))
+        name = name.dropLastCharacters(juce::String(LibraryManager::bankExtension).length());
+    if (!forBank && name.startsWithIgnoreCase("Slot_")) name = name.substring(5);
+    name = juce::File::createLegalFileName(name.trim());
+
+    auto* dialog = new juce::AlertWindow(forBank ? "Save Bank Name" : "Save Slot Name",
+                                          "File name", juce::MessageBoxIconType::NoIcon);
+    dialog->setAccessible(true);
+    dialog->addTextEditor("presetName", name, "File name");
+    dialog->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    dialog->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    if (auto* field = dialog->getTextEditor("presetName"))
+    {
+        field->selectAll();
+        field->grabKeyboardFocus();
+    }
+    const int savingSlot = processor.getCurrentSlot();
+    dialog->enterModalState(true, juce::ModalCallbackFunction::create(
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this),
+         dialog, forBank, savingSlot](int result)
         {
             if (safeThis == nullptr) return;
-            auto chosen = fc.getResult();
-            if (chosen.getFullPathName().isNotEmpty())
+            if (result != 1)
             {
-                auto enteredName = chosen.getFileName();
-                if (enteredName.endsWithIgnoreCase(LibraryManager::slotExtension))
-                    enteredName = enteredName.dropLastCharacters((int) juce::String(LibraryManager::slotExtension).length());
-                if (enteredName.startsWithIgnoreCase("Slot_"))
-                    enteredName = enteredName.substring(5);
-
-                enteredName = juce::File::createLegalFileName(enteredName.trim());
-                if (enteredName.isEmpty())
-                    enteredName = "Slot";
-
-                auto file = chosen.getParentDirectory().getChildFile("Slot_" + enteredName + LibraryManager::slotExtension);
-                const int slot = safeThis->processor.getCurrentSlot();
-                const auto save = [safeThis, file, slot, enteredName]
-                {
-                    if (safeThis == nullptr) return;
-                    safeThis->processor.setSlotName(slot, enteredName);
-                    safeThis->runFileTask("Saving slot", [file, slot](LSampler24AudioProcessor& p) {
-                        FileTaskResult r; r.ok = p.saveSlotPresetAt(file, slot, r.message);
-                        if (r.ok) r.message = "Slot saved: " + file.getFileNameWithoutExtension();
-                        return r;
-                    }, [safeThis](const FileTaskResult&, bool focus) {
-                        if (safeThis != nullptr && focus) safeThis->returnToCurrentSlotAndAnnounce();
-                    });
-                };
-                // The displayed name is transformed to Slot_<name>.  The native
-                // chooser cannot reliably warn about that final destination.
-                if (file.existsAsFile())
-                    safeThis->confirmOverwrite("Slot " + enteredName + " already exists. Overwrite? Press Y or N.",
-                        save, [safeThis] { if (safeThis != nullptr) safeThis->returnToActionOrigin(safeThis->saveSlot); });
-                else save();
+                safeThis->returnToActionOrigin(forBank ? safeThis->saveBank : safeThis->saveSlot);
                 return;
             }
-            safeThis->returnToActionOrigin(safeThis->saveSlot);
+            const auto typed = dialog->getTextEditorContents("presetName").trim();
+            const auto clean = juce::File::createLegalFileName(typed).trim();
+            if (clean.isEmpty() || clean == "." || clean == "..")
+            {
+                lsampler::announceToActiveScreenReader(safeThis->status, "Invalid file name");
+                safeThis->returnToActionOrigin(forBank ? safeThis->saveBank : safeThis->saveSlot);
+                return;
+            }
+            // Enter the browser after the modal Name window has been dismissed;
+            // otherwise the disappearing dialog may steal NVDA keyboard focus.
+            juce::MessageManager::callAsync([safeThis, forBank, savingSlot, clean]
+            {
+                if (safeThis == nullptr) return;
+                safeThis->slotLibrarySaving = true;
+                safeThis->slotLibrarySaveSlot = savingSlot;
+                safeThis->slotLibrarySaveName = clean;
+                safeThis->enterSlotLibraryBrowser(false, forBank);
+                if (!safeThis->slotLibraryActive)
+                {
+                    safeThis->slotLibrarySaving = false;
+                    safeThis->slotLibrarySaveName.clear();
+                }
+            });
+        }), true);
+}
+
+void LSampler24AudioProcessorEditor::commitLibrarySave()
+{
+    if (!slotLibraryActive || !slotLibrarySaving) return;
+    const bool bank = slotLibraryForBank;
+    const auto folder = slotLibraryDirectory;
+    if (!folder.isDirectory() || (folder != slotLibraryRoot && !folder.isAChildOf(slotLibraryRoot)))
+    {
+        lsampler::announceToActiveScreenReader(slotLibraryCell, "Save folder is outside the Library");
+        return;
+    }
+    auto clean = juce::File::createLegalFileName(slotLibrarySaveName.trim());
+    if (bank && clean.endsWithIgnoreCase(LibraryManager::bankExtension))
+        clean = clean.dropLastCharacters(juce::String(LibraryManager::bankExtension).length());
+    if (!bank && clean.startsWithIgnoreCase("Slot_")) clean = clean.substring(5);
+    if (clean.isEmpty() || clean == "." || clean == "..")
+    {
+        lsampler::announceToActiveScreenReader(slotLibraryCell, "Invalid file name");
+        return;
+    }
+    const auto filename = bank ? clean + LibraryManager::bankExtension
+                               : "Slot_" + clean + LibraryManager::slotExtension;
+    const auto file = folder.getChildFile(filename);
+    const int slot = slotLibrarySaveSlot;
+    const auto save = [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this),
+                       bank, file, slot, clean]
+    {
+        if (safeThis == nullptr) return;
+        safeThis->runFileTask(bank ? "Saving bank" : "Saving slot",
+            [bank, file, slot, clean](LSampler24AudioProcessor& processor)
+            {
+                FileTaskResult r;
+                if (bank) r.ok = processor.saveBankPreset(file, r.message);
+                else
+                {
+                    processor.setSlotName(slot, clean);
+                    r.ok = processor.saveSlotPresetAt(file, slot, r.message);
+                }
+                if (r.ok) r.message = juce::String(bank ? "Bank saved: " : "Slot saved: ")
+                                       + file.getFileName();
+                return r;
+            }, [safeThis](const FileTaskResult& result, bool focus)
+            {
+                if (safeThis == nullptr || !result.ok) return;
+                safeThis->leaveSlotLibraryBrowser(false);
+                if (focus) safeThis->returnToCurrentSlotAndAnnounce();
+            });
+    };
+    if (file.exists())
+        confirmOverwrite((bank ? "Bank " : "Slot ") + clean
+                             + " already exists. Overwrite? Press Y or N.", save,
+                         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+                         {
+                             if (safeThis != nullptr && safeThis->slotLibraryActive)
+                             {
+                                 safeThis->slotLibraryCell.grabKeyboardFocus();
+                                 safeThis->announceSlotLibraryEntry();
+                             }
+                         });
+    else save();
+}
+
+void LSampler24AudioProcessorEditor::createSlotLibraryFolder()
+{
+    if (!slotLibraryActive || slotLibraryForSampleSet) return;
+    const auto folder = slotLibraryDirectory;
+    if (folder != slotLibraryRoot && !folder.isAChildOf(slotLibraryRoot)) return;
+    auto* dialog = new juce::AlertWindow("New Folder", "Folder name", juce::MessageBoxIconType::NoIcon);
+    dialog->setAccessible(true);
+    dialog->addTextEditor("folderName", "", "Folder name");
+    dialog->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    dialog->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    if (auto* e = dialog->getTextEditor("folderName")) e->grabKeyboardFocus();
+    dialog->enterModalState(true, juce::ModalCallbackFunction::create(
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), dialog, folder](int result)
+        {
+            if (safeThis == nullptr || !safeThis->slotLibraryActive) return;
+            if (result == 1)
+            {
+                const auto name = juce::File::createLegalFileName(dialog->getTextEditorContents("folderName").trim());
+                if (name.isEmpty() || name == "." || name == "..")
+                    lsampler::announceToActiveScreenReader(safeThis->slotLibraryCell, "Invalid folder name");
+                else
+                {
+                    const auto target = folder.getChildFile(name);
+                    if (target.exists())
+                        lsampler::announceToActiveScreenReader(safeThis->slotLibraryCell, "Folder already exists");
+                    else if (!target.createDirectory().wasOk())
+                        lsampler::announceToActiveScreenReader(safeThis->slotLibraryCell, "Cannot create folder");
+                    else
+                    {
+                        safeThis->slotLibraryDirectorySelectionMemory[folder.getFullPathName()] = target.getFullPathName();
+                        safeThis->refreshSlotLibraryEntries();
+                        safeThis->announceSlotLibraryEntry();
+                    }
+                }
+            }
+            safeThis->slotLibraryCell.grabKeyboardFocus();
+        }), true);
+}
+
+void LSampler24AudioProcessorEditor::renameSlotLibraryEntry()
+{
+    if (!slotLibraryActive || slotLibraryForSampleSet || slotLibraryEntries.empty()) return;
+    const auto source = slotLibraryEntries[size_t(slotLibraryEntryIndex)].file;
+    if (!source.exists() || source == slotLibraryRoot || !source.isAChildOf(slotLibraryRoot)) return;
+    const bool directory = source.isDirectory();
+    const bool bank = slotLibraryForBank;
+    const auto initial = directory ? source.getFileName()
+                        : bank ? cleanLibraryBankName(source) : cleanLibrarySlotName(source);
+    auto* dialog = new juce::AlertWindow("Rename Element", "New name", juce::MessageBoxIconType::NoIcon);
+    dialog->setAccessible(true);
+    dialog->addTextEditor("newName", initial, "New name");
+    dialog->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    dialog->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    if (auto* e = dialog->getTextEditor("newName")) { e->selectAll(); e->grabKeyboardFocus(); }
+    dialog->enterModalState(true, juce::ModalCallbackFunction::create(
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this),
+         dialog, source, directory, bank](int result)
+        {
+            if (safeThis == nullptr || !safeThis->slotLibraryActive) return;
+            if (result == 1)
+            {
+                auto name = juce::File::createLegalFileName(dialog->getTextEditorContents("newName").trim());
+                if (!directory && bank && name.endsWithIgnoreCase(LibraryManager::bankExtension))
+                    name = name.dropLastCharacters(juce::String(LibraryManager::bankExtension).length());
+                if (!directory && !bank && name.startsWithIgnoreCase("Slot_")) name = name.substring(5);
+                if (name.isEmpty() || name == "." || name == "..")
+                    lsampler::announceToActiveScreenReader(safeThis->slotLibraryCell, "Invalid name");
+                else
+                {
+                    const juce::String filename = directory ? name
+                        : bank ? juce::String(source.getFileName().startsWithIgnoreCase("Bank_") ? "Bank_" : "")
+                                 + name + LibraryManager::bankExtension
+                        : juce::String("Slot_") + name + LibraryManager::slotExtension;
+                    const auto target = source.getSiblingFile(filename);
+                    if (target == source)
+                        lsampler::announceToActiveScreenReader(safeThis->slotLibraryCell, "Name unchanged");
+                    else if (target.exists())
+                        lsampler::announceToActiveScreenReader(safeThis->slotLibraryCell, "Element already exists");
+                    else if (!source.moveFileTo(target))
+                        lsampler::announceToActiveScreenReader(safeThis->slotLibraryCell, "Rename failed");
+                    else
+                    {
+                        safeThis->slotLibraryDirectorySelectionMemory[safeThis->slotLibraryDirectory.getFullPathName()]
+                            = target.getFullPathName();
+                        safeThis->refreshSlotLibraryEntries();
+                        safeThis->announceSlotLibraryEntry();
+                    }
+                }
+            }
+            safeThis->slotLibraryCell.grabKeyboardFocus();
+        }), true);
+}
+
+void LSampler24AudioProcessorEditor::deleteSlotLibraryEntry()
+{
+    if (!slotLibraryActive || slotLibraryForSampleSet || slotLibraryEntries.empty()) return;
+    const auto source = slotLibraryEntries[size_t(slotLibraryEntryIndex)].file;
+    if (!source.exists() || source == slotLibraryRoot || !source.isAChildOf(slotLibraryRoot)) return;
+    const auto description = source.isDirectory() ? "folder " : "file ";
+    confirmOverwrite(juce::String("Delete ") + description + source.getFileName()
+                         + (source.isDirectory() ? " and everything inside it" : "")
+                         + "? Press Y or N.",
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), source]
+        {
+            if (safeThis == nullptr) return;
+            safeThis->runFileTask("Deleting Library element", [source](LSampler24AudioProcessor&)
+            {
+                FileTaskResult r;
+                r.ok = source.isDirectory() ? source.deleteRecursively() : source.deleteFile();
+                r.message = r.ok ? "Element deleted" : "Delete failed";
+                return r;
+            }, [safeThis, source](const FileTaskResult& result, bool focus)
+            {
+                if (safeThis == nullptr || !safeThis->slotLibraryActive || !result.ok) return;
+                safeThis->slotLibraryDirectorySelectionMemory.erase(safeThis->slotLibraryDirectory.getFullPathName());
+                safeThis->slotLibrarySelection.erase(
+                    std::remove_if(safeThis->slotLibrarySelection.begin(), safeThis->slotLibrarySelection.end(),
+                        [&source](const SlotLibrarySelection& item) { return item.file == source; }),
+                    safeThis->slotLibrarySelection.end());
+                safeThis->refreshSlotLibraryEntries();
+                if (focus) { safeThis->slotLibraryCell.grabKeyboardFocus(); safeThis->announceSlotLibraryEntry(); }
+            });
+        }, [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+        {
+            if (safeThis != nullptr && safeThis->slotLibraryActive)
+            {
+                safeThis->slotLibraryCell.grabKeyboardFocus();
+                safeThis->announceSlotLibraryEntry();
+            }
+        }, "Confirm deletion");
+}
+
+void LSampler24AudioProcessorEditor::showSlotLibraryContextMenu()
+{
+    if (!slotLibraryActive || slotLibraryForSampleSet) return;
+    juce::PopupMenu menu;
+    menu.addSectionHeader("Library folder and file actions");
+    menu.addItem(1, "New Folder");
+    menu.addItem(2, "Rename Element (F2)", !slotLibraryEntries.empty());
+    menu.addItem(3, "Delete Element", !slotLibraryEntries.empty());
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&slotLibraryCell),
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](int result)
+        {
+            if (safeThis == nullptr || !safeThis->slotLibraryActive) return;
+            if (result == 1) safeThis->createSlotLibraryFolder();
+            else if (result == 2) safeThis->renameSlotLibraryEntry();
+            else if (result == 3) safeThis->deleteSlotLibraryEntry();
+            else safeThis->slotLibraryCell.grabKeyboardFocus();
         });
 }
 
@@ -6138,40 +6405,7 @@ void LSampler24AudioProcessorEditor::chooseLoadBank()
 
 void LSampler24AudioProcessorEditor::chooseSaveBank()
 {
-    if (!requireLibraryAvailable(&saveBank, true)) return;
-    auto bankName = processor.getCurrentBankName().trim();
-    if (bankName.isEmpty()) bankName = LibraryManager::defaultName("Bank");
-    auto initial = processor.getLibrary().banks().getChildFile(
-        juce::File::createLegalFileName(bankName) + LibraryManager::bankExtension);
-    chooser = std::make_unique<juce::FileChooser>("Save Bank", initial, "*.lsampler-24-b");
-    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
-        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const juce::FileChooser& fc)
-        {
-            if (safeThis == nullptr) return;
-            auto file = fc.getResult();
-            if (file.getFullPathName().isNotEmpty())
-            {
-                if (!file.hasFileExtension(LibraryManager::bankExtension)) file = file.withFileExtension(LibraryManager::bankExtension);
-                const auto save = [safeThis, file]
-                {
-                    if (safeThis == nullptr) return;
-                    safeThis->runFileTask("Saving bank", [file](LSampler24AudioProcessor& p) {
-                        FileTaskResult r; r.ok = p.saveBankPreset(file, r.message);
-                        if (r.ok) r.message = "Bank saved: " + file.getFileNameWithoutExtension();
-                        return r;
-                    }, [safeThis](const FileTaskResult&, bool focus) {
-                        if (safeThis != nullptr && focus) safeThis->returnToCurrentSlotAndAnnounce();
-                    });
-                };
-                if (file.existsAsFile())
-                    safeThis->confirmOverwrite("Bank " + file.getFileNameWithoutExtension()
-                        + " already exists. Overwrite? Press Y or N.", save,
-                        [safeThis] { if (safeThis != nullptr) safeThis->returnToActionOrigin(safeThis->saveBank); });
-                else save();
-                return;
-            }
-            safeThis->returnToActionOrigin(safeThis->saveBank);
-        });
+    promptLibrarySaveName(true);
 }
 
 void LSampler24AudioProcessorEditor::openSliceEditor(bool sequencer)

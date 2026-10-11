@@ -390,7 +390,8 @@ private:
     void enterSampleSetEditor();
     void switchSampleSetPage(int page);
     void confirmOverwrite(const juce::String& message, std::function<void()> confirmed,
-                          std::function<void()> cancelled);
+                          std::function<void()> cancelled,
+                          const juce::String& title = "Confirm replacement");
     juce::String replacementSlotName(int slot) const;
     int occupiedBankSlotCount() const;
     void leaveSampleSetEditor();
@@ -479,6 +480,12 @@ private:
     bool slotLibraryDestinationReserved(int slot) const;
     void chooseLoadSlot();
     void chooseSaveSlot();
+    void promptLibrarySaveName(bool forBank);
+    void commitLibrarySave();
+    void createSlotLibraryFolder();
+    void renameSlotLibraryEntry();
+    void deleteSlotLibraryEntry();
+    void showSlotLibraryContextMenu();
     void renameCurrentSlot();
     void chooseLoadBank();
     void chooseSaveBank();
@@ -615,6 +622,9 @@ private:
     int slotLibraryEntryIndex = 0;
     int slotLibraryStartSlot = 0;
     bool slotLibraryActive = false;
+    bool slotLibrarySaving = false;
+    juce::String slotLibrarySaveName;
+    int slotLibrarySaveSlot = 0;
     bool sampleSetBrowserPreviewEnabled = false; // Raw preview mode, independent of file duration
     bool slotLibraryForSampleSet = false;
     bool slotLibraryForBank = false;

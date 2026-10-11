@@ -1,0 +1,23 @@
+LSampler-24 TEST123 - Salvataggio Slot e Bank nel browser interno
+
+Base: TEST122 completo; nessuna compilazione eseguita.
+
+Alt+Shift+S: nome del preset Slot corrente (o nome slot/campione) precompilato.
+Alt+Shift+B: nome del Bank corrente precompilato.
+Con Invio dopo il nome: si apre il browser interno, rispettivamente nella radice Slots o Banks.
+
+Browser di salvataggio:
+- Enter salva nella directory corrente, anche se la cartella e vuota.
+- Freccia destra entra nella cartella evidenziata, Freccia sinistra e Backspace risalgono.
+- Non si puo risalire sopra la radice Slots o Banks, anche se salvati precedentemente in altro luogo.
+- Esc annulla senza salvare.
+- Se esiste il file: conferma Y/N. N rimane nel browser senza salvare.
+
+Browser Alt+S/Alt+B e browser di salvataggio:
+- Shift+F10: menu Nuova cartella, Rinomina elemento e Elimina elemento.
+- F2: rinomina cartelle/file preservando l'estensione del preset.
+- Delete: richiede conferma Y/N, con avvertimento per le cartelle e il loro contenuto.
+- Cancellazione tramite task di file asincrono; non bloccare la UI durante rimozione ricorsiva.
+- Le operazioni sui file restano limitate alle rispettive radici.
+
+Non modificati: motore audio, preset format, parametri, automazioni, workflow GitHub.
