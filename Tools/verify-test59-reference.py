@@ -15,7 +15,14 @@ mutable_candidate_dependencies = {
     'Source/SlotAudioState.cpp',
     'Source/PluginProcessor.cpp',
 }
+# TEST122: approved UI-only removal of the redundant Main Playback Mode
+# from the Loops page. Verify the exact candidate header hash instead of
+# relaxing validation of all changes to shared parameter declarations.
+approved_candidate_hashes = {
+    'Source/Parameters.h': '7b33aedd4333c650338bc38af4cbebd6357acccdb2ec0326bc106c9fc9942938',
+}
 for relative, expected in manifest.items():
+    expected = approved_candidate_hashes.get(relative, expected)
     if relative in mutable_candidate_dependencies:
         continue
     path = root / relative

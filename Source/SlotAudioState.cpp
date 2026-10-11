@@ -103,7 +103,7 @@ SamplePlaybackState prepareSamplePlaybackState(const SlotParameters& p, SharedSa
         any|=p.loops[size_t(i)][size_t(k)]!=loopParameters[size_t(k)].initial;
     if(any && g.length>0) {
         for(int i=0;i<loopCount;++i) {
-            bool active=i==0;
+            bool active=false;
             for(int k=0;k<loopParameterCount;++k) active|=p.loops[size_t(i)][size_t(k)]!=loopParameters[size_t(k)].initial;
             if(!active)continue;
             auto& l=g.stages[size_t(g.stageCount++)];l.memory=i;

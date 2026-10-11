@@ -1,0 +1,13 @@
+LSampler-24 TEST122 - Main Loop + 10 sottoloop indipendenti
+
+- Il Main Playback Mode rimane soltanto in Sample Window; rimosso il controllo duplicato nella pagina Loops.
+- Gli identificativi dei parametri e delle automazioni VST3 non sono stati modificati.
+- Ogni sottoloop viene attivato solo quando almeno un suo parametro differisce dai valori iniziali: eliminato lo stadio 1 implicito.
+- Il motore risolve le ripetizioni dei sottoloop prima di applicare Sample End / One Shot principale.
+- A ogni ritorno del Main Loop verso Sample Start vengono riarmati stadio, skip e contatore, per ripetere i sottoloop anche ai cicli successivi.
+- La conclusione dell'ultimo sottoloop non imposta più lo stato di rilascio dell'intera voce.
+- La gestione Note Off / ADSR e il controllo Release Loops rimangono indipendenti.
+- Il controllo di hash del reference TEST59 conserva la verifica integrale, con hash specifico approvato per il solo Parameters.h modificato.
+
+Verifiche statiche: verify-test59-reference.py e verify-vst3-automation-source.py.
+NON compilato. Da verificare in REAPER: One Shot + ripetizioni finite/infinite, Main Loop + cicli multipli, loop adiacenti, Note Off, automazioni e vecchi banchi.

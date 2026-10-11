@@ -519,16 +519,11 @@ void GlobalVoicePool::advanceLoops(Voice& v,const SlotAudioState& s,double incre
     const auto& g=s.playback[size_t(v.sampleIndex)];
     v.position+=increment;
     const double cycle=g.length*s.stretchFactor;
-    const int oneShot=int(s.params[P::global_one_shot]);
-    // One Shot always terminates at the end of the main Sample Start/End
-    // window, even if another path has already marked the voice released.
-    // On Release keeps the legacy release/wrap policy as a distinct mode.
-    if(v.position>=cycle && oneShot==1){stop(v);return;}
-    if(v.position>=cycle && oneShot==2 && !v.loopsReleased) {
-        release(v);v.position=wrap(v.position,cycle);v.stage=-1;v.repeat=0;v.skipStage=-1;
-    }
+    const int mainMode=int(s.params[P::global_one_shot]);
+    // The ten configured subloops are independent of the outer playback mode.
+    // Resolve their repetitions BEFORE enforcing the outer Sample End boundary:
+    // the final subloop is allowed to repeat even when Main Playback is One Shot.
     if(g.stageCount>0) {
-        // Catch entry into the next absolute stage without a per-sample ten-stage scan.
         while(v.stage+1<g.stageCount && v.position>=g.stages[size_t(v.stage+1)].start*s.stretchFactor
               && (v.stage<0 || v.position<g.stages[size_t(v.stage)].end*s.stretchFactor || v.skipStage==v.stage)) {
             ++v.stage;v.repeat=0;v.skipStage=-1;
@@ -539,30 +534,30 @@ void GlobalVoicePool::advanceLoops(Voice& v,const SlotAudioState& s,double incre
             if(v.position>=end) {
                 const double overshoot=v.position-end;
                 const bool next=v.stage+1<g.stageCount;
-                const bool baseOneShot=loop.memory==0&&!next&&oneShot!=0;
-                if(baseOneShot&&!v.loopsReleased) {
-                    if(oneShot==1){stop(v);return;}
-                    release(v);v.skipStage=v.stage;
+                const int repeats=v.loopsReleased&&loop.repeats==0?1:loop.repeats;
+                if(repeats==0||++v.repeat<=repeats) {
+                    const double length=std::max(1.0,(loop.end-loop.start)*s.stretchFactor);
+                    v.position=loop.start*s.stretchFactor+wrap(overshoot,length);
+                } else if(next&&!loop.oneShot&&!v.loopsReleased) {
+                    ++v.stage;v.repeat=0;v.skipStage=-1;
+                    v.position=g.stages[size_t(v.stage)].start*s.stretchFactor+overshoot;
                 } else {
-                    const int repeats=v.loopsReleased&&loop.repeats==0?1:loop.repeats;
-                    if(repeats==0||++v.repeat<=repeats) {
-                        const double length=std::max(1.0,(loop.end-loop.start)*s.stretchFactor);
-                        v.position=loop.start*s.stretchFactor+wrap(overshoot,length);
-                    } else if(next&&!loop.oneShot&&!v.loopsReleased) {
-                        ++v.stage;v.repeat=0;v.skipStage=-1;
-                        v.position=g.stages[size_t(v.stage)].start*s.stretchFactor+overshoot;
-                    } else {
-                        if(loop.oneShot)release(v);
-                        v.skipStage=v.stage;v.repeat=0;
-                        // A final finite stage passes through to the sample end.
-                        if(!next)v.loopsReleased=true;
-                    }
+                    if(loop.oneShot)release(v);
+                    v.skipStage=v.stage;v.repeat=0;
+                    // Completing the last subloop must not mark the whole voice
+                    // as released. The outer loop may visit it again next pass.
                 }
             }
         }
     }
     if(v.position>=cycle) {
-        v.position=wrap(v.position,cycle);v.repeat=0;v.skipStage=-1;selectStage(v,s);
+        if(mainMode==1){stop(v);return;}
+        if(mainMode==2&&!v.loopsReleased)release(v);
+        v.position=wrap(v.position,cycle);
+        // Re-arm all subloops on EVERY outer pass, even when stage zero was
+        // selected on the previous pass (selectStage alone would preserve it).
+        v.stage=-1;v.repeat=0;v.skipStage=-1;
+        selectStage(v,s);
     }
 }
 void GlobalVoicePool::advanceSlice(Voice& v,const SlotAudioState& s,double increment) noexcept {

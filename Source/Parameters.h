@@ -437,7 +437,6 @@ inline constexpr std::array<GridEntry, 161> grid {{
 {-1, 0, Action::none, "Loops"},
 {-1, 1, Action::none, "Loops"},
 {-1, -1, Action::loopZero, "Loops"},
-{int(P::global_one_shot), -1, Action::none, "Loops"},
 {-1, 2, Action::none, "Loops"},
 {-1, 3, Action::none, "Loops"},
 {-1, 4, Action::none, "Loops"},
