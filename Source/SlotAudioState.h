@@ -22,8 +22,8 @@ struct LoopAudioState {
     int memory = 0;
     double start = 0, end = 0, fadeIn = 0, fadeOut = 0;
     int repeats = 0;
-    double pitch = 0, lp = 0, hp = 0;
-    bool oneShot = false;
+    double pitch = 0, lp = 0, hp = 0, repeatPan = 0;
+    bool oneShot = false, fixedPitchTime = false;
 };
 struct SamplePlaybackState {
     SharedSample* sample = nullptr;

@@ -155,8 +155,11 @@ enum class P {
     fm_feedback,
     count
 };
-enum class L { start, end, repeats, fade_in, fade_out, pitch_down, lp_down, hp_down, one_shot, count };
-inline constexpr int parameterCount = 143, loopParameterCount = 9, loopCount = 10;
+// Append the new indices only. The first nine VST3 IDs/indices are frozen.
+enum class L { start, end, repeats, fade_in, fade_out, pitch_down, lp_down, hp_down, one_shot,
+               repeat_pan, pitch_time, count };
+inline constexpr int parameterCount = 143, legacyLoopParameterCount = 9, loopParameterCount = 11, loopCount = 10;
+static_assert(int(L::repeat_pan)==legacyLoopParameterCount && int(L::pitch_time)==10 && int(L::count)==loopParameterCount);
 inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"input_gain", "Level", "Slot", Kind::continuous, 0.0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""},
 {"polyphony", "Voice Mode", "Slot", Kind::enumeration, 1.0, 0.0, 1.0, 1.0, 1.0, "", 0, "Mono|Poly"},
@@ -320,11 +323,15 @@ inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 {"loop_pitch_down", "Repeat Pitch Amount", "Loops", Kind::continuous, 0, -48.0, 48.0, 0.01, 1.0, "semitones", 2, ""},
 {"loop_lp_down", "Repeat LP Amount", "Loops", Kind::continuous, 0, -96.0, 96.0, 0.01, 1.0, "semitones", 2, ""},
 {"loop_hp_down", "Repeat HP Amount", "Loops", Kind::continuous, 0, -96.0, 96.0, 0.01, 1.0, "semitones", 2, ""},
-{"loop_one_shot", "One Shot", "Loops", Kind::enumeration, 0, 0.0, 1.0, 1.0, 1.0, "", 0, "Off|On"}
+{"loop_one_shot", "One Shot", "Loops", Kind::enumeration, 0, 0.0, 1.0, 1.0, 1.0, "", 0, "Off|On"},
+{"loop_repeat_pan", "Repeat Pan", "Loops", Kind::continuous, 0, -100.0, 100.0, 0.01, 1.0, "%", 2, ""},
+// TEST127: Original Pitch Loop (0) is the default for every new subloop.
+{"loop_pitch_time", "Loop Pitch Step Time", "Loops", Kind::enumeration, 0, 0.0, 1.0, 1.0, 1.0, "", 0,
+ "Original Pitch Loop|Pitch Resizes Loop"}
 }};
 enum class Action { none, sampleZero, loopZero };
 struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; int global = -1; };
-inline constexpr std::array<GridEntry, 161> grid {{
+inline constexpr std::array<GridEntry, 163> grid {{
 {int(P::input_gain), -1, Action::none, "Slot"},
 {int(P::polyphony), -1, Action::none, "Slot"},
 {int(P::slot_polyphony), -1, Action::none, "Slot"},
@@ -441,6 +448,8 @@ inline constexpr std::array<GridEntry, 161> grid {{
 {-1, 3, Action::none, "Loops"},
 {-1, 4, Action::none, "Loops"},
 {-1, 5, Action::none, "Loops"},
+{-1, int(L::pitch_time), Action::none, "Loops"},
+{-1, int(L::repeat_pan), Action::none, "Loops"},
 {-1, 6, Action::none, "Loops"},
 {-1, 7, Action::none, "Loops"},
 {-1, 8, Action::none, "Loops"},

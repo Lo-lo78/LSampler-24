@@ -1,0 +1,6 @@
+TEST127 — Original Pitch Loop predefinito.
+
+Per tutti i 10 sottoloop, Loop Pitch Step Time si inizializza in Original Pitch Loop (valore 0).
+Pitch Resizes Loop (valore 1) resta selezionabile. Il motore e gli ID delle automazioni VST3 non sono cambiati.
+La modifica si applica ai valori iniziali e ai preset che non specificano il nuovo parametro.
+Non compilato: verificare con GitHub Actions e provare in REAPER.

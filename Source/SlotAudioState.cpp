@@ -111,6 +111,7 @@ SamplePlaybackState prepareSamplePlaybackState(const SlotParameters& p, SharedSa
             l.end=std::clamp(std::floor(g.length*p.loop(i,L::end)*.01),l.start+1,double(g.length));
             l.repeats=int(p.loop(i,L::repeats));l.fadeIn=p.loop(i,L::fade_in)*sourceMs;l.fadeOut=p.loop(i,L::fade_out)*sourceMs;
             l.pitch=p.loop(i,L::pitch_down);l.lp=p.loop(i,L::lp_down);l.hp=p.loop(i,L::hp_down);l.oneShot=p.loop(i,L::one_shot)!=0;
+            l.repeatPan=p.loop(i,L::repeat_pan);l.fixedPitchTime=p.loop(i,L::pitch_time)==0;
         }
         std::sort(g.stages.begin(),g.stages.begin()+g.stageCount,[](const auto& a,const auto& b){return a.start<b.start||(a.start==b.start&&a.memory<b.memory);});
         for(int i=0;i+1<g.stageCount;++i) if(g.stages[size_t(i+1)].start>g.stages[size_t(i)].start)

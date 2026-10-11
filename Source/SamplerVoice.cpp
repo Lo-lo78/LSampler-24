@@ -172,7 +172,7 @@ void GlobalVoicePool::selectStage(Voice& v,const SlotAudioState& s) noexcept {
     const double pos=v.position/s.stretchFactor;
     int selected=-1;
     for(int i=0;i<g.stageCount;++i)if(g.stages[size_t(i)].start<=pos)selected=i;
-    if(selected!=v.stage){v.stage=selected;v.repeat=0;v.skipStage=-1;}
+    if(selected!=v.stage){v.stage=selected;v.repeat=0;v.skipStage=-1;v.loopClock=0;}
 }
 void GlobalVoicePool::updateVoice(Voice& v,const SlotAudioState& s) noexcept {
     const auto& p=s.params;
@@ -219,7 +219,7 @@ void GlobalVoicePool::updateVoice(Voice& v,const SlotAudioState& s) noexcept {
 void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudioState& s,bool retrigger) {
     v.note=note;v.velocity=velocity;v.keyDown=true;v.sustained=false;
     if(retrigger) {
-        v.amp={};v.lpEnvelope={};v.hpEnvelope={};v.loopsReleased=false;v.repeat=0;v.skipStage=-1;
+        v.amp={};v.lpEnvelope={};v.hpEnvelope={};v.loopsReleased=false;v.repeat=0;v.skipStage=-1;v.loopClock=0;
         // With No Retrigger Smooth, preserve the read head on a retrigger.
         if(s.params[P::retrigger_smooth]==0) {
             const auto& g=s.playback[size_t(v.sampleIndex)];
@@ -517,46 +517,72 @@ void GlobalVoicePool::applyMachine(Voice& v,const SlotAudioState& s,double& left
 }
 void GlobalVoicePool::advanceLoops(Voice& v,const SlotAudioState& s,double increment) noexcept {
     const auto& g=s.playback[size_t(v.sampleIndex)];
-    v.position+=increment;
     const double cycle=g.length*s.stretchFactor;
     const int mainMode=int(s.params[P::global_one_shot]);
-    // The ten configured subloops are independent of the outer playback mode.
-    // Resolve their repetitions BEFORE enforcing the outer Sample End boundary:
-    // the final subloop is allowed to repeat even when Main Playback is One Shot.
+    // Slice "Original Pitch Step" analogue: the loop clock advances at the
+    // original (zero repeat-pitch) playback rate while its audio read head
+    // advances at the pitched rate. It is a virtual clock, not a tempo grid.
+    const LoopAudioState* active=(v.stage>=0 && v.stage<g.stageCount && v.skipStage!=v.stage)
+        ? &g.stages[size_t(v.stage)] : nullptr;
+    const bool fixed=active && active->fixedPitchTime && active->pitch!=0 && v.repeat>0
+        && (!v.loopsReleased||s.params[P::global_release_loops]!=0);
+    if(fixed) {
+        // Compute the rate at repeat-pitch zero, retaining note, bend,
+        // envelope and LFO pitch. The sample's source-rate ratio remains.
+        const int pitchSteps=active->repeats>0
+            ? std::min(v.repeat,active->repeats) : std::min(v.repeat,128);
+        // The correction factor only changes at repeat boundaries or when
+        // automation changes the amount. Never call pow() per sample.
+        if(v.loopPitchTimeRepeat!=pitchSteps || v.loopPitchTimeAmount!=active->pitch) {
+            v.loopPitchTimeRepeat=pitchSteps;v.loopPitchTimeAmount=active->pitch;
+            v.loopPitchTimeFactor=std::pow(2.0,pitchSteps*active->pitch/12.0);
+        }
+        v.loopClock+=increment*v.loopPitchTimeFactor;
+    }
+    v.position+=increment;
+    // The ten subloops run before the independent main window/end decision.
     if(g.stageCount>0) {
-        while(v.stage+1<g.stageCount && v.position>=g.stages[size_t(v.stage+1)].start*s.stretchFactor
-              && (v.stage<0 || v.position<g.stages[size_t(v.stage)].end*s.stretchFactor || v.skipStage==v.stage)) {
-            ++v.stage;v.repeat=0;v.skipStage=-1;
+        // A pitched head in fixed-clock mode must never jump to the following
+        // loop or hit Sample End before its virtual repeat has completed.
+        while(!fixed && v.stage+1<g.stageCount &&
+              v.position>=g.stages[size_t(v.stage+1)].start*s.stretchFactor &&
+              (v.stage<0 || v.position<g.stages[size_t(v.stage)].end*s.stretchFactor || v.skipStage==v.stage)) {
+            ++v.stage;v.repeat=0;v.skipStage=-1;v.loopClock=0;
         }
         if(v.stage>=0 && v.skipStage!=v.stage && (!v.loopsReleased||s.params[P::global_release_loops]!=0)) {
             const auto& loop=g.stages[size_t(v.stage)];
             const double end=loop.end*s.stretchFactor;
-            if(v.position>=end) {
-                const double overshoot=v.position-end;
+            const double length=std::max(1.0,(loop.end-loop.start)*s.stretchFactor);
+            if(fixed ? v.loopClock>=length : v.position>=end) {
+                const double overshoot=fixed ? v.loopClock-length : v.position-end;
                 const bool next=v.stage+1<g.stageCount;
                 const int repeats=v.loopsReleased&&loop.repeats==0?1:loop.repeats;
                 if(repeats==0||++v.repeat<=repeats) {
-                    const double length=std::max(1.0,(loop.end-loop.start)*s.stretchFactor);
-                    v.position=loop.start*s.stretchFactor+wrap(overshoot,length);
+                    const double carried=wrap(overshoot,length);
+                    v.position=loop.start*s.stretchFactor+carried;
+                    // Carry fractional source-frame overshoot to the virtual
+                    // clock too, like SlicePlayback::advance().
+                    v.loopClock=loop.fixedPitchTime?carried:0;
                 } else if(next&&!loop.oneShot&&!v.loopsReleased) {
-                    ++v.stage;v.repeat=0;v.skipStage=-1;
+                    ++v.stage;v.repeat=0;v.skipStage=-1;v.loopClock=0;
                     v.position=g.stages[size_t(v.stage)].start*s.stretchFactor+overshoot;
                 } else {
                     if(loop.oneShot)release(v);
-                    v.skipStage=v.stage;v.repeat=0;
-                    // Completing the last subloop must not mark the whole voice
-                    // as released. The outer loop may visit it again next pass.
+                    // A completed fixed-time repeat must resume *after* the
+                    // subloop even if the lower pitch read only a fraction.
+                    if(fixed)v.position=end+overshoot;
+                    v.skipStage=v.stage;v.repeat=0;v.loopClock=0;
                 }
             }
         }
     }
-    if(v.position>=cycle) {
+    // Do not mistake the early arrival of a pitched read head at Sample End
+    // for completion of the outer loop while a fixed-clock repeat is running.
+    if(v.position>=cycle && !(fixed && v.skipStage!=v.stage)) {
         if(mainMode==1){stop(v);return;}
         if(mainMode==2&&!v.loopsReleased)release(v);
         v.position=wrap(v.position,cycle);
-        // Re-arm all subloops on EVERY outer pass, even when stage zero was
-        // selected on the previous pass (selectStage alone would preserve it).
-        v.stage=-1;v.repeat=0;v.skipStage=-1;
+        v.stage=-1;v.repeat=0;v.skipStage=-1;v.loopClock=0;
         selectStage(v,s);
     }
 }
@@ -620,14 +646,32 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         // Zero level / settled silent sustain keeps its musical read clock but sleeps every optional processor.
         if(s.level==0 || (v.amp.phase==3 && s.amp.sustain==0)) {
             v.amp.tick(s.amp);
-            const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+v.drift;
+            const LoopAudioState* silentLoop=(!v.slice.active && v.stage>=0 && v.skipStage!=v.stage)
+                ? &g.stages[size_t(v.stage)] : nullptr;
+            const int silentRepeat=silentLoop
+                ? (silentLoop->repeats>0?std::min(v.repeat,silentLoop->repeats):std::min(v.repeat,128)) : 0;
+            const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+v.drift
+                -(silentLoop?silentRepeat*silentLoop->pitch:0);
             if(pitch!=v.pitchCached){v.increment=std::pow(2.0,pitch/12)*g.sourceRatio;v.pitchCached=pitch;}
             if(!BasicRead&&v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);continue;
         }
         const double l1=Simple?0:lfoTick(v,0,s.lfo[0],wheelValue),l2=Simple?0:lfoTick(v,1,s.lfo[1],wheelValue);
         const LoopAudioState* loop=(BasicRead||!v.slice.active)&&v.stage>=0?&g.stages[size_t(v.stage)]:nullptr;
-        const double repeats=loop&&loop->repeats>2?std::min(v.repeat,loop->repeats):0;
+        // Use repeat modulation from the first repeat, including 1- and
+        // 2-repeat patterns. An infinite loop's slope saturates at 128 steps.
+        const double repeats=loop
+            ? (loop->repeats>0?std::min(v.repeat,loop->repeats):std::min(v.repeat,128)) : 0;
         const double repeatPitch=loop?-repeats*loop->pitch:0;
+        // Positive repeat pan sweeps left -> right; negative reverses it.
+        // A finite repeat count includes the initial pass (repeat == 0).
+        // Infinite repeats ping-pong over 256 passes without a hard pan reset.
+        double repeatPan=0;
+        if(loop && v.skipStage!=v.stage && loop->repeatPan!=0) {
+            const double phase=loop->repeats>0
+                ? clamp(double(v.repeat)/double(loop->repeats),0.0,1.0)
+                : 1.0-std::abs(1.0-double(v.repeat%256)/128.0);
+            repeatPan=(phase*2.0-1.0)*loop->repeatPan*.01;
+        }
         const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+v.drift
             +v.amp.value*p[P::pitch_env]+l1*s.lfo[0].pitch+l2*(s.lfo[1].pitch+wheelValue*s.lfo[1].wheel)+repeatPitch;
         if(pitch!=v.pitchCached) {v.increment=std::pow(2.0,pitch/12)*g.sourceRatio;v.pitchCached=pitch;}
@@ -684,6 +728,9 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
                 stretchOverlap=true;
             }
         }
+        const bool loopPitchSilent=loop && loop->fixedPitchTime && loop->pitch!=0
+            && v.repeat>0 && v.skipStage!=v.stage
+            && v.position>=loop->end*s.stretchFactor;
         pos=clamp(pos,0,double(g.length-1));
         if(stretchOverlap)stretchOtherPos=clamp(stretchOtherPos,0,double(g.length-1));
         if(!Simple&&(s.lfo[0].move!=0||s.lfo[1].move!=0)) {
@@ -748,6 +795,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             };
             left*=loopFade(pos-g.delayL);right*=loopFade(pos-g.delayR);
         }
+        if(loopPitchSilent){left=0;right=0;}
         if(!BasicRead && (!Optimised || s.effectsNeeded)) processEffects(v,s,left,right);
         if(!BasicRead&&v.slice.active&&v.slice.globalPanDepth>0) {
             const auto& q=v.slice;const double mid=(left+right)*.70710678,phase=(q.globalPan+1)*pi*.25;
@@ -814,6 +862,12 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         const double gain=v.ampSmooth*s.level*clamp(1+l1*s.lfo[0].volume+l2*s.lfo[1].volume,0,2);
         double panL=s.panL,panR=s.panR;
         if(!BasicRead&&p[P::pan_env]!=0){const double pan=clamp((p[P::pan]+amp*p[P::pan_env]*mirror)*.01,-1,1);panL=1-std::max(0.0,pan);panR=1+std::min(0.0,pan);}
+        // Same attenuation pan law used by Slice Repeat Pan. It combines
+        // with (rather than replacing) the slot's own pan and pan envelope.
+        if(repeatPan!=0) {
+            panL*=1-std::max(0.0,repeatPan);
+            panR*=1+std::min(0.0,repeatPan);
+        }
         left*=gain*panL;right*=gain*panR;
         if(!BasicRead&&s.machine)applyMachine(v,s,left,right);
         if(!BasicRead&&v.slice.active&&v.slice.output>0) {

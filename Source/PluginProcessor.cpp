@@ -3258,7 +3258,7 @@ void LSampler24AudioProcessor::createHostParameters()
             auto* sync=h.values[size_t(lfo?P::lfo2_bpm_sync:P::lfo1_bpm_sync)];
             rate->syncParameter=sync;sync->syncedRate=rate;
         }
-        for(int j=0;j<loopCount;++j)for(int i=0;i<loopParameterCount;++i) {
+        for(int j=0;j<loopCount;++j)for(int i=0;i<legacyLoopParameterCount;++i) {
             const auto& d=loopParameters[size_t(i)];
             h.loops[size_t(j)][size_t(i)]=add(id+"loop"+juce::String(j+1).paddedLeft('0',2)+"_"+d.key,
                 name+"Loop "+juce::String(j+1)+" - "+d.name,d,revision);
@@ -3294,6 +3294,19 @@ void LSampler24AudioProcessor::createHostParameters()
         hostBankMacros[size_t(index)] = add("bankmacro_" + juce::String(descriptor.key),
             "Bank Macro - " + juce::String(descriptor.name),
             bankMacroDeltaDescriptor(index), bankMacroHostGeneration);
+    }
+    // TEST126: new Loop controls MUST follow all 6629 original controls and
+    // the already-existing TEST110 Bank Macros. Never insert into the legacy batches:
+    // REAPER's existing automation envelopes depend on that stable ordering.
+    for(int slot=0;slot<slotCount;++slot) {
+        auto& h=hostSlots[size_t(slot)];auto& revision=hostGenerations[size_t(slot)];
+        const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
+        const juce::String name="Slot "+juce::String(slot+1)+" - ";
+        for(int j=0;j<loopCount;++j)for(int i=legacyLoopParameterCount;i<loopParameterCount;++i) {
+            const auto& d=loopParameters[size_t(i)];
+            h.loops[size_t(j)][size_t(i)]=add(id+"loop"+juce::String(j+1).paddedLeft('0',2)+"_"+d.key,
+                name+"Loop "+juce::String(j+1)+" - "+d.name,d,revision);
+        }
     }
     hostParametersReady=true;
 }

@@ -1,0 +1,11 @@
+TEST126 — Repeat Pan e Loop Pitch Step Time, dieci sottoloop.
+
+Repeat Pan: da -100 a +100 come Slice Repeat Pan. Per ripetizioni finite lo spostamento parte dal lato opposto al segno del parametro e termina dal lato del segno. Per repeat 0 (infinito), sweep di andata/ritorno su 256 passaggi.
+
+Loop Pitch Step Time per sottoloop:
+- Original Pitch Loop: durata fissa in frame virtuali del sottoloop con pitch della ripetizione = 0. Il motore fa avanzare un clock musicale (pitch della nota/altre modulazioni conservate) e una testina audio distinta. Pitch più alto: eventuale coda silenziosa; pitch più basso: campione interrotto alla fine del tempo virtuale, secondo il modello Slice.
+- Pitch Resizes Loop: comportamento alternativo, il pitch modifica anche la durata.
+
+Compatibilità: primi 9 parametri per sottoloop mantengono ID e ordine VST3; 2 nuovi per sottoloop aggiunti in coda, dopo i parametri Bank Macro. I nuovi sottoloop hanno Repeat Pan=0, Pitch Time=Original Pitch Loop come impostazioni iniziali. La modalità Pitch Resizes Loop resta disponibile. Formato persistente dei sottoloop aggiornato usando le medesime funzioni di serializzazione. 24 slot e 10 loop ciascuno.
+
+Non compilato. Test da eseguire in REAPER: Repeat Pan +/- con Repeats 4; pitch +/- in entrambe le modalità; One Shot e Main Loop; slot con sample set; automazione; salvataggio e ricaricamento; loop infinito; note-off.

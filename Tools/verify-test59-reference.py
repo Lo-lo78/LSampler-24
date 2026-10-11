@@ -15,11 +15,11 @@ mutable_candidate_dependencies = {
     'Source/SlotAudioState.cpp',
     'Source/PluginProcessor.cpp',
 }
-# TEST122: approved UI-only removal of the redundant Main Playback Mode
-# from the Loops page. Verify the exact candidate header hash instead of
-# relaxing validation of all changes to shared parameter declarations.
+# TEST127: the candidate parameter catalog appends Repeat Pan and
+# Loop Pitch Step Time, with Original Pitch Loop now the default. The frozen TEST59 reference and its hashes stay intact;
+# permit only this exact candidate file, not arbitrary header changes.
 approved_candidate_hashes = {
-    'Source/Parameters.h': '7b33aedd4333c650338bc38af4cbebd6357acccdb2ec0326bc106c9fc9942938',
+    'Source/Parameters.h': '616a0573d50c5f232938953a123df03ab4308b62fb2f95549aa7de3f1ed47f3f',
 }
 for relative, expected in manifest.items():
     expected = approved_candidate_hashes.get(relative, expected)
