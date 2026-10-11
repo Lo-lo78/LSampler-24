@@ -23,6 +23,9 @@ struct LoopAudioState {
     double start = 0, end = 0, fadeIn = 0, fadeOut = 0;
     int repeats = 0;
     double pitch = 0, lp = 0, hp = 0, repeatPan = 0, level = 1;
+    double crossfade = 0, downsampleAmount = 0, downsampleHold = 1, downsampleScale = 1;
+    double pan = 0, repeatLevelDb = 0;
+    int direction = 0;
     bool oneShot = false, fixedPitchTime = false;
 };
 struct SamplePlaybackState {
@@ -30,7 +33,7 @@ struct SamplePlaybackState {
     double sourceRatio = 1, normalize = 1;
     int start = 0, length = 0, downsampleHold = 1;
     double downsampleScale = 1, fadeIn = 0, fadeOut = 0, edgeFade = 0, delayL = 0, delayR = 0;
-    double grain = 16, crossfade = 0;
+    double grain = 16;
     std::array<LoopAudioState, loopCount> stages {};
     int stageCount = 0;
 };
@@ -68,7 +71,6 @@ struct SlotAudioState {
     double characterScale = 1, characterSlew = 1, characterAir = 0, characterRelease = 0;
     std::array<LoopAudioState, loopCount> stages {};
     int stageCount = 0;
-    double crossfade = 0;
 };
 FilterCoefficients filterCoefficients(bool highPass, double hz, double resonance, double sampleRate) noexcept;
 struct ThresholdWindow { int start = 0, end = 0; };

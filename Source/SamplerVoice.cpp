@@ -392,6 +392,14 @@ double GlobalVoicePool::read(const Voice& v,const SlotAudioState& s,double pos,i
     const auto& g=s.playback[size_t(v.sampleIndex)];
     if(pos<0||g.length<1)return 0; // native equivalent of the legacy per-channel delay's silent pre-roll
     pos=clamp(pos,0,double(g.length-1));
+    const LoopAudioState* stage=(!v.slice.active && v.stage>=0 && v.stage<g.stageCount
+                                && v.skipStage!=v.stage)?&g.stages[size_t(v.stage)]:nullptr;
+    // Restrict per-subloop source transformations to their actual windows.
+    const bool inStage=stage && pos>=stage->start && pos<stage->end;
+    // Direction changes the *source* read head; the timeline and its ten
+    // subloop counters remain forward, including the outer Main Loop.
+    if(inStage && (stage->direction==1 || (stage->direction==2 && (v.repeat&1))))
+        pos=stage->start+stage->end-1.0-pos;
     if(!v.slice.active&&s.params[P::ram_reverse]!=0)pos=g.length-1-pos;
     const int low=v.slice.active?int(v.slice.begin):0;
     const int high=v.slice.active?int(v.slice.begin+v.slice.length)-1:g.length-1;
@@ -412,7 +420,22 @@ double GlobalVoicePool::read(const Voice& v,const SlotAudioState& s,double pos,i
     const int idx=int(pos);
     double value;
     const int ds=v.slice.active&&v.slice.downsample>=0?v.slice.downsample:int(s.params[P::ram_downsample]);
-    if(ds!=0) {
+    if(inStage && stage->downsampleAmount>0) {
+        // Continuous subloop downsampling: fractional sample-and-hold period
+        // avoids quantising the kHz control to integer source samples.
+        // Source origin must also respect the slot's existing RAM Reverse.
+        const double hold=stage->downsampleHold;
+        const double origin=s.params[P::ram_reverse]!=0 ? double(g.length)-stage->end : stage->start;
+        const double relative=std::max(0.0,pos-origin);
+        const int held=int(origin+std::floor(relative/hold)*hold);
+        const double raw=at(held), scale=stage->downsampleScale;
+        const double crushed=clamp(std::copysign(std::floor(std::abs(raw)*scale+.5)/scale,raw),-1,1);
+        if(stage->downsampleAmount<.02) {
+            // Small fade out of the clean interpolation at the zero endpoint.
+            const double a=at(idx), clean=a+(at(std::min(idx+1,g.length-1))-a)*(pos-idx);
+            value=clean+(crushed-clean)*(stage->downsampleAmount/.02);
+        } else value=crushed;
+    } else if(ds!=0) {
         const int hold=v.slice.active?v.slice.downsampleHold:g.downsampleHold;
         const double scale=v.slice.active?v.slice.downsampleScale:g.downsampleScale;
         value=at(low+((idx-low)/hold)*hold);
@@ -564,8 +587,9 @@ void GlobalVoicePool::advanceLoops(Voice& v,const SlotAudioState& s,double incre
                     // the next pass, otherwise the crossfade creates a second
                     // discontinuity at exactly the wrap point.
                     const double overlap=(!loop.fixedPitchTime || loop.pitch==0)
-                        && !fixed && g.crossfade>1 && !v.slice.active && s.params[P::stretch_amount]==0
-                        ? std::min(g.crossfade,(loop.end-loop.start)*.5)*s.stretchFactor : 0.0;
+                        && !fixed && loop.crossfade>1 && loop.direction!=2
+                        && !v.slice.active && s.params[P::stretch_amount]==0
+                        ? std::min(loop.crossfade,(loop.end-loop.start)*.5)*s.stretchFactor : 0.0;
                     v.position=loop.start*s.stretchFactor+overlap+carried;
                     // Preserve the independent zero-repeat-pitch virtual clock.
                     // No overlap skip is used during fixed-pitch repeat timing.
@@ -588,11 +612,8 @@ void GlobalVoicePool::advanceLoops(Voice& v,const SlotAudioState& s,double incre
     if(v.position>=cycle && !(fixed && v.skipStage!=v.stage)) {
         if(mainMode==1){stop(v);return;}
         if(mainMode==2&&!v.loopsReleased)release(v);
-        // Match the main-window crossfade: skip the head already mixed into
-        // the outgoing end.  This never runs for the outer One Shot mode.
-        const double mainOverlap=(g.crossfade>1 && !v.slice.active && s.params[P::stretch_amount]==0)
-            ? std::min(g.crossfade,double(g.length)*.5)*s.stretchFactor : 0.0;
-        v.position=wrap(v.position,cycle)+mainOverlap;
+        // The Main Loop has no crossfade control: only the ten subloops do.
+        v.position=wrap(v.position,cycle);
         if(v.position>=cycle)v.position=wrap(v.position,cycle);
         v.stage=-1;v.repeat=0;v.skipStage=-1;v.loopClock=0;
         selectStage(v,s);
@@ -786,23 +807,16 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             left*=fade*(1-std::max(0.0,q.pan))*(1-std::max(0.0,q.repeatPan));
             right*=fade*(1+std::min(0.0,q.pan))*(1+std::min(0.0,q.repeatPan));
         }
-        if(!BasicRead && !v.slice.active && g.crossfade>1) {
-            // One Shot on a *subloop* requests envelope release after its
-            // repeats. It must NOT disable the crossfade between those repeats.
-            // At the final traversal, blend only if there will be a jump back.
-            const bool stageActive=loop && v.skipStage!=v.stage;
-            const bool mayRepeat=stageActive
-                && (!v.loopsReleased || p[P::global_release_loops]!=0)
+        if(!BasicRead && !v.slice.active && loop && v.skipStage!=v.stage
+           && loop->crossfade>1 && loop->direction!=2) {
+            // The fade belongs to THIS subloop; Main Loop never crossfades.
+            // Ping Pong already reverses exactly at the end; no overlap skip.
+            const bool mayRepeat=(!v.loopsReleased || p[P::global_release_loops]!=0)
                 && (loop->repeats==0 || v.repeat<(v.loopsReleased?std::min(loop->repeats,1):loop->repeats));
-            const bool mainRepeats=!stageActive && int(p[P::global_one_shot])!=1;
-            // Fixed-time pitched repeats use a virtual clock that may outlive
-            // the source data. Do not mix a phantom head into their silence.
-            const bool timeStretchPitch=stageActive && loop->fixedPitchTime
-                && loop->pitch!=0;
-            if((mayRepeat || mainRepeats) && !timeStretchPitch && p[P::stretch_amount]==0) {
-                const double ls=stageActive?loop->start:0.0;
-                const double le=stageActive?loop->end:double(g.length);
-                const double fade=std::min(g.crossfade,(le-ls)*.5);
+            const bool timeStretchPitch=loop->fixedPitchTime && loop->pitch!=0;
+            if(mayRepeat && !timeStretchPitch && p[P::stretch_amount]==0) {
+                const double ls=loop->start, le=loop->end;
+                const double fade=std::min(loop->crossfade,(le-ls)*.5);
                 if(fade>1) {
                     auto cross=[&](double x,int ch,double current) noexcept {
                         if(x<le-fade || x>=le)return current;
@@ -891,7 +905,20 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         // A per-subloop level controls the whole traversal (first pass
         // and repeats), without touching the slot level or adjacent loops.
         // A 2 ms ramp prevents clicks when entering/leaving a quieter loop.
-        const double targetLoopLevel=loop && v.skipStage!=v.stage ? loop->level : 1.0;
+        // Repeat Level is a per-repeat dB slope, not a per-sample gain
+        // operation. Recalculate exp() only at repeat/stage/automation changes.
+        const bool activeLoop=loop && v.skipStage!=v.stage;
+        const int levelRepeat=activeLoop?std::min(v.repeat,128):0;
+        const int levelStage=activeLoop?v.stage:-1;
+        const double stepDb=activeLoop?loop->repeatLevelDb:0;
+        if(v.repeatLevelStageCached!=levelStage || v.repeatLevelIndexCached!=levelRepeat
+           || v.repeatLevelDbCached!=stepDb) {
+            v.repeatLevelStageCached=levelStage;v.repeatLevelIndexCached=levelRepeat;
+            v.repeatLevelDbCached=stepDb;
+            const double dB=clamp(levelRepeat*stepDb,-120.0,24.0);
+            v.repeatLevelGain=dB<=-119.9?0:std::pow(10.0,dB/20.0);
+        }
+        const double targetLoopLevel=activeLoop?loop->level*v.repeatLevelGain:1.0;
         v.loopLevelSmooth+=(targetLoopLevel-v.loopLevelSmooth)*loopLevelSmoothing;
         const double gain=v.ampSmooth*s.level*v.loopLevelSmooth
             *clamp(1+l1*s.lfo[0].volume+l2*s.lfo[1].volume,0,2);
@@ -902,6 +929,11 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         if(repeatPan!=0) {
             panL*=1-std::max(0.0,repeatPan);
             panR*=1+std::min(0.0,repeatPan);
+        }
+        // Static per-loop panorama; can coexist with the existing sweep.
+        if(loop && v.skipStage!=v.stage && loop->pan!=0) {
+            panL*=1-std::max(0.0,loop->pan);
+            panR*=1+std::min(0.0,loop->pan);
         }
         left*=gain*panL;right*=gain*panR;
         if(!BasicRead&&s.machine)applyMachine(v,s,left,right);
@@ -943,9 +975,11 @@ void GlobalVoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,
         if constexpr(Optimised) {
             bool sampleSimple = g.fadeIn<=1 && g.fadeOut<=1 && g.delayL==0 && g.delayR==0
                 && !std::signbit(g.delayL) && !std::signbit(g.delayR)
-                && g.crossfade<=1 && g.edgeFade<=0;
+                && g.edgeFade<=0;
             for(int i=0;i<g.stageCount && sampleSimple;++i)
-                if(g.stages[size_t(i)].fadeIn>0 || g.stages[size_t(i)].fadeOut>0)sampleSimple=false;
+                if(g.stages[size_t(i)].fadeIn>0 || g.stages[size_t(i)].fadeOut>0
+                   || g.stages[size_t(i)].crossfade>1 || g.stages[size_t(i)].downsampleAmount>0
+                   || g.stages[size_t(i)].direction!=0)sampleSimple=false;
             if(s.simpleVoicePath && sampleSimple && !v.slice.active && !lfoRunning) {
                 ++diagnostics.simpleSpans;
                 renderVoice<true,true>(v,s,output,start,count,outL,outR,mirror);
@@ -958,10 +992,12 @@ void GlobalVoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,
                         && p[P::ram_reverse]==0 && p[P::ram_downsample]==0 && p[P::dc_remove]==0
                         && g.fadeIn<=1 && g.fadeOut<=1 && g.delayL==0 && g.delayR==0
                         && !std::signbit(g.delayL) && !std::signbit(g.delayR)
-                        && p[P::stretch_amount]==0 && g.crossfade<=1 && g.edgeFade<=0
+                        && p[P::stretch_amount]==0 && g.edgeFade<=0
                         && p[P::pan_env]==0 && p[P::retrigger_smooth]==0;
                     for(int i=0;i<g.stageCount && allowed;++i)
-                        if(g.stages[size_t(i)].fadeIn>0 || g.stages[size_t(i)].fadeOut>0)allowed=false;
+                        if(g.stages[size_t(i)].fadeIn>0 || g.stages[size_t(i)].fadeOut>0
+                           || g.stages[size_t(i)].crossfade>1 || g.stages[size_t(i)].downsampleAmount>0
+                           || g.stages[size_t(i)].direction!=0)allowed=false;
                     eligible=allowed?1:-1;
                 }
                 if(eligible>0) {

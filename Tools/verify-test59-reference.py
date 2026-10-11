@@ -19,7 +19,7 @@ mutable_candidate_dependencies = {
 # and clarifies the Release Loop title. The frozen TEST59 reference stays intact;
 # permit only this exact candidate file, not arbitrary header changes.
 approved_candidate_hashes = {
-    'Source/Parameters.h': 'f9ad14ab98ddaf003ff16dd56d225901026508c5494ff808d242ad4769e06972',
+    'Source/Parameters.h': '5972ab6ba545ac345f01efa1edf580debf812b570b57f8e8235bae5f8cdfe8ba',
 }
 for relative, expected in manifest.items():
     expected = approved_candidate_hashes.get(relative, expected)

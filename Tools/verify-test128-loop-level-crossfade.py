@@ -12,21 +12,21 @@ state=(root/'Source/SlotAudioState.cpp').read_text()
 headers=(root/'Source/SlotAudioState.h').read_text()
 manifest=json.loads((root/'VST3_AUTOMATION_MANIFEST.json').read_text())
 assert len(manifest)==6629
-assert 'legacyLoopParameterCount = 9, loopParameterCount = 12, loopCount = 10' in catalog
-assert 'repeat_pan, pitch_time, level, count' in catalog
+assert 'legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10' in catalog
+assert 'repeat_pan, pitch_time, level, crossfade, downsample, pan, repeat_level, direction, count' in catalog
 assert '{"loop_level", "Loop Level", "Loops", Kind::continuous, 0, -120.0, 24.0' in catalog
 assert '{-1, int(L::level), Action::none, "Loops"}' in catalog
 assert '{"global_release_loops", "Repeat After Note Off"' in catalog
-assert re.search(r'for\(int i=legacyLoopParameterCount;i<loopParameterCount;\+\+i\)',processor)
+assert 'for(int i=legacyLoopParameterCount;i<int(L::crossfade);++i)' in processor
 assert 'l.level=levelDb<=-119.9?0:db(levelDb);' in state
 assert 'repeatPan = 0, level = 1' in headers
-assert 'const double targetLoopLevel=loop && v.skipStage!=v.stage ? loop->level : 1.0' in engine
+assert 'const double targetLoopLevel=activeLoop?loop->level*v.repeatLevelGain:1.0;' in engine
 assert 'v.loopLevelSmooth+=(targetLoopLevel-v.loopLevelSmooth)*loopLevelSmoothing;' in engine
 assert 'v.ampSmooth*s.level*v.loopLevelSmooth' in engine
-assert 'const bool mayRepeat=stageActive' in engine
+assert 'const bool mayRepeat=(!v.loopsReleased || p[P::global_release_loops]!=0)' in engine
 assert '(loop->repeats==0 || v.repeat<' in engine
-assert 'const bool mainRepeats=!stageActive && int(p[P::global_one_shot])!=1;' in engine
-assert 'const double overlap=' in engine and 'const double mainOverlap=' in engine
+assert 'const bool mayRepeat=(!v.loopsReleased || p[P::global_release_loops]!=0)' in engine
+assert 'const double overlap=' in engine and 'v.position=wrap(v.position,cycle);' in engine
 assert 'const double smooth=t*t*(3.0-2.0*t);' in engine
 # Check the appended IDs are deterministic, unique and cannot collide with the
 # original automation manifest or the prior TEST126 additions.

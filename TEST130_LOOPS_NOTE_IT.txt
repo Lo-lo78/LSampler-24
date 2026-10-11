@@ -1,0 +1,29 @@
+LSampler-24 TEST130 - Sottoloop indipendenti
+
+Partenza: TEST129 completo. Nessuna compilazione locale.
+
+- Crossfade globale rimosso dalla griglia e dal DSP; ciascun sottoloop
+  ha Loop Crossfade indipendente (0..200 ms). Il parametro VST3 preesistente
+  rimane registrato, ma inattivo, per non spostare gli identificativi.
+- Loop RAM Downsample 0..100%, continuo: a 0 eredita RAM Downsample dello Slot,
+  sopra 0 la frequenza virtuale scende fino a 8 kHz e la risoluzione
+  fino a 4 bit effettivi, calcolati alla preparazione dello stato audio.
+  Non converte né duplica il campione in memoria.
+- Loop Pan -100..100, in aggiunta a Repeat Pan già presente.
+- Repeat Level Amount -24..24 dB per repeat, limitato globalmente a
+  -120..+24 dB per prevenire crescita indefinita sui loop infiniti.
+- Loop Direction Forward/Reverse/Ping Pong: inversione della testina
+  di lettura virtuale dentro la regione senza invertire il Main Loop.
+- Ping Pong disattiva il crossfade, come le combinazioni già non supportate
+  di Stretch/pitch a durata virtuale fissa.
+- Predefiniti dei nuovi parametri a 0 (Forward, senza elaborazione).
+- I nuovi parametri VST3 sono aggiunti dopo i precedenti e le Bank Macro.
+- Tutti i vecchi file .github, Tools, Tests, preset e configurazione inclusi.
+
+Prove consigliate in REAPER dopo la compilazione GitHub:
+1. One Shot con due sottoloop e Repeat Pan/Loop Pan; Main Loop On, verificare
+   nuovo giro dei sottoloop completi.
+2. RAM Downsample 0/25/50/75/100 (a 100: 8 kHz e 4 bit con file >= 8 kHz).
+3. Repeat Level Amount -3 dB e +3 dB; verificare picchi e rampa.
+4. Crossfade 0/50/200 ms indipendente in due sottoloop.
+5. Loop Direction Reverse e Ping Pong; verificare Stretch e pitch fisso.

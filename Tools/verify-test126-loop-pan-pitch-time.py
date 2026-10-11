@@ -10,12 +10,12 @@ slot=(root/'Source/SlotAudioState.cpp').read_text()
 manifest=json.loads((root/'VST3_AUTOMATION_MANIFEST.json').read_text())
 old_ids=[x['id'] for x in manifest]
 assert len(old_ids)==6629 and len(set(old_ids))==6629
-assert 'legacyLoopParameterCount = 9, loopParameterCount = 12, loopCount = 10' in params
+assert 'legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10' in params
 assert 'loop_repeat_pan' in params and 'loop_pitch_time' in params
 assert re.search(r'\{"loop_pitch_time",\s*"Loop Pitch Step Time",\s*"Loops",\s*Kind::enumeration,\s*0,\s*0\.0,\s*1\.0', params), 'Original Pitch Loop must be the default'
 assert 'for(int j=0;j<loopCount;++j)for(int i=0;i<legacyLoopParameterCount;++i)' in processor
 assert processor.index('    // TEST126/128: additional Loop controls')>processor.index('    // Append after the existing 6629')
-assert 'for(int i=legacyLoopParameterCount;i<loopParameterCount;++i)' in processor
+assert 'for(int i=legacyLoopParameterCount;i<int(L::crossfade);++i)' in processor
 assert 'p.loops!=original.params.loops' in processor
 assert 'l.repeatPan=p.loop(i,L::repeat_pan)' in slot
 assert 'l.fixedPitchTime=p.loop(i,L::pitch_time)==0' in slot

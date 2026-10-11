@@ -114,6 +114,20 @@ SamplePlaybackState prepareSamplePlaybackState(const SlotParameters& p, SharedSa
             l.repeatPan=p.loop(i,L::repeat_pan);l.fixedPitchTime=p.loop(i,L::pitch_time)==0;
             const double levelDb=p.loop(i,L::level);
             l.level=levelDb<=-119.9?0:db(levelDb);
+            l.crossfade=p.loop(i,L::crossfade)*sourceMs;
+            l.pan=p.loop(i,L::pan)*.01;
+            l.repeatLevelDb=p.loop(i,L::repeat_level);
+            l.direction=int(p.loop(i,L::direction));
+            l.downsampleAmount=p.loop(i,L::downsample)*.01;
+            if(l.downsampleAmount>0) {
+                // Prepared outside the audio thread. Log frequency and bit-depth
+                // decrease together, continuously from source rate / 16 bits
+                // to 8 kHz / 4 bits at 100% (never upsample a low-rate file).
+                const double rate=sourceRate*std::pow(std::min(1.0,8000.0/sourceRate),l.downsampleAmount);
+                const double bits=16.0-12.0*l.downsampleAmount;
+                l.downsampleHold=std::max(1.0,sourceRate/rate);
+                l.downsampleScale=std::exp2(bits-1.0)-1.0;
+            }
         }
         std::sort(g.stages.begin(),g.stages.begin()+g.stageCount,[](const auto& a,const auto& b){return a.start<b.start||(a.start==b.start&&a.memory<b.memory);});
         for(int i=0;i+1<g.stageCount;++i) if(g.stages[size_t(i+1)].start>g.stages[size_t(i)].start)
@@ -124,7 +138,6 @@ SamplePlaybackState prepareSamplePlaybackState(const SlotParameters& p, SharedSa
             loop.fadeOut=std::min(loop.fadeOut,(loop.end-loop.start)*.5);
         }
     }
-    g.crossfade=v(P::loop_crossfade)*sourceMs;
     return g;
 }
 
@@ -193,7 +206,7 @@ SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sampl
         s.characterScale=std::pow(2.0,std::floor(16-s.character[1]*13+.5)-1);s.characterSlew=1-std::min(.995,s.character[1]*.72);
         s.characterAir=.0015+s.character[4]*.025;s.characterRelease=std::exp(-1/(.180*sr));
     }
-    s.stages=primary.stages;s.stageCount=primary.stageCount;s.crossfade=primary.crossfade;
+    s.stages=primary.stages;s.stageCount=primary.stageCount;
     s.effectsNeeded = v(P::ram_swap_lr)!=0 || v(P::ram_stereo_width)!=100 || v(P::normalize_on)!=0
         || s.transient || s.drive || s.comp || s.gate || s.degrade || s.ring;
     // Selection is prepared off the audio thread. Dynamic Slice/LFO/wheel state
@@ -202,10 +215,12 @@ SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sampl
         && v(P::ram_reverse)==0 && v(P::ram_downsample)==0 && v(P::dc_remove)==0
         && s.fadeIn<=1 && s.fadeOut<=1 && s.delayL==0 && s.delayR==0
         && !std::signbit(s.delayL) && !std::signbit(s.delayR)
-        && v(P::stretch_amount)==0 && s.crossfade<=1 && s.edgeFade<=0
+        && v(P::stretch_amount)==0 && s.edgeFade<=0
         && v(P::pan_env)==0 && v(P::retrigger_smooth)==0;
     for(int i=0;i<s.stageCount && s.simpleVoicePath;++i)
-        if(s.stages[size_t(i)].fadeIn>0 || s.stages[size_t(i)].fadeOut>0) s.simpleVoicePath=false;
+        if(s.stages[size_t(i)].fadeIn>0 || s.stages[size_t(i)].fadeOut>0
+           || s.stages[size_t(i)].crossfade>1 || s.stages[size_t(i)].downsampleAmount>0
+           || s.stages[size_t(i)].direction!=0) s.simpleVoicePath=false;
     return s;
 }
 } // namespace lsampler

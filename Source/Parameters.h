@@ -157,9 +157,11 @@ enum class P {
 };
 // Append the new indices only. The first nine VST3 IDs/indices are frozen.
 enum class L { start, end, repeats, fade_in, fade_out, pitch_down, lp_down, hp_down, one_shot,
-               repeat_pan, pitch_time, level, count };
-inline constexpr int parameterCount = 143, legacyLoopParameterCount = 9, loopParameterCount = 12, loopCount = 10;
-static_assert(int(L::repeat_pan)==legacyLoopParameterCount && int(L::pitch_time)==10 && int(L::level)==11 && int(L::count)==loopParameterCount);
+               repeat_pan, pitch_time, level, crossfade, downsample, pan, repeat_level, direction, count };
+inline constexpr int parameterCount = 143, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
+static_assert(int(L::repeat_pan)==legacyLoopParameterCount && int(L::pitch_time)==10 && int(L::level)==11
+              && int(L::crossfade)==12 && int(L::downsample)==13 && int(L::pan)==14
+              && int(L::repeat_level)==15 && int(L::direction)==16 && int(L::count)==loopParameterCount);
 inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"input_gain", "Level", "Slot", Kind::continuous, 0.0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""},
 {"polyphony", "Voice Mode", "Slot", Kind::enumeration, 1.0, 0.0, 1.0, 1.0, 1.0, "", 0, "Mono|Poly"},
@@ -271,7 +273,8 @@ inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"lfo2_mod_pitch_depth", "Mod Wheel LFO 2 Pitch Depth", "LFO 2", Kind::continuous, 2.0, -24.0, 24.0, 0.01, 0.1, "semitones", 2, ""},
 {"lfo2_sample_depth", "LFO 2 Sample Move Depth", "LFO 2", Kind::continuous, 0.0, -100.0, 100.0, 0.001, 0.01, "%", 3, ""},
 {"global_release_loops", "Repeat After Note Off", "Loops", Kind::enumeration, 0.0, 0.0, 1.0, 1.0, 1.0, "", 0, "Off|On"},
-{"loop_crossfade", "Loop Crossfade", "Loops", Kind::continuous, 0, 0, 200, 0.01, 1, "ms", 2, ""},
+// Retained only as a legacy VST3 parameter ID (and preset field): removed from the UI and DSP.
+{"loop_crossfade", "Legacy Loop Crossfade (unused)", "Legacy", Kind::continuous, 0, 0, 200, 0.01, 1, "ms", 2, ""},
 {"drive_type", "Drive RAM", "Drive", Kind::enumeration, 0.0, 0.0, 3.0, 1.0, 1.0, "", 0, "Off|Tape|Soft Clip|Digital Clip"},
 {"drive_amount", "Drive Amount", "Drive", Kind::continuous, 0.0, 0.0, 100.0, 0.1, 5.0, "%", 1, ""},
 {"drive_position", "Drive Position", "Drive", Kind::enumeration, 0.0, 0.0, 1.0, 1.0, 1.0, "", 0, "Before Comp Gate|After Comp Gate"},
@@ -328,11 +331,16 @@ inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 // TEST127: Original Pitch Loop (0) is the default for every new subloop.
 {"loop_pitch_time", "Loop Pitch Step Time", "Loops", Kind::enumeration, 0, 0.0, 1.0, 1.0, 1.0, "", 0,
  "Original Pitch Loop|Pitch Resizes Loop"},
-{"loop_level", "Loop Level", "Loops", Kind::continuous, 0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""}
+{"loop_level", "Loop Level", "Loops", Kind::continuous, 0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""},
+{"loop_sub_crossfade", "Loop Crossfade", "Loops", Kind::continuous, 0, 0.0, 200.0, 0.01, 1.0, "ms", 2, ""},
+{"loop_sub_downsample", "Loop RAM Downsample", "Loops", Kind::continuous, 0, 0.0, 100.0, 0.1, 1.0, "%", 1, ""},
+{"loop_pan", "Loop Pan", "Loops", Kind::continuous, 0, -100.0, 100.0, 0.01, 1.0, "%", 2, ""},
+{"loop_repeat_level", "Repeat Level Amount", "Loops", Kind::continuous, 0, -24.0, 24.0, 0.1, 1.0, "dB", 1, ""},
+{"loop_direction", "Loop Direction", "Loops", Kind::enumeration, 0, 0.0, 2.0, 1.0, 1.0, "", 0, "Forward|Reverse|Ping Pong"}
 }};
 enum class Action { none, sampleZero, loopZero };
 struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; int global = -1; };
-inline constexpr std::array<GridEntry, 164> grid {{
+inline constexpr std::array<GridEntry, 167> grid {{
 {int(P::input_gain), -1, Action::none, "Slot"},
 {int(P::polyphony), -1, Action::none, "Slot"},
 {int(P::slot_polyphony), -1, Action::none, "Slot"},
@@ -452,12 +460,16 @@ inline constexpr std::array<GridEntry, 164> grid {{
 {-1, int(L::pitch_time), Action::none, "Loops"},
 {-1, int(L::repeat_pan), Action::none, "Loops"},
 {-1, int(L::level), Action::none, "Loops"},
+{-1, int(L::crossfade), Action::none, "Loops"},
+{-1, int(L::downsample), Action::none, "Loops"},
+{-1, int(L::pan), Action::none, "Loops"},
+{-1, int(L::repeat_level), Action::none, "Loops"},
+{-1, int(L::direction), Action::none, "Loops"},
 {-1, 6, Action::none, "Loops"},
 {-1, 7, Action::none, "Loops"},
 {-1, 8, Action::none, "Loops"},
 {int(P::global_release_loops), -1, Action::none, "Loops"},
 {int(P::release), -1, Action::none, "Loops"},
-{int(P::loop_crossfade), -1, Action::none, "Loops"},
 {int(P::drive_type), -1, Action::none, "Drive"},
 {int(P::drive_amount), -1, Action::none, "Drive"},
 {int(P::drive_position), -1, Action::none, "Drive"},

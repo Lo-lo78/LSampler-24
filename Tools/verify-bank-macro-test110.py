@@ -10,7 +10,10 @@ text = (root / 'Source/Parameters.h').read_text()
 entries = re.findall(r'^\{int\(P::(\w+)\),\s*-1,\s*Action::none,\s*"([^"]+)"\}', text, re.M)
 excluded = set('low high root velocity_low velocity_high choke_trigger choke_target choke_mode normalize_on normalize_target ram_downsample ram_fade_in ram_fade_out ram_reverse dc_remove'.split())
 macro_keys = {p for p, cat in entries if cat != 'Sample Window' and p not in excluded}
-assert len(macro_keys) == 117, len(macro_keys)
+# TEST130 hides the legacy Loop Crossfade in the Grid, but retains its old
+# Bank Macro automation ID at its original position before Drive.
+macro_keys.add('loop_crossfade')
+assert len(macro_keys) == 116, len(macro_keys)
 new_ids = ['bankmacro_' + key for key in sorted(macro_keys)]
 
 def vst_hash(name):
@@ -31,4 +34,4 @@ assert 'const bool macroChanged' in processor and 'const double offset' in proce
 assert 'p.values[size_t(i)] = sanitise' in processor
 assert 'processor.setBankMacroOffset(parameter, value);' in editor
 assert 'processor.getBankMacroOffset(' in editor
-print('PASS: 6629 original parameter IDs retained + 117 new macro IDs (6746 total); hash uniqueness, persistence, audio and UI routing.')
+print('PASS: 6629 original parameter IDs retained + 116 preserved macro IDs (6745 total); hash uniqueness, persistence, audio and UI routing.')

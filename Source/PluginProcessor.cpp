@@ -3286,6 +3286,17 @@ void LSampler24AudioProcessor::createHostParameters()
     // reuse an ID. JUCE VST3 hosts see each Bank Macro as its own automation lane.
     std::array<bool, parameterCount> added {};
     for (const auto& entry : grid) {
+        // TEST130: the retired global Loop Crossfade is hidden from the
+        // accessible grid, but its Bank Macro retains its original VST3 ID
+        // and position, immediately before Drive. Never shift prior lanes.
+        if (entry.parameter == int(P::drive_type) && !added[size_t(P::loop_crossfade)]) {
+            const int legacyIndex = int(P::loop_crossfade);
+            const auto& legacy = parameters[size_t(legacyIndex)];
+            hostBankMacros[size_t(legacyIndex)] = add("bankmacro_" + juce::String(legacy.key),
+                "Bank Macro - " + juce::String(legacy.name),
+                bankMacroDeltaDescriptor(legacyIndex), bankMacroHostGeneration);
+            added[size_t(legacyIndex)] = true;
+        }
         if (!bankMacroEligible(entry)) continue;
         const int index = entry.parameter;
         if (added[size_t(index)]) continue;
@@ -3302,7 +3313,20 @@ void LSampler24AudioProcessor::createHostParameters()
         auto& h=hostSlots[size_t(slot)];auto& revision=hostGenerations[size_t(slot)];
         const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
         const juce::String name="Slot "+juce::String(slot+1)+" - ";
-        for(int j=0;j<loopCount;++j)for(int i=legacyLoopParameterCount;i<loopParameterCount;++i) {
+        for(int j=0;j<loopCount;++j)for(int i=legacyLoopParameterCount;i<int(L::crossfade);++i) {
+            const auto& d=loopParameters[size_t(i)];
+            h.loops[size_t(j)][size_t(i)]=add(id+"loop"+juce::String(j+1).paddedLeft('0',2)+"_"+d.key,
+                name+"Loop "+juce::String(j+1)+" - "+d.name,d,revision);
+        }
+    }
+    // TEST130: Only after ALL prior TEST126/128 IDs may the five new
+    // per-subloop controls be registered.  Preserve both their ID and
+    // numeric host index for existing REAPER automation envelopes.
+    for(int slot=0;slot<slotCount;++slot) {
+        auto& h=hostSlots[size_t(slot)];auto& revision=hostGenerations[size_t(slot)];
+        const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
+        const juce::String name="Slot "+juce::String(slot+1)+" - ";
+        for(int j=0;j<loopCount;++j)for(int i=int(L::crossfade);i<loopParameterCount;++i) {
             const auto& d=loopParameters[size_t(i)];
             h.loops[size_t(j)][size_t(i)]=add(id+"loop"+juce::String(j+1).paddedLeft('0',2)+"_"+d.key,
                 name+"Loop "+juce::String(j+1)+" - "+d.name,d,revision);
