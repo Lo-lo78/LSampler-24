@@ -157,9 +157,9 @@ enum class P {
 };
 // Append the new indices only. The first nine VST3 IDs/indices are frozen.
 enum class L { start, end, repeats, fade_in, fade_out, pitch_down, lp_down, hp_down, one_shot,
-               repeat_pan, pitch_time, count };
-inline constexpr int parameterCount = 143, legacyLoopParameterCount = 9, loopParameterCount = 11, loopCount = 10;
-static_assert(int(L::repeat_pan)==legacyLoopParameterCount && int(L::pitch_time)==10 && int(L::count)==loopParameterCount);
+               repeat_pan, pitch_time, level, count };
+inline constexpr int parameterCount = 143, legacyLoopParameterCount = 9, loopParameterCount = 12, loopCount = 10;
+static_assert(int(L::repeat_pan)==legacyLoopParameterCount && int(L::pitch_time)==10 && int(L::level)==11 && int(L::count)==loopParameterCount);
 inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"input_gain", "Level", "Slot", Kind::continuous, 0.0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""},
 {"polyphony", "Voice Mode", "Slot", Kind::enumeration, 1.0, 0.0, 1.0, 1.0, 1.0, "", 0, "Mono|Poly"},
@@ -270,7 +270,7 @@ inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"lfo2_pitch_depth", "LFO 2 Pitch Depth", "LFO 2", Kind::continuous, 0.0, -96.0, 96.0, 0.1, 1.0, "semitones", 1, ""},
 {"lfo2_mod_pitch_depth", "Mod Wheel LFO 2 Pitch Depth", "LFO 2", Kind::continuous, 2.0, -24.0, 24.0, 0.01, 0.1, "semitones", 2, ""},
 {"lfo2_sample_depth", "LFO 2 Sample Move Depth", "LFO 2", Kind::continuous, 0.0, -100.0, 100.0, 0.001, 0.01, "%", 3, ""},
-{"global_release_loops", "Release Loop", "Loops", Kind::enumeration, 0.0, 0.0, 1.0, 1.0, 1.0, "", 0, "Off|On"},
+{"global_release_loops", "Repeat After Note Off", "Loops", Kind::enumeration, 0.0, 0.0, 1.0, 1.0, 1.0, "", 0, "Off|On"},
 {"loop_crossfade", "Loop Crossfade", "Loops", Kind::continuous, 0, 0, 200, 0.01, 1, "ms", 2, ""},
 {"drive_type", "Drive RAM", "Drive", Kind::enumeration, 0.0, 0.0, 3.0, 1.0, 1.0, "", 0, "Off|Tape|Soft Clip|Digital Clip"},
 {"drive_amount", "Drive Amount", "Drive", Kind::continuous, 0.0, 0.0, 100.0, 0.1, 5.0, "%", 1, ""},
@@ -327,11 +327,12 @@ inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 {"loop_repeat_pan", "Repeat Pan", "Loops", Kind::continuous, 0, -100.0, 100.0, 0.01, 1.0, "%", 2, ""},
 // TEST127: Original Pitch Loop (0) is the default for every new subloop.
 {"loop_pitch_time", "Loop Pitch Step Time", "Loops", Kind::enumeration, 0, 0.0, 1.0, 1.0, 1.0, "", 0,
- "Original Pitch Loop|Pitch Resizes Loop"}
+ "Original Pitch Loop|Pitch Resizes Loop"},
+{"loop_level", "Loop Level", "Loops", Kind::continuous, 0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""}
 }};
 enum class Action { none, sampleZero, loopZero };
 struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; int global = -1; };
-inline constexpr std::array<GridEntry, 163> grid {{
+inline constexpr std::array<GridEntry, 164> grid {{
 {int(P::input_gain), -1, Action::none, "Slot"},
 {int(P::polyphony), -1, Action::none, "Slot"},
 {int(P::slot_polyphony), -1, Action::none, "Slot"},
@@ -450,6 +451,7 @@ inline constexpr std::array<GridEntry, 163> grid {{
 {-1, 5, Action::none, "Loops"},
 {-1, int(L::pitch_time), Action::none, "Loops"},
 {-1, int(L::repeat_pan), Action::none, "Loops"},
+{-1, int(L::level), Action::none, "Loops"},
 {-1, 6, Action::none, "Loops"},
 {-1, 7, Action::none, "Loops"},
 {-1, 8, Action::none, "Loops"},

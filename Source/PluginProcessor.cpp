@@ -3295,7 +3295,7 @@ void LSampler24AudioProcessor::createHostParameters()
             "Bank Macro - " + juce::String(descriptor.name),
             bankMacroDeltaDescriptor(index), bankMacroHostGeneration);
     }
-    // TEST126: new Loop controls MUST follow all 6629 original controls and
+    // TEST126/128: additional Loop controls MUST follow all 6629 original controls and
     // the already-existing TEST110 Bank Macros. Never insert into the legacy batches:
     // REAPER's existing automation envelopes depend on that stable ordering.
     for(int slot=0;slot<slotCount;++slot) {

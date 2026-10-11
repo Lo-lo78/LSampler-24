@@ -17,6 +17,17 @@ constexpr auto lsamplerReleaseDate = "7 October 2026";
 constexpr auto lsamplerProjectUrl = "https://github.com/Lo-lo78/LSampler-24";
 constexpr auto lsamplerContactEmail = "vmanolo301@gmail.com";
 
+// TEST129: Keyboard initial search must use the SAME accessible parameter
+// name as the parameter grid, not the immutable host parameter descriptor.
+// For example the host ID/name 'Global One Shot' is shown to the musician
+// as 'Main Playback Mode' and must be reached with M, never G.
+juce::String displayedGridParameterName(const GridEntry& entry)
+{
+    return entry.parameter == int(P::global_one_shot)
+        ? juce::String("Main Playback Mode")
+        : juce::String(descriptor(entry).name);
+}
+
 using ValueEditorShortcut = std::function<bool(const juce::KeyPress&, juce::Component*)>;
 
 class ShortcutValueTextEditor final : public juce::TextEditor
@@ -776,7 +787,7 @@ bool LSampler24AudioProcessorEditor::selectedRateIsSynced() const {
 }
 juce::String LSampler24AudioProcessorEditor::selectedParameterName() const {
     const auto& e=selectedEntry();
-    const juce::String name = e.parameter == int(P::global_one_shot) ? "Main Playback Mode" : juce::String(descriptor(e).name);
+    const juce::String name = displayedGridParameterName(e);
     return (std::strcmp(e.category,"Loops")==0?"Loop "+juce::String(selectedLoop+1)+" ":juce::String())+name
         + ((observedAutomationState == 1 && observedAutomationParameter == automationGridSelection())
              ? juce::String(", Auto") : juce::String());
@@ -932,7 +943,7 @@ juce::String LSampler24AudioProcessorEditor::selectedParameterValueText() const 
 juce::String LSampler24AudioProcessorEditor::parameterCellText(int index) const {
     const auto& e=lsampler::grid[size_t(index)];
     const juce::String prefix=std::strcmp(e.category,"Loops")==0?"Loop "+juce::String(selectedLoop+1)+" ":juce::String();
-    const juce::String name = e.parameter == int(P::global_one_shot) ? "Main Playback Mode" : juce::String(descriptor(e).name);
+    const juce::String name = displayedGridParameterName(e);
     const juce::String marker = (index == selectedParameter && observedAutomationState == 1
         && observedAutomationParameter == automationGridSelection()) ? ", Auto" : "";
     if (bankMacroOpen)
@@ -1153,30 +1164,43 @@ void LSampler24AudioProcessorEditor::selectBankMacroEntry(int position, bool ann
     refreshVisuals();
 }
 
-void LSampler24AudioProcessorEditor::moveBankMacroPage(int direction)
+void LSampler24AudioProcessorEditor::moveBankMacroPage(int direction, bool firstParameter)
 {
-    if (!bankMacroOpen) return;
-    const auto* category = selectedEntry().category;
-    int target = bankMacroCursor;
+    if (!bankMacroOpen || bankMacroEntries.empty()) return;
+    const int count = int(bankMacroEntries.size());
+    const auto categoryAt = [this](int cursor) {
+        return lsampler::grid[size_t(bankMacroEntries[size_t(cursor)])].category;
+    };
+    const auto* currentCategory = categoryAt(bankMacroCursor);
+    int begin = bankMacroCursor;
+    int end = bankMacroCursor;
+    while (begin > 0 && std::strcmp(categoryAt(begin - 1), currentCategory) == 0)
+        --begin;
+    while (end + 1 < count && std::strcmp(categoryAt(end + 1), currentCategory) == 0)
+        ++end;
+
+    int nextBegin = 0;
+    int nextEnd = 0;
     if (direction > 0)
     {
-        while (target < int(bankMacroEntries.size()) &&
-               std::strcmp(lsampler::grid[size_t(bankMacroEntries[size_t(target)])].category, category) == 0)
-            ++target;
-        if (target >= int(bankMacroEntries.size())) return;
+        if (end + 1 >= count) return;
+        nextBegin = end + 1;
+        nextEnd = nextBegin;
+        const auto* nextCategory = categoryAt(nextBegin);
+        while (nextEnd + 1 < count && std::strcmp(categoryAt(nextEnd + 1), nextCategory) == 0)
+            ++nextEnd;
     }
     else
     {
-        while (target >= 0 &&
-               std::strcmp(lsampler::grid[size_t(bankMacroEntries[size_t(target)])].category, category) == 0)
-            --target;
-        if (target < 0) return;
-        category = lsampler::grid[size_t(bankMacroEntries[size_t(target)])].category;
-        while (target > 0 &&
-               std::strcmp(lsampler::grid[size_t(bankMacroEntries[size_t(target - 1)])].category, category) == 0)
-            --target;
+        if (begin == 0) return;
+        nextEnd = begin - 1;
+        nextBegin = nextEnd;
+        const auto* previousCategory = categoryAt(nextEnd);
+        while (nextBegin > 0 && std::strcmp(categoryAt(nextBegin - 1), previousCategory) == 0)
+            --nextBegin;
     }
-    selectBankMacroEntry(target, true);
+    const int row = firstParameter ? 0 : bankMacroCursor - begin;
+    selectBankMacroEntry(juce::jmin(nextBegin + row, nextEnd), true);
 }
 
 void LSampler24AudioProcessorEditor::toggleBankMacroUniform()
@@ -2627,7 +2651,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             if (mods.isAltDown() && mods.isShiftDown() && !mods.isCtrlDown()
                 && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
             {
-                moveBankMacroPage(code == juce::KeyPress::rightKey ? 1 : -1);
+                moveBankMacroPage(code == juce::KeyPress::rightKey ? 1 : -1, true);
                 return true;
             }
             if (!mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
@@ -2649,7 +2673,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 }
                 else if (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey)
                 {
-                    moveBankMacroPage(code == juce::KeyPress::rightKey ? 1 : -1);
+                    moveBankMacroPage(code == juce::KeyPress::rightKey ? 1 : -1, false);
                     return true;
                 }
                 else if (code == juce::KeyPress::returnKey)
@@ -2672,7 +2696,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                         {
                             const int cursor = (bankMacroCursor + int(bankMacroEntries.size()) +
                                                 direction * distance % int(bankMacroEntries.size())) % int(bankMacroEntries.size());
-                            const auto name = juce::String(descriptor(lsampler::grid[size_t(bankMacroEntries[size_t(cursor)])]).name);
+                            const auto name = displayedGridParameterName(lsampler::grid[size_t(bankMacroEntries[size_t(cursor)])]);
                             if (name.isNotEmpty() && juce::CharacterFunctions::toLowerCase(name[0]) == initial)
                             { target = cursor; break; }
                         }
@@ -2792,11 +2816,11 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         openSliceEditor(false);return true;
     }
 
-    const auto moveParameterPage = [this](int direction)
+    const auto moveParameterPage = [this](int direction, bool firstParameter)
     {
         const int begin = categoryBegin(selectedParameter);
         const int end = categoryEnd(selectedParameter);
-        const int row = selectedParameter - begin;
+        const int row = firstParameter ? 0 : selectedParameter - begin;
         if (direction < 0 && begin > 0)
         {
             const int previous = categoryBegin(begin - 1);
@@ -2846,13 +2870,14 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         return true;
     }
 
-    // Page/category navigation remains available, now on Alt+Shift+Left/Right.
+    // Alt+Shift+Left/Right opens the NEXT/PREVIOUS page at its FIRST control.
+    // Plain Left/Right preserves the current row in the destination page.
     // Ctrl+Left/Right is reserved for Sample Play Start scrubbing.
     if (parameterPage && !globalOpen && !bankMacroOpen && !sourceIsValueEditor && mods.isAltDown() && mods.isShiftDown()
         && !mods.isCtrlDown() && !mods.isCommandDown()
         && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
     {
-        moveParameterPage(code == juce::KeyPress::leftKey ? -1 : 1);
+        moveParameterPage(code == juce::KeyPress::leftKey ? -1 : 1, true);
         return true;
     }
 
@@ -3174,12 +3199,13 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             if (!globalOpen && !mods.isCtrlDown() && !mods.isAltDown() && !mods.isShiftDown() && !mods.isCommandDown()
                 && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
             {
-                moveParameterPage(code == juce::KeyPress::leftKey ? -1 : 1);
+                moveParameterPage(code == juce::KeyPress::leftKey ? -1 : 1, false);
                 return true;
             }
-            // Type-ahead navigation: plain character searches forward, Shift+character
-            // searches backward.  Use the key code so Shift does not turn e.g. 1 into !;
-            // letters, digits and punctuation can all be used as initials.
+            // Type-ahead navigation uses the actual accessible grid label, without
+            // the repeated 'Loop N' prefix or displayed value. Plain initials
+            // search forward, Shift+initial backward. Use key code so Shift
+            // does not turn e.g. 1 into !.
             if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isCommandDown()) {
                 const auto initial=juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
                 if(initial>=33&&initial<=126) {
@@ -3192,7 +3218,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                         int relative=(local+direction*distance)%count;
                         if(relative<0)relative+=count;
                         const int next=first+relative;
-                        const auto name=juce::String(descriptor(lsampler::grid[size_t(next)]).name);
+                        const auto name=displayedGridParameterName(lsampler::grid[size_t(next)]);
                         if(name.isNotEmpty()&&juce::CharacterFunctions::toLowerCase(name[0])==initial){selectParameter(next,true);break;}
                     }
                     return true;

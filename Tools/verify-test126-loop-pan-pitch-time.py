@@ -10,11 +10,11 @@ slot=(root/'Source/SlotAudioState.cpp').read_text()
 manifest=json.loads((root/'VST3_AUTOMATION_MANIFEST.json').read_text())
 old_ids=[x['id'] for x in manifest]
 assert len(old_ids)==6629 and len(set(old_ids))==6629
-assert 'legacyLoopParameterCount = 9, loopParameterCount = 11, loopCount = 10' in params
+assert 'legacyLoopParameterCount = 9, loopParameterCount = 12, loopCount = 10' in params
 assert 'loop_repeat_pan' in params and 'loop_pitch_time' in params
 assert re.search(r'\{"loop_pitch_time",\s*"Loop Pitch Step Time",\s*"Loops",\s*Kind::enumeration,\s*0,\s*0\.0,\s*1\.0', params), 'Original Pitch Loop must be the default'
 assert 'for(int j=0;j<loopCount;++j)for(int i=0;i<legacyLoopParameterCount;++i)' in processor
-assert processor.index('    // TEST126: new Loop controls')>processor.index('    // Append after the existing 6629')
+assert processor.index('    // TEST126/128: additional Loop controls')>processor.index('    // Append after the existing 6629')
 assert 'for(int i=legacyLoopParameterCount;i<loopParameterCount;++i)' in processor
 assert 'p.loops!=original.params.loops' in processor
 assert 'l.repeatPan=p.loop(i,L::repeat_pan)' in slot
@@ -50,4 +50,4 @@ for ratio in (0.5,1.0,2.0):
     fixed_time=length/1.0
     resized_time=length/ratio
     assert fixed_time==1000.0 and abs(resized_time*ratio-length)<1e-8
-print(f'PASS TEST126: {len(old_ids)} legacy IDs, {len(macro_ids)} macros, 480 appended Loop IDs; pan, Original Pitch Loop default and state wiring.')
+print(f'PASS TEST126: {len(old_ids)} legacy IDs, {len(macro_ids)} macros, 480 TEST126 Loop IDs; pan, Original Pitch Loop default and state wiring.')

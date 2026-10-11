@@ -15,11 +15,11 @@ mutable_candidate_dependencies = {
     'Source/SlotAudioState.cpp',
     'Source/PluginProcessor.cpp',
 }
-# TEST127: the candidate parameter catalog appends Repeat Pan and
-# Loop Pitch Step Time, with Original Pitch Loop now the default. The frozen TEST59 reference and its hashes stay intact;
+# TEST128: candidate parameter catalog also appends per-subloop Loop Level,
+# and clarifies the Release Loop title. The frozen TEST59 reference stays intact;
 # permit only this exact candidate file, not arbitrary header changes.
 approved_candidate_hashes = {
-    'Source/Parameters.h': '616a0573d50c5f232938953a123df03ab4308b62fb2f95549aa7de3f1ed47f3f',
+    'Source/Parameters.h': 'f9ad14ab98ddaf003ff16dd56d225901026508c5494ff808d242ad4769e06972',
 }
 for relative, expected in manifest.items():
     expected = approved_candidate_hashes.get(relative, expected)

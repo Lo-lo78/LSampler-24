@@ -559,9 +559,16 @@ void GlobalVoicePool::advanceLoops(Voice& v,const SlotAudioState& s,double incre
                 const int repeats=v.loopsReleased&&loop.repeats==0?1:loop.repeats;
                 if(repeats==0||++v.repeat<=repeats) {
                     const double carried=wrap(overshoot,length);
-                    v.position=loop.start*s.stretchFactor+carried;
-                    // Carry fractional source-frame overshoot to the virtual
-                    // clock too, like SlicePlayback::advance().
+                    // The outgoing tail has already been blended with the
+                    // first N source frames. Skip those overlapped frames on
+                    // the next pass, otherwise the crossfade creates a second
+                    // discontinuity at exactly the wrap point.
+                    const double overlap=(!loop.fixedPitchTime || loop.pitch==0)
+                        && !fixed && g.crossfade>1 && !v.slice.active && s.params[P::stretch_amount]==0
+                        ? std::min(g.crossfade,(loop.end-loop.start)*.5)*s.stretchFactor : 0.0;
+                    v.position=loop.start*s.stretchFactor+overlap+carried;
+                    // Preserve the independent zero-repeat-pitch virtual clock.
+                    // No overlap skip is used during fixed-pitch repeat timing.
                     v.loopClock=loop.fixedPitchTime?carried:0;
                 } else if(next&&!loop.oneShot&&!v.loopsReleased) {
                     ++v.stage;v.repeat=0;v.skipStage=-1;v.loopClock=0;
@@ -581,7 +588,12 @@ void GlobalVoicePool::advanceLoops(Voice& v,const SlotAudioState& s,double incre
     if(v.position>=cycle && !(fixed && v.skipStage!=v.stage)) {
         if(mainMode==1){stop(v);return;}
         if(mainMode==2&&!v.loopsReleased)release(v);
-        v.position=wrap(v.position,cycle);
+        // Match the main-window crossfade: skip the head already mixed into
+        // the outgoing end.  This never runs for the outer One Shot mode.
+        const double mainOverlap=(g.crossfade>1 && !v.slice.active && s.params[P::stretch_amount]==0)
+            ? std::min(g.crossfade,double(g.length)*.5)*s.stretchFactor : 0.0;
+        v.position=wrap(v.position,cycle)+mainOverlap;
+        if(v.position>=cycle)v.position=wrap(v.position,cycle);
         v.stage=-1;v.repeat=0;v.skipStage=-1;v.loopClock=0;
         selectStage(v,s);
     }
@@ -602,6 +614,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
     // These cannot change within a render span. MIDI changes start a new span.
     const double wheelValue=wheel[size_t(v.channel)];
     const double velocitySmoothing=std::min(1.0,1/(.002*hostSampleRate));
+    const double loopLevelSmoothing=std::min(1.0,1/(.002*hostSampleRate));
     // Match filterCoefficients() operation-for-operation. These terms depend
     // only on the span's immutable state; no reciprocal sample-rate shortcut.
     const double cutoffLimit=Filtered?std::min(10000.0,hostSampleRate*.45):0;
@@ -773,17 +786,33 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             left*=fade*(1-std::max(0.0,q.pan))*(1-std::max(0.0,q.repeatPan));
             right*=fade*(1+std::min(0.0,q.pan))*(1+std::min(0.0,q.repeatPan));
         }
-        if(!BasicRead&&!v.slice.active&&g.crossfade>1) {
-            const double ls=loop?loop->start:0,le=loop?loop->end:g.length;
-            const bool one=loop?loop->oneShot:p[P::global_one_shot]!=0;
-            const double fade=std::min(g.crossfade,(le-ls)*.5);
-            if(!one&&fade>1) {
-                auto cross=[&](double x,int ch,double current) {
-                    if(x<le-fade||x>=le)return current;
-                    const double t=(x-(le-fade))/fade;
-                    return current*(1-t)+read(v,s,ls+x-(le-fade),ch)*t;
-                };
-                left=cross(pos-g.delayL,0,left);right=sharedRead?left:cross(pos-g.delayR,1,right);
+        if(!BasicRead && !v.slice.active && g.crossfade>1) {
+            // One Shot on a *subloop* requests envelope release after its
+            // repeats. It must NOT disable the crossfade between those repeats.
+            // At the final traversal, blend only if there will be a jump back.
+            const bool stageActive=loop && v.skipStage!=v.stage;
+            const bool mayRepeat=stageActive
+                && (!v.loopsReleased || p[P::global_release_loops]!=0)
+                && (loop->repeats==0 || v.repeat<(v.loopsReleased?std::min(loop->repeats,1):loop->repeats));
+            const bool mainRepeats=!stageActive && int(p[P::global_one_shot])!=1;
+            // Fixed-time pitched repeats use a virtual clock that may outlive
+            // the source data. Do not mix a phantom head into their silence.
+            const bool timeStretchPitch=stageActive && loop->fixedPitchTime
+                && loop->pitch!=0;
+            if((mayRepeat || mainRepeats) && !timeStretchPitch && p[P::stretch_amount]==0) {
+                const double ls=stageActive?loop->start:0.0;
+                const double le=stageActive?loop->end:double(g.length);
+                const double fade=std::min(g.crossfade,(le-ls)*.5);
+                if(fade>1) {
+                    auto cross=[&](double x,int ch,double current) noexcept {
+                        if(x<le-fade || x>=le)return current;
+                        const double t=clamp((x-(le-fade))/fade,0.0,1.0);
+                        const double smooth=t*t*(3.0-2.0*t);
+                        return current*(1.0-smooth)+read(v,s,ls+x-(le-fade),ch)*smooth;
+                    };
+                    left=cross(pos-g.delayL,0,left);
+                    right=sharedRead?left:cross(pos-g.delayR,1,right);
+                }
             }
         }
         if(!BasicRead&&g.edgeFade>0) {left*=edgeGain(pos-g.delayL,g.length,g.edgeFade,g.edgeFade);right*=edgeGain(pos-g.delayR,g.length,g.edgeFade,g.edgeFade);}
@@ -859,7 +888,13 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         v.velocitySmooth+=(v.velocityGain-v.velocitySmooth)*velocitySmoothing;
         const double rawAmp=amp*v.velocitySmooth;
         if(!BasicRead&&p[P::retrigger_smooth]>0)v.ampSmooth+=(rawAmp-v.ampSmooth)*s.smooth;else v.ampSmooth=rawAmp;
-        const double gain=v.ampSmooth*s.level*clamp(1+l1*s.lfo[0].volume+l2*s.lfo[1].volume,0,2);
+        // A per-subloop level controls the whole traversal (first pass
+        // and repeats), without touching the slot level or adjacent loops.
+        // A 2 ms ramp prevents clicks when entering/leaving a quieter loop.
+        const double targetLoopLevel=loop && v.skipStage!=v.stage ? loop->level : 1.0;
+        v.loopLevelSmooth+=(targetLoopLevel-v.loopLevelSmooth)*loopLevelSmoothing;
+        const double gain=v.ampSmooth*s.level*v.loopLevelSmooth
+            *clamp(1+l1*s.lfo[0].volume+l2*s.lfo[1].volume,0,2);
         double panL=s.panL,panR=s.panR;
         if(!BasicRead&&p[P::pan_env]!=0){const double pan=clamp((p[P::pan]+amp*p[P::pan_env]*mirror)*.01,-1,1);panL=1-std::max(0.0,pan);panR=1+std::min(0.0,pan);}
         // Same attenuation pan law used by Slice Repeat Pan. It combines

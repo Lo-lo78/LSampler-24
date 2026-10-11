@@ -1,0 +1,20 @@
+TEST129 - Navigazione Grid e Bank Macro / accessibilita NVDA
+
+Base: TEST128 completo. Nessuna modifica a motore audio, preset, parametri,
+automazioni VST3, limiti slot, nomi host o file della cartella .github.
+
+1) Ricerca alfabetica: usa la stessa funzione per il nome realmente
+   visualizzato e annunciato dal plugin (non il descriptor host).
+   Esempio: M seleziona Main Playback Mode; G non lo seleziona piu per
+   il nome tecnico Global One Shot. Vale anche per la griglia Bank Macro.
+   Il prefisso Loop N e il valore non partecipano alla ricerca.
+   Lettere senza modificatori: ricerca in avanti; Shift+lettera: indietro.
+2) Pagine Grid: Freccia Sinistra/Destra mantiene la posizione relativa;
+   Alt+Shift+Freccia Sinistra/Destra va alla PRIMA voce della pagina.
+   Entrambi rispettano i limiti estremi senza cambi di pagina.
+3) Bank Macro: stessi due criteri di navigazione tra le categorie.
+4) Help italiano e inglese aggiornato.
+
+Controlli statici, senza compilazione: Tools/verify-test129-grid-navigation.py,
+Tools/verify-test59-reference.py, Tools/verify-vst3-automation-source.py.
+La verifica interattiva in REAPER/NVDA resta necessaria.

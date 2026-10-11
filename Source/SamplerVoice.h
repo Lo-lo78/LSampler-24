@@ -45,7 +45,7 @@ private:
         int slotIndex=-1,note=-1,channel=0,stage=-1,repeat=0,skipStage=-1,sampleIndex=0,loopPitchTimeRepeat=-1;
         uint64_t age=0,revision=0;
         SharedSample* sample=nullptr;
-        double position=0,loopClock=0,loopPitchTimeFactor=1,loopPitchTimeAmount=0,effectiveNote=60,velocity=1,velocityGain=1,velocitySmooth=1,drift=0;
+        double position=0,loopClock=0,loopPitchTimeFactor=1,loopPitchTimeAmount=0,loopLevelSmooth=1,effectiveNote=60,velocity=1,velocityGain=1,velocitySmooth=1,drift=0;
         double pitchCached=1e30,increment=1,ampSmooth=0,followCached=1e30,ringIncrement=0,fmIncrement=0;
         double lpBase=10000,hpBase=20,lpModCached=1e30,hpModCached=1e30;
         double hpCutoffParamCached=1e30,hpResonanceParamCached=1e30;

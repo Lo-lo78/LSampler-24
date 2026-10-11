@@ -654,7 +654,7 @@ private:
     void openBankMacro();
     void closeBankMacro(bool restoreFocus = true);
     void selectBankMacroEntry(int position, bool announce);
-    void moveBankMacroPage(int direction);
+    void moveBankMacroPage(int direction, bool firstParameter);
     void toggleBankMacroUniform();
     void resetSelectedBankMacro();
     juce::String bankMacroRelativeText(int gridIndex, double offset) const;

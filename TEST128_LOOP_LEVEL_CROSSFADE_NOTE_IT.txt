@@ -1,0 +1,44 @@
+LSampler-24 TEST128 — Loop Level, Crossfade and Release
+
+Base: TEST127 (all source, .github/workflows and .gitignore preserved).
+No build / no compilation performed.
+
+- Each of the 10 subloops has Loop Level (-120..+24 dB, default 0 dB).
+  Controls the entire subloop traversal, including the initial pass and all
+  repetitions. It does not alter the main-window level or other subloops.
+  A short ~2ms gain ramp avoids clicks at transitions.
+- The former global Release Loop display label is now "Repeat After Note Off".
+  It has never disabled ADSR Release. Off: after Note Off stop repeating
+  subloops; On: keep repeating through the remaining ADSR release. Note Off
+  remains independent of the per-loop One Shot setting.
+- The global Loop Crossfade (0..200 ms) had been disabled whenever the current
+  subloop's One Shot flag was On, even during remaining repetitions. The
+  crossfade now works whenever there is another actual repeat, regardless of
+  the loop's One Shot flag. The final pass is never crossfaded into a new pass
+  that does not exist. The incoming first segment is consumed as part of the
+  overlap, so it is not played twice when the head wraps.
+- The main-window crossfade works whenever Main Playback Mode loops.
+- Crossfade bypassed in the stretch/granular playback path, and for subloops
+  using a nonzero repeat pitch with Original Pitch Loop (virtual clock),
+  because the physical source head does not necessarily reach the end at its
+  virtual repeat boundary. This avoids incorrect alignment/discontinuities.
+- Existing parameter IDs and ordering are untouched; 240 new per-loop host
+  IDs (24 slots x 10 loops x 1 new parameter) are appended AFTER all existing
+  TEST126 parameters and Bank Macros.
+- Parameter and loop state are saved and loaded through existing generic
+  serializer/deserializer loops; no preset format changes are needed.
+
+Tests are static, no compilation. Verify:
+  python Tools/verify-test59-reference.py
+  python Tools/verify-vst3-automation-source.py
+  python Tools/verify-test126-loop-pan-pitch-time.py
+  python Tools/verify-test128-loop-level-crossfade.py
+
+Audio test in REAPER:
+  1. Configure Loop 2 with start/end, 3 repeats, One Shot On, Crossfade 50 ms.
+     Compare 0ms and 50ms; there should be a more continuous junction on
+     the first three repeat transitions, but not at the final exit.
+  2. Set Loop 2 Level -12dB and Loop 3 Level +6dB. The main window and other
+     loops should retain their previous levels.
+  3. Hold a key with Loop Repeats=0. Release the key with Repeat After Note
+     Off Off/On and a long amplifier Release to hear the difference.
