@@ -142,7 +142,12 @@ void setExtraFeature(SlotParameters& p,int feature,bool enabled) {
         case 7:set(P::stereo_delay_right,3);break;
         case 8:set(P::stretch_amount,.4);break;
         case 9:set(P::stretch_amount,-.4);break;
-        case 10:set(P::loop_crossfade,2);break;
+        // TEST130 removed the global Loop Crossfade from playback.  Testing the
+        // retired parameter no longer causes a fast/general DSP transition.
+        // Keep this parity case meaningful with *two* legacy RAM fades enabled
+        // together; per-subloop crossfades are a new effect and must not be
+        // judged bit-identical to the frozen TEST59 renderer.
+        case 10:set(P::ram_fade_in,18);set(P::ram_fade_out,18);break;
         case 11:set(P::start_end_fade,2);break;
         case 12:set(P::pan_env,35);break;
         case 13:set(P::retrigger_smooth,4);break;

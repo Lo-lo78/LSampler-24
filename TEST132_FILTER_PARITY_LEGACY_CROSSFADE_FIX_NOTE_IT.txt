@@ -1,0 +1,22 @@
+LSampler-24 TEST132 — correzione del gate filter-parity dopo la rimozione del crossfade globale
+
+GitHub Actions TEST131: compilazione C++ riuscita, ma fallimento in filter-parity:
+  FAIL: Fast/general transition not exercised: live_fast_general_transition_10
+
+CAUSA
+Il test TEST62 impostava P::loop_crossfade=2 nel caso 10. A partire da TEST130
+quel parametro storico non viene piu` usato dal motore: il crossfade e`
+indipendente per ciascuno dei dieci sottoloop. Impostare un parametro ormai
+inattivo non puo` forzare il passaggio dal percorso filtro ottimizzato a quello
+generale: il controllo del test era diventato obsoleto.
+
+CORREZIONE
+Soltanto Tests/FilterParityTests.cpp: il caso 10 attiva simultaneamente i due
+fade RAM legacy (ingresso e uscita) durante gli eventi live; sono ancora
+elaborazioni in vigore sia sul candidato sia nel motore congelato TEST59.
+Il test mantiene la verifica di passaggio fast/general, confronto float esatto,
+verifica delle allocazioni in rendering e benchmark. Non sono saltati controlli.
+Non modificare i file Tests/ReferenceTEST59.
+
+Non cambia nulla nel VST3 o nelle automazioni. Nessuna compilazione locale.
+La verifica del test dinamico in Windows spetta alla GitHub Action.
