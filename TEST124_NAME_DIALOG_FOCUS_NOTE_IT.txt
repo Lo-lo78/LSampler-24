@@ -1,0 +1,14 @@
+LSampler-24 TEST124 - Focus e annunci nelle finestre di nome
+
+Base: TEST123 completo (nessun sorgente originale eliminato).
+
+- Alt+Shift+S e Alt+Shift+B: la finestra apre con focus diretto sul campo File name.
+- Rinomina slot, Rinomina elemento (F2), Nuova cartella: stesso comportamento.
+- Il campo corrente conserva il testo preselezionato quando presente.
+- Esc nel campo annulla la finestra senza confermare salvataggi o rinomine.
+- Invio nel campo conferma normalmente.
+- Ordine Tab: campo, OK, Cancel. Un solo cambio di focus iniziale; eliminata la descrizione del dialogo che duplicava il titolo per NVDA.
+- Nessuna modifica alla logica di caricamento/salvataggio, ai parametri VST3 o al DSP.
+
+Verifiche statiche: Tools/verify-test124-name-dialog-focus.py; Tools/verify-test59-reference.py; Tools/verify-vst3-automation-source.py; Tools/verify-test114-ctrl-shift-a.py.
+Non compilato: la verifica dell'annuncio esatto NVDA deve essere effettuata in REAPER.

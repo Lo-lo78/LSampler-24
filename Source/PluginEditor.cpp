@@ -71,6 +71,45 @@ private:
     ValueEditorShortcut shortcut;
 };
 
+// TEST124: Give every name-entry dialog ONE stable keyboard/accessibility
+// target from its first appearance. AlertWindow's addButton() gives buttons
+// focus order 1, which otherwise makes OK receive the initial focus instead
+// of the editable field and creates two competing NVDA focus announcements.
+// Escape/Return are handled directly by the focused TextEditor: relying on
+// propagation to AlertWindow is inconsistent in some DAW plug-in hosts.
+void prepareNameEntryDialog(juce::AlertWindow& dialog,
+                            const juce::String& editorName,
+                            const juce::String& accessibleFieldLabel)
+{
+    dialog.setAccessible(true);
+    // JUCE's AlertWindow::setMessage() builds "Title. Message" as an
+    // accessible description. NVDA then says the dialog title twice.
+    // The visible message and the field's own accessible title still exist.
+    dialog.setDescription(juce::String());
+    if (auto* editor = dialog.getTextEditor(editorName))
+    {
+        editor->setTitle(accessibleFieldLabel);
+        editor->setWantsKeyboardFocus(true);
+        editor->setExplicitFocusOrder(1);
+        editor->setSelectAllWhenFocused(true);
+        editor->setEscapeAndReturnKeysConsumed(true);
+        const juce::Component::SafePointer<juce::AlertWindow> safeDialog(&dialog);
+        editor->onEscapeKey = [safeDialog]
+        {
+            if (safeDialog != nullptr) safeDialog->exitModalState(0);
+        };
+        editor->onReturnKey = [safeDialog]
+        {
+            if (safeDialog != nullptr) safeDialog->exitModalState(1);
+        };
+    }
+    if (auto* ok = dialog.getButton("OK")) ok->setExplicitFocusOrder(2);
+    if (auto* cancel = dialog.getButton("Cancel")) cancel->setExplicitFocusOrder(3);
+    // No grabKeyboardFocus() here or after enterModalState(): the modal's
+    // single initial grab selects the text editor by focus order, avoiding
+    // a transient announcement of the OK button followed by the editor.
+}
+
 class ShortcutSliderLabel final : public juce::Label
 {
 public:
@@ -6017,11 +6056,7 @@ void LSampler24AudioProcessorEditor::renameCurrentSlot()
     window->addTextEditor("slotName", currentName, "Name");
     window->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
     window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-    if (auto* editor = window->getTextEditor("slotName"))
-    {
-        editor->selectAll();
-        editor->grabKeyboardFocus();
-    }
+    prepareNameEntryDialog(*window, "slotName", "Slot name");
 
     window->enterModalState(true, juce::ModalCallbackFunction::create(
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), slot, window](int result)
@@ -6111,15 +6146,10 @@ void LSampler24AudioProcessorEditor::promptLibrarySaveName(bool forBank)
 
     auto* dialog = new juce::AlertWindow(forBank ? "Save Bank Name" : "Save Slot Name",
                                           "File name", juce::MessageBoxIconType::NoIcon);
-    dialog->setAccessible(true);
     dialog->addTextEditor("presetName", name, "File name");
     dialog->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
     dialog->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-    if (auto* field = dialog->getTextEditor("presetName"))
-    {
-        field->selectAll();
-        field->grabKeyboardFocus();
-    }
+    prepareNameEntryDialog(*dialog, "presetName", "File name");
     const int savingSlot = processor.getCurrentSlot();
     dialog->enterModalState(true, juce::ModalCallbackFunction::create(
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this),
@@ -6224,11 +6254,10 @@ void LSampler24AudioProcessorEditor::createSlotLibraryFolder()
     const auto folder = slotLibraryDirectory;
     if (folder != slotLibraryRoot && !folder.isAChildOf(slotLibraryRoot)) return;
     auto* dialog = new juce::AlertWindow("New Folder", "Folder name", juce::MessageBoxIconType::NoIcon);
-    dialog->setAccessible(true);
     dialog->addTextEditor("folderName", "", "Folder name");
     dialog->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
     dialog->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-    if (auto* e = dialog->getTextEditor("folderName")) e->grabKeyboardFocus();
+    prepareNameEntryDialog(*dialog, "folderName", "Folder name");
     dialog->enterModalState(true, juce::ModalCallbackFunction::create(
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), dialog, folder](int result)
         {
@@ -6267,11 +6296,10 @@ void LSampler24AudioProcessorEditor::renameSlotLibraryEntry()
     const auto initial = directory ? source.getFileName()
                         : bank ? cleanLibraryBankName(source) : cleanLibrarySlotName(source);
     auto* dialog = new juce::AlertWindow("Rename Element", "New name", juce::MessageBoxIconType::NoIcon);
-    dialog->setAccessible(true);
     dialog->addTextEditor("newName", initial, "New name");
     dialog->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
     dialog->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-    if (auto* e = dialog->getTextEditor("newName")) { e->selectAll(); e->grabKeyboardFocus(); }
+    prepareNameEntryDialog(*dialog, "newName", "New name");
     dialog->enterModalState(true, juce::ModalCallbackFunction::create(
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this),
          dialog, source, directory, bank](int result)
