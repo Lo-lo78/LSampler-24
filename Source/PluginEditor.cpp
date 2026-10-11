@@ -82,10 +82,17 @@ void prepareNameEntryDialog(juce::AlertWindow& dialog,
                             const juce::String& accessibleFieldLabel)
 {
     dialog.setAccessible(true);
-    // JUCE's AlertWindow::setMessage() builds "Title. Message" as an
-    // accessible description. NVDA then says the dialog title twice.
-    // The visible message and the field's own accessible title still exist.
+    // TEST125: AlertWindow exposes its title/message through BOTH its own
+    // description and an extra internal accessibility Label.  NVDA reads
+    // that Label along with the dialog and the initially focused editor,
+    // duplicating the prompt and sometimes the preset name.  All name
+    // dialogs have a short descriptive title; their visible label is not a
+    // separate screen-reader instruction.  Hide JUCE's internal Label(s)
+    // from the accessibility tree, but preserve their visual rendering.
     dialog.setDescription(juce::String());
+    for (auto* child : dialog.getChildren())
+        if (auto* label = dynamic_cast<juce::Label*>(child))
+            label->setAccessible(false);
     if (auto* editor = dialog.getTextEditor(editorName))
     {
         editor->setTitle(accessibleFieldLabel);
@@ -103,8 +110,18 @@ void prepareNameEntryDialog(juce::AlertWindow& dialog,
             if (safeDialog != nullptr) safeDialog->exitModalState(1);
         };
     }
-    if (auto* ok = dialog.getButton("OK")) ok->setExplicitFocusOrder(2);
-    if (auto* cancel = dialog.getButton("Cancel")) cancel->setExplicitFocusOrder(3);
+    if (auto* ok = dialog.getButton("OK"))
+    {
+        ok->setExplicitFocusOrder(2);
+        ok->setTitle("OK");
+        ok->setDescription(juce::String());
+    }
+    if (auto* cancel = dialog.getButton("Cancel"))
+    {
+        cancel->setExplicitFocusOrder(3);
+        cancel->setTitle("Cancel");
+        cancel->setDescription(juce::String());
+    }
     // No grabKeyboardFocus() here or after enterModalState(): the modal's
     // single initial grab selects the text editor by focus order, avoiding
     // a transient announcement of the OK button followed by the editor.
@@ -6052,7 +6069,7 @@ void LSampler24AudioProcessorEditor::renameCurrentSlot()
     auto currentName = processor.getSlotName(slot);
     if (currentName.isEmpty()) currentName = "Slot " + juce::String(slot + 1);
 
-    auto* window = new juce::AlertWindow("Rename Slot", "Slot name", juce::MessageBoxIconType::NoIcon);
+    auto* window = new juce::AlertWindow("Rename Slot", {}, juce::MessageBoxIconType::NoIcon);
     window->addTextEditor("slotName", currentName, "Name");
     window->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
     window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
@@ -6144,8 +6161,8 @@ void LSampler24AudioProcessorEditor::promptLibrarySaveName(bool forBank)
     if (!forBank && name.startsWithIgnoreCase("Slot_")) name = name.substring(5);
     name = juce::File::createLegalFileName(name.trim());
 
-    auto* dialog = new juce::AlertWindow(forBank ? "Save Bank Name" : "Save Slot Name",
-                                          "File name", juce::MessageBoxIconType::NoIcon);
+    auto* dialog = new juce::AlertWindow(forBank ? "Save Bank" : "Save Slot",
+                                          {}, juce::MessageBoxIconType::NoIcon);
     dialog->addTextEditor("presetName", name, "File name");
     dialog->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
     dialog->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
@@ -6253,7 +6270,7 @@ void LSampler24AudioProcessorEditor::createSlotLibraryFolder()
     if (!slotLibraryActive || slotLibraryForSampleSet) return;
     const auto folder = slotLibraryDirectory;
     if (folder != slotLibraryRoot && !folder.isAChildOf(slotLibraryRoot)) return;
-    auto* dialog = new juce::AlertWindow("New Folder", "Folder name", juce::MessageBoxIconType::NoIcon);
+    auto* dialog = new juce::AlertWindow("New folder", {}, juce::MessageBoxIconType::NoIcon);
     dialog->addTextEditor("folderName", "", "Folder name");
     dialog->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
     dialog->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
@@ -6295,7 +6312,8 @@ void LSampler24AudioProcessorEditor::renameSlotLibraryEntry()
     const bool bank = slotLibraryForBank;
     const auto initial = directory ? source.getFileName()
                         : bank ? cleanLibraryBankName(source) : cleanLibrarySlotName(source);
-    auto* dialog = new juce::AlertWindow("Rename Element", "New name", juce::MessageBoxIconType::NoIcon);
+    auto* dialog = new juce::AlertWindow(directory ? "Rename folder" : "Rename file",
+                                          {}, juce::MessageBoxIconType::NoIcon);
     dialog->addTextEditor("newName", initial, "New name");
     dialog->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
     dialog->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
@@ -6384,7 +6402,10 @@ void LSampler24AudioProcessorEditor::showSlotLibraryContextMenu()
     juce::PopupMenu menu;
     menu.addSectionHeader("Library folder and file actions");
     menu.addItem(1, "New Folder");
-    menu.addItem(2, "Rename Element (F2)", !slotLibraryEntries.empty());
+    menu.addItem(2, slotLibraryEntries.empty() ? "Rename (F2)"
+                    : slotLibraryEntries[size_t(slotLibraryEntryIndex)].file.isDirectory()
+                        ? "Rename folder (F2)" : "Rename file (F2)",
+                 !slotLibraryEntries.empty());
     menu.addItem(3, "Delete Element", !slotLibraryEntries.empty());
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&slotLibraryCell),
         [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](int result)

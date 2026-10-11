@@ -1,0 +1,12 @@
+LSampler-24 TEST125 - Titoli essenziali e annunci dei dialoghi JUCE
+
+Base: TEST124 completo.
+
+- Salva Slot/Bank: titolo del dialogo "Save Slot" / "Save Bank".
+- Rinomina elemento del browser: "Rename file" o "Rename folder" a seconda della selezione; anche Shift+F10 mostra il nome appropriato.
+- Rinomina slot: "Rename Slot". Nuova cartella: "New folder".
+- Il messaggio aggiuntivo di AlertWindow viene mantenuto vuoto; le Label interne usate da JUCE per ripeterlo sono nascoste allo screen reader, senza alterare la resa visiva.
+- Descrizioni extra di OK e Cancel vuote, etichette accessibili dei pulsanti "OK" e "Cancel".
+- Focus subito sul campo, nome precompilato/selezionato, Invio conferma ed Esc annulla, come in TEST124.
+- Nessuna modifica al motore audio, alla Library o alle automazioni VST3.
+- Eseguiti solo controlli statici; la sequenza esatta della voce NVDA va verificata in REAPER.
