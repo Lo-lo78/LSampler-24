@@ -1,0 +1,4 @@
+TEST139 - Guida HTML aggiornata (italiano e inglese).
+Nuovi capitoli: ricerca 0 Zero Crossing, Grid/Value, Sample Set, Slice, sottoloop, Bank Macro, automazione REAPER e Library.
+Conservati i sei altri idiomi e il nome della risorsa Help.
+Nessuna modifica al DSP o al codice C++. Nessuna compilazione eseguita.
