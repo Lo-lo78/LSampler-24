@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "ParameterSearchKey.h"
 #include <limits>
 #include <algorithm>
 #include "ScreenReaderAnnouncer.h"
@@ -3259,9 +3260,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             // navigation keys may have ASCII-valued virtual key codes; using
             // getKeyCode() here mistakenly searched for P/R/S/T/V/0.
             if (!mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown()) {
-                const auto typed = key.getTextCharacter();
-                if (typed >= 33 && typed != 127 && typed < 0x110000) {
-                    const auto initial = juce::CharacterFunctions::toLowerCase(typed);
+                const auto initial = parameterSearchCharacter(key);
+                if (initial != 0) {
                     const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
                     const int first = globalOpen ? normalGridSize : 0;
                     const int count = globalOpen ? lsampler::globalParameterCount : normalGridSize;

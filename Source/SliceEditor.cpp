@@ -1,4 +1,5 @@
 #include "SliceEditor.h"
+#include "ParameterSearchKey.h"
 #include "ScreenReaderAnnouncer.h"
 using namespace lsampler;
 namespace {
@@ -347,9 +348,8 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
         // Home/End and Page keys have numeric key codes that can fall inside
         // the printable ASCII range, which previously caused type-ahead to
         // swallow normal exploratory navigation on pages 2 and 3.
-        const auto typed=k.getTextCharacter();
-        const auto initial=juce::CharacterFunctions::toLowerCase(typed);
-        if(typed>=33&&typed!=127) {
+        const auto initial=parameterSearchCharacter(k);
+        if(initial!=0) {
             const bool backwards=mods.isShiftDown();
             const int direction=backwards?-1:1;
             const int total=page==Page::globals?int(sliceGlobals.size()):int(sliceProperties.size());
