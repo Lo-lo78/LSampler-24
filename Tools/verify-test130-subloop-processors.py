@@ -30,7 +30,8 @@ assert 'stage->downsampleAmount>0' in e and 'if(inStage &&' in e
 assert 'loop->crossfade>1 && loop->direction!=2' in e
 assert 'loop.direction!=2' in e
 assert 'v.position=wrap(v.position,cycle);' in e
-assert 'const bool inStage=stage && pos>=stage->start && pos<stage->end;' in e
+assert ('const bool inStage=stage && pos>=stage->start && pos<stage->end;' in e
+        or 'const bool inStage=stage && pos>=stageStart && pos<stageEnd;' in e)
 assert 'stage->direction==2 && (v.repeat&1)' in e
 assert 'v.repeatLevelGain=dB<=-119.9?0:std::pow(10.0,dB/20.0);' in e
 assert 'v.repeatLevelIndexCached!=levelRepeat' in e

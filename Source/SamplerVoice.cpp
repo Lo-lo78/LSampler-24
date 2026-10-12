@@ -392,14 +392,18 @@ double GlobalVoicePool::read(const Voice& v,const SlotAudioState& s,double pos,i
     const auto& g=s.playback[size_t(v.sampleIndex)];
     if(pos<0||g.length<1)return 0; // native equivalent of the legacy per-channel delay's silent pre-roll
     pos=clamp(pos,0,double(g.length-1));
-    const LoopAudioState* stage=(!v.slice.active && v.stage>=0 && v.stage<g.stageCount
-                                && v.skipStage!=v.stage)?&g.stages[size_t(v.stage)]:nullptr;
-    // Restrict per-subloop source transformations to their actual windows.
-    const bool inStage=stage && pos>=stage->start && pos<stage->end;
+    const bool autoLoops=usesAutoSliceLoops(v);
+    const LoopAudioState* stage=(!v.slice.active || autoLoops) && v.stage>=0 && v.stage<g.stageCount
+                                && v.skipStage!=v.stage ? &g.stages[size_t(v.stage)] : nullptr;
+    // In auto Slice modes, only the intersection with the selected *source*
+    // slice is available. Never read outside that source region on a reverse.
+    const double stageStart=stage&&autoLoops?std::max(stage->start,v.slice.begin):(stage?stage->start:0);
+    const double stageEnd=stage&&autoLoops?std::min(stage->end,v.slice.begin+v.slice.length):(stage?stage->end:0);
+    const bool inStage=stage && pos>=stageStart && pos<stageEnd;
     // Direction changes the *source* read head; the timeline and its ten
     // subloop counters remain forward, including the outer Main Loop.
     if(inStage && (stage->direction==1 || (stage->direction==2 && (v.repeat&1))))
-        pos=stage->start+stage->end-1.0-pos;
+        pos=stageStart+stageEnd-1.0-pos;
     if(!v.slice.active&&s.params[P::ram_reverse]!=0)pos=g.length-1-pos;
     const int low=v.slice.active?int(v.slice.begin):0;
     const int high=v.slice.active?int(v.slice.begin+v.slice.length)-1:g.length-1;
@@ -425,7 +429,8 @@ double GlobalVoicePool::read(const Voice& v,const SlotAudioState& s,double pos,i
         // avoids quantising the kHz control to integer source samples.
         // Source origin must also respect the slot's existing RAM Reverse.
         const double hold=stage->downsampleHold;
-        const double origin=s.params[P::ram_reverse]!=0 ? double(g.length)-stage->end : stage->start;
+        const double origin=autoLoops?stageStart:
+            (s.params[P::ram_reverse]!=0 ? double(g.length)-stage->end : stage->start);
         const double relative=std::max(0.0,pos-origin);
         const int held=int(origin+std::floor(relative/hold)*hold);
         const double raw=at(held), scale=stage->downsampleScale;
@@ -619,10 +624,95 @@ void GlobalVoicePool::advanceLoops(Voice& v,const SlotAudioState& s,double incre
         selectStage(v,s);
     }
 }
+void GlobalVoicePool::syncAutoSliceStage(Voice& v,const SlotAudioState& s) noexcept {
+    if(!usesAutoSliceLoops(v) || !v.autoSliceHasLoops)return;
+    const auto& g=s.playback[size_t(v.sampleIndex)];
+    bool silent=false;
+    const double pos=v.slice.position(silent);
+    const double low=v.slice.begin,high=low+v.slice.length;
+    if(v.stage>=0 && v.stage<g.stageCount) {
+        const auto& current=g.stages[size_t(v.stage)];
+        if(pos>=std::max(low,current.start) && pos<std::min(high,current.end))return;
+    }
+    int found=-1;
+    for(int i=0;i<g.stageCount;++i) {
+        const auto& loop=g.stages[size_t(i)];
+        if(pos>=std::max(low,loop.start) && pos<std::min(high,loop.end)) {found=i;break;}
+    }
+    if(found!=v.stage) {
+        v.stage=found;v.repeat=0;v.skipStage=-1;v.loopClock=0;
+        v.loopPitchTimeRepeat=-1;
+    }
+}
+double GlobalVoicePool::autoSliceLoopPitchFactor(Voice& v,const LoopAudioState& loop) noexcept {
+    const int count=loop.repeats>0?std::min(v.repeat,loop.repeats):std::min(v.repeat,128);
+    if(v.loopPitchTimeRepeat!=count || v.loopPitchTimeAmount!=loop.pitch) {
+        v.loopPitchTimeRepeat=count;v.loopPitchTimeAmount=loop.pitch;
+        v.loopPitchTimeFactor=std::pow(2.0,count*loop.pitch/12.0);
+    }
+    return v.loopPitchTimeFactor;
+}
 void GlobalVoicePool::advanceSlice(Voice& v,const SlotAudioState& s,double increment) noexcept {
-    if(v.slice.advance(s.slice,increment)) {
+    // Slice is responsible for source ordering and loop-length clocks. In the
+    // six automatic modes only, a subloop may rewind the clock WITHIN the
+    // currently selected source slice. Absolute source loop positions stay
+    // unchanged. No new automation parameter or sequencer behaviour is needed.
+    double clockIncrement=increment;
+    if(usesAutoSliceLoops(v) && v.autoSliceHasLoops && v.stage>=0 && v.skipStage!=v.stage) {
+        const auto& g=s.playback[size_t(v.sampleIndex)];
+        if(v.stage<g.stageCount) {
+            const auto& loop=g.stages[size_t(v.stage)];
+            const auto& q=v.slice;
+            const double low=std::max(loop.start,q.begin);
+            const double high=std::min(loop.end,q.begin+q.length);
+            if(loop.fixedPitchTime && loop.pitch!=0 && v.repeat>0)
+                clockIncrement*=autoSliceLoopPitchFactor(v,loop);
+            const bool canRepeat=!v.loopsReleased || s.params[P::global_release_loops]!=0;
+            if(canRepeat && high>low && q.readScale>0) {
+                // Convert the physical subloop boundaries to the *slice's*
+                // musical clock. Reversing the source scan reverses the order
+                // of the thresholds, not the subloop's original coordinates.
+                const double startDistance=q.reverse?q.begin+q.length-high:low-q.begin;
+                const double endDistance=q.reverse?q.begin+q.length-low:high-q.begin;
+                const double beginTime=startDistance/q.readScale;
+                const double endTime=endDistance/q.readScale;
+                const double advanced=clockIncrement*q.pitch;
+                const double nextElapsed=q.elapsed+advanced;
+                if(nextElapsed>=endTime) {
+                    const int allowed=v.loopsReleased&&loop.repeats==0?1:loop.repeats;
+                    if(allowed==0 || v.repeat+1<=allowed) {
+                        ++v.repeat;
+                        const double length=endTime-beginTime;
+                        const double carried=wrap(nextElapsed-endTime,length);
+                        // Same overlap-skip rule as the ordinary subloop.
+                        // Crossfade is disallowed during stretch/fixed-pitch
+                        // or Ping Pong (the source heads are not aligned).
+                        const bool mayOverlap=(!loop.fixedPitchTime || loop.pitch==0)
+                            && loop.crossfade>1 && loop.direction!=2
+                            && s.params[P::stretch_amount]==0;
+                        const double fade=mayOverlap?std::min(loop.crossfade,(high-low)*.5)/q.readScale:0.0;
+                        v.slice.elapsed=beginTime+wrap(fade+carried,length);
+                        v.loopPitchTimeRepeat=-1;
+                        return;
+                    }
+                    if(loop.oneShot)release(v);
+                    v.skipStage=v.stage;
+                    v.repeat=0;
+                    v.loopPitchTimeRepeat=-1;
+                }
+            }
+        }
+    }
+    // Preserve the zero-pitch clock correction also on the frame that
+    // finishes the final repeat; the repeat counter has already been reset.
+    if(v.slice.advance(s.slice,clockIncrement)) {
         if(v.slice.single||s.params[P::global_one_shot]==1){stop(v);return;}
         if(s.params[P::global_one_shot]==2&&!v.loopsReleased)release(v);
+    }
+    if(!v.slice.configured && usesAutoSliceLoops(v)) {
+        // Every newly selected source slice gets fresh subloop repetitions.
+        v.stage=-1;v.repeat=0;v.skipStage=-1;v.loopClock=0;
+        v.loopPitchTimeRepeat=-1;
     }
 }
 template<bool Simple, bool Optimised, int FilterMask>
@@ -671,7 +761,22 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         if(v.amp.phase==0){stop(v);break;}
         if(!BasicRead && v.slice.active) {
             if(s.slice.count<=0){stop(v);break;}
-            if(!v.slice.configured)v.slice.configure(s.slice,g.length,v.sample->sourceSampleRate,p[P::ram_reverse]!=0,int(p[P::ram_downsample]));
+            if(!v.slice.configured) {
+                v.slice.configure(s.slice,g.length,v.sample->sourceSampleRate,p[P::ram_reverse]!=0,int(p[P::ram_downsample]));
+                if(usesAutoSliceLoops(v)) {
+                    v.stage=-1;v.repeat=0;v.skipStage=-1;v.loopPitchTimeRepeat=-1;
+                    // A sample may be divided into 128 source slices with only
+                    // one tiny subloop. Skip all subloop work for the other
+                    // slices, even when dozens of voices are sounding.
+                    v.autoSliceHasLoops=false;
+                    const double low=v.slice.begin,high=low+v.slice.length;
+                    for(int i=0;i<g.stageCount;++i) {
+                        const auto& stage=g.stages[size_t(i)];
+                        if(stage.start<high && stage.end>low){v.autoSliceHasLoops=true;break;}
+                    }
+                }
+            }
+            if(usesAutoSliceLoops(v))syncAutoSliceStage(v,s);
         }
         const double targetNote=v.slice.pad?p[P::root]:v.note;
         if(std::abs(v.effectiveNote-targetNote)>.0000001)v.effectiveNote+=(targetNote-v.effectiveNote)*s.portamento;
@@ -680,7 +785,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         // Zero level / settled silent sustain keeps its musical read clock but sleeps every optional processor.
         if(s.level==0 || (v.amp.phase==3 && s.amp.sustain==0)) {
             v.amp.tick(s.amp);
-            const LoopAudioState* silentLoop=(!v.slice.active && v.stage>=0 && v.skipStage!=v.stage)
+            const LoopAudioState* silentLoop=(!v.slice.active || usesAutoSliceLoops(v)) && v.stage>=0 && v.skipStage!=v.stage
                 ? &g.stages[size_t(v.stage)] : nullptr;
             const int silentRepeat=silentLoop
                 ? (silentLoop->repeats>0?std::min(v.repeat,silentLoop->repeats):std::min(v.repeat,128)) : 0;
@@ -690,7 +795,8 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             if(!BasicRead&&v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);continue;
         }
         const double l1=Simple?0:lfoTick(v,0,s.lfo[0],wheelValue),l2=Simple?0:lfoTick(v,1,s.lfo[1],wheelValue);
-        const LoopAudioState* loop=(BasicRead||!v.slice.active)&&v.stage>=0?&g.stages[size_t(v.stage)]:nullptr;
+        const LoopAudioState* loop=(BasicRead||!v.slice.active||usesAutoSliceLoops(v))
+            && v.stage>=0 && v.stage<g.stageCount ? &g.stages[size_t(v.stage)] : nullptr;
         // Use repeat modulation from the first repeat, including 1- and
         // 2-repeat patterns. An infinite loop's slope saturates at 128 steps.
         const double repeats=loop
@@ -717,6 +823,20 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         }
         bool sliceSilent=false;
         double pos=(!BasicRead&&v.slice.active)?v.slice.position(sliceSilent):v.position;
+        if(!BasicRead && usesAutoSliceLoops(v) && loop && v.skipStage!=v.stage
+           && loop->fixedPitchTime && loop->pitch!=0 && v.repeat>0) {
+            // Original Pitch Loop: virtual slice clock has zero-pitch duration;
+            // read head travels faster/slower inside this subloop. Faster heads
+            // stop at its end and output silence until the virtual clock ends.
+            const double low=std::max(loop->start,v.slice.begin);
+            const double high=std::min(loop->end,v.slice.begin+v.slice.length);
+            const double sourceOffset=v.slice.reverse?v.slice.begin+v.slice.length-high:low-v.slice.begin;
+            const double elapsedWithin=std::max(0.0,v.slice.elapsed-sourceOffset/v.slice.readScale);
+            const double distance=elapsedWithin*v.slice.readScale/autoSliceLoopPitchFactor(v,*loop);
+            sliceSilent|=distance>=high-low;
+            pos=v.slice.reverse?high-1.0-distance:low+distance;
+            pos=clamp(pos,low,std::max(low,high-1.0));
+        }
         // Legacy Stretch Amount/Frequency are intentionally kept as the user-facing
         // controls.  The old implementation hard-wrapped the read position at every
         // grain boundary, which made large Stretch Amount values click/buzz because
@@ -763,7 +883,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             }
         }
         const bool loopPitchSilent=loop && loop->fixedPitchTime && loop->pitch!=0
-            && v.repeat>0 && v.skipStage!=v.stage
+            && v.repeat>0 && v.skipStage!=v.stage && !v.slice.active
             && v.position>=loop->end*s.stretchFactor;
         pos=clamp(pos,0,double(g.length-1));
         if(stretchOverlap)stretchOtherPos=clamp(stretchOtherPos,0,double(g.length-1));
@@ -807,7 +927,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             left*=fade*(1-std::max(0.0,q.pan))*(1-std::max(0.0,q.repeatPan));
             right*=fade*(1+std::min(0.0,q.pan))*(1+std::min(0.0,q.repeatPan));
         }
-        if(!BasicRead && !v.slice.active && loop && v.skipStage!=v.stage
+        if(!BasicRead && (!v.slice.active || usesAutoSliceLoops(v)) && loop && v.skipStage!=v.stage
            && loop->crossfade>1 && loop->direction!=2) {
             // The fade belongs to THIS subloop; Main Loop never crossfades.
             // Ping Pong already reverses exactly at the end; no overlap skip.
@@ -815,10 +935,17 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
                 && (loop->repeats==0 || v.repeat<(v.loopsReleased?std::min(loop->repeats,1):loop->repeats));
             const bool timeStretchPitch=loop->fixedPitchTime && loop->pitch!=0;
             if(mayRepeat && !timeStretchPitch && p[P::stretch_amount]==0) {
-                const double ls=loop->start, le=loop->end;
+                const double ls=usesAutoSliceLoops(v)?std::max(loop->start,v.slice.begin):loop->start;
+                const double le=usesAutoSliceLoops(v)?std::min(loop->end,v.slice.begin+v.slice.length):loop->end;
                 const double fade=std::min(loop->crossfade,(le-ls)*.5);
                 if(fade>1) {
                     auto cross=[&](double x,int ch,double current) noexcept {
+                        if(usesAutoSliceLoops(v)&&v.slice.reverse) {
+                            if(x<ls||x>=ls+fade)return current;
+                            const double t=clamp((ls+fade-x)/fade,0.0,1.0);
+                            const double smooth=t*t*(3.0-2.0*t);
+                            return current*(1.0-smooth)+read(v,s,le-(ls+fade-x),ch)*smooth;
+                        }
                         if(x<le-fade || x>=le)return current;
                         const double t=clamp((x-(le-fade))/fade,0.0,1.0);
                         const double smooth=t*t*(3.0-2.0*t);

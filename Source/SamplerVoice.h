@@ -42,6 +42,7 @@ private:
     struct Voice {
         lsampler::SlicePlayback slice;
         bool active=false,preview=false,keyDown=true,sustained=false,loopsReleased=false;
+        bool autoSliceHasLoops=false; // cached once per automatic source-slice event
         int slotIndex=-1,note=-1,channel=0,stage=-1,repeat=0,skipStage=-1,sampleIndex=0,loopPitchTimeRepeat=-1;
         int repeatLevelIndexCached=-1, repeatLevelStageCached=-1;
         uint64_t age=0,revision=0;
@@ -77,6 +78,14 @@ private:
     double read(const Voice&,const lsampler::SlotAudioState&,double position,int channel) const noexcept;
     void processEffects(Voice&,const lsampler::SlotAudioState&,double& left,double& right);
     void applyMachine(Voice&,const lsampler::SlotAudioState&,double& left,double& right) noexcept;
+    // Automatic Slice orders source regions; nested subloops retain their
+    // original sample coordinates. Sequencer and single-slice auditions are
+    // deliberately excluded.
+    static bool usesAutoSliceLoops(const Voice& v) noexcept {
+        return v.slice.active && !v.slice.single && v.slice.mode>=1 && v.slice.mode<=6;
+    }
+    void syncAutoSliceStage(Voice&,const lsampler::SlotAudioState&) noexcept;
+    double autoSliceLoopPitchFactor(Voice&,const lsampler::LoopAudioState&) noexcept;
     void advanceSlice(Voice&,const lsampler::SlotAudioState&,double) noexcept;
     void advanceLoops(Voice&,const lsampler::SlotAudioState&,double increment) noexcept;
     void selectStage(Voice&,const lsampler::SlotAudioState&) noexcept;

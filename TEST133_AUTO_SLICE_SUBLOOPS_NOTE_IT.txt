@@ -1,0 +1,8 @@
+LSampler-24 TEST133 - Convivienza Slice Mode automatico + 10 sottoloop
+
+- Slice Mode Off: identico al TEST132, riproduzione lineare e sottoloop.
+- Slice Mode 1..6 (Reverse, Pendulum, Random, Random No Repeat, Center Out, Edges In): lo Slice Mode decide la slice SORGENTE; se essa interseca una regione dei 10 sottoloop, quest'ultima viene elaborata e le ripetizioni estendono la durata dell'evento prima dello Slice successivo. Start/End rimangono assoluti nel campione originale; nessuna trasposizione sulle coordinate di un altro Slice.
+- Se il sottoloop attraversa il confine dello Slice viene limitato alla sola intersezione con la slice corrente: non si preleva audio dalle regioni vicine. Ripetizioni, volume, downsample, pan, direzione, pitch e fade/crossfade del sottoloop utilizzano la logica normale.
+- Slice Mode Sequencer (7), anteprime di singoli Slice e modalita' Slice Bypass rimangono esclusi dai sottoloop.
+- Nessun nuovo parametro VST3, nessuna modifica al formato preset.
+- Nessuna compilazione locale eseguita. Verificare in REAPER con diverse divisioni/regioni e ascoltare i raccordi con pitch, reverse, shuffle e stretch.
