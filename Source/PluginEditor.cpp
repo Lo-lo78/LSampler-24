@@ -494,7 +494,7 @@ void LSampler24AudioProcessorEditor::resized()
 {
     // The tools belong to the Slot parameter grid, not the slot page,
     // global-output editor, browser, or modal Properties page.
-    const bool showParameterTools = parameterPage && !globalOpen && !bankMacroOpen && !propertiesOpen
+    const bool showParameterTools = !globalOpen && !bankMacroOpen && !propertiesOpen
         && !importBrowserActive && !slotLibraryActive && !sampleSetActive;
     sliceEditorButton.setVisible(showParameterTools);
     sampleSetButton.setVisible(showParameterTools);
@@ -529,8 +529,8 @@ void LSampler24AudioProcessorEditor::resized()
     parameterSelector.setBounds(398,504,getWidth()-428,30);
     parameterValue.setBounds(398,540,getWidth()-428,30);
     // Below the numeric edit field, above the Slice/Master panels.
-    sliceEditorButton.setBounds(398, 614, 148, 32);
-    sampleSetButton.setBounds(554, 614, 148, 32);
+    sliceEditorButton.setBounds(618, 614, 148, 32);
+    sampleSetButton.setBounds(774, 614, 148, 32);
     const std::array<juce::TextButton*,6> buttons { &loadSample,&loadSlot,&saveSlot,&loadBank,&saveBank,&help };
     for(int i=0;i<6;++i)buttons[size_t(i)]->setBounds(16+(i%3)*118,574+(i/3)*36,114,32);
     aboutButton.setBounds(370,610,114,32);
@@ -1540,7 +1540,8 @@ bool LSampler24AudioProcessorEditor::navigateAboutText(const juce::KeyPress& key
 bool LSampler24AudioProcessorEditor::isActionButton(const juce::Component* component) const
 {
     return component == &loadSample || component == &loadSlot || component == &saveSlot
-        || component == &loadBank || component == &saveBank || component == &help || component == &aboutButton || component == &advancedButton;
+        || component == &loadBank || component == &saveBank || component == &help || component == &aboutButton || component == &advancedButton
+        || component == &sliceEditorButton || component == &sampleSetButton;
 }
 
 int LSampler24AudioProcessorEditor::slotCellIndex(const juce::Component* component) const
@@ -2165,8 +2166,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         }
         if (!mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown())
         {
-            const auto typed = juce::juce_wchar(code);
-            if (typed >= 33 && typed <= 126)
+            const auto typed = key.getTextCharacter();
+            if (typed >= 33 && typed != 127)
             {
                 cycleSlotLibraryEntryByInitial(typed, mods.isShiftDown() ? -1 : 1);
                 return true;
@@ -2359,8 +2360,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         }
         if (!mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown())
         {
-            const auto typed = juce::juce_wchar(code);
-            if (typed >= 33 && typed <= 126)
+            const auto typed = key.getTextCharacter();
+            if (typed >= 33 && typed != 127)
             {
                 cycleImportEntryByInitial(typed, mods.isShiftDown() ? -1 : 1);
                 return true;
@@ -2688,8 +2689,9 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 }
                 else
                 {
-                    const auto initial = juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
-                    if (initial >= 33 && initial <= 126)
+                    const auto typed = key.getTextCharacter();
+                    const auto initial = juce::CharacterFunctions::toLowerCase(typed);
+                    if (typed >= 33 && typed != 127)
                     {
                         const int direction = mods.isShiftDown() ? -1 : 1;
                         for (int distance = 1; distance <= int(bankMacroEntries.size()); ++distance)
@@ -3115,6 +3117,57 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             // owns focus; the actual action is triggered by Enter or Space.
             return true;
         }
+        // Shift+arrows: spatial navigation among ACTIVE host envelopes only.
+        // Up/Down stay in the same category (grid column); Left/Right move
+        // to the nearest active category, preferring the current row.
+        if (source == &parameterSelector && !bankMacroOpen && !globalOpen
+            && mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown()
+            && !mods.isCommandDown()
+            && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey
+                || code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey))
+        {
+            const int first = 0;
+            const int last = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount - 1;
+            const int begin = categoryBegin(selectedParameter);
+            const int end = categoryEnd(selectedParameter);
+            int target = -1;
+            auto activeAt = [this](int index)
+            {
+                auto* param = processor.getAutomationGridParameter(
+                    processor.getCurrentSlot(), index, selectedLoop, false);
+                return param != nullptr && getHostAutomationEnvelopeState(param) == 1;
+            };
+            if (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey)
+            {
+                const int delta = code == juce::KeyPress::upKey ? -1 : 1;
+                for (int i = selectedParameter + delta; i >= begin && i <= end; i += delta)
+                    if (activeAt(i)) { target = i; break; }
+            }
+            else
+            {
+                const int delta = code == juce::KeyPress::leftKey ? -1 : 1;
+                const int row = selectedParameter - begin;
+                int nextColumn = delta < 0 ? begin - 1 : end + 1;
+                while (nextColumn >= first && nextColumn <= last)
+                {
+                    const int columnBegin = categoryBegin(nextColumn);
+                    const int columnEnd = categoryEnd(nextColumn);
+                    const int preferred = juce::jmin(columnBegin + row, columnEnd);
+                    // Find within this column before considering any later one.
+                    for (int distance = 0; distance <= columnEnd - columnBegin; ++distance)
+                    {
+                        const int lower = preferred - distance;
+                        const int upper = preferred + distance;
+                        if (lower >= columnBegin && activeAt(lower)) { target = lower; break; }
+                        if (distance != 0 && upper <= columnEnd && activeAt(upper)) { target = upper; break; }
+                    }
+                    if (target >= 0) break;
+                    nextColumn = delta < 0 ? columnBegin - 1 : columnEnd + 1;
+                }
+            }
+            if (target >= 0) selectParameter(target, true);
+            return true;
+        }
         if(mods.isShiftDown()&&!mods.isCtrlDown()&&!mods.isAltDown()
             &&std::strcmp(selectedEntry().category,"Loops")==0
             &&(code==juce::KeyPress::upKey||code==juce::KeyPress::downKey)) {
@@ -3202,24 +3255,27 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 moveParameterPage(code == juce::KeyPress::leftKey ? -1 : 1, false);
                 return true;
             }
-            // Type-ahead navigation uses the actual accessible grid label, without
-            // the repeated 'Loop N' prefix or displayed value. Plain initials
-            // search forward, Shift+initial backward. Use key code so Shift
-            // does not turn e.g. 1 into !.
-            if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isCommandDown()) {
-                const auto initial=juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
-                if(initial>=33&&initial<=126) {
+            // Only actual printable characters trigger type-ahead. Function and
+            // navigation keys may have ASCII-valued virtual key codes; using
+            // getKeyCode() here mistakenly searched for P/R/S/T/V/0.
+            if (!mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown()) {
+                const auto typed = key.getTextCharacter();
+                if (typed >= 33 && typed != 127 && typed < 0x110000) {
+                    const auto initial = juce::CharacterFunctions::toLowerCase(typed);
                     const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
                     const int first = globalOpen ? normalGridSize : 0;
                     const int count = globalOpen ? lsampler::globalParameterCount : normalGridSize;
                     const int local = selectedParameter - first;
                     const int direction = mods.isShiftDown() ? -1 : 1;
-                    for(int distance=1;distance<=count;++distance) {
-                        int relative=(local+direction*distance)%count;
-                        if(relative<0)relative+=count;
-                        const int next=first+relative;
-                        const auto name=displayedGridParameterName(lsampler::grid[size_t(next)]);
-                        if(name.isNotEmpty()&&juce::CharacterFunctions::toLowerCase(name[0])==initial){selectParameter(next,true);break;}
+                    for (int distance = 1; distance <= count; ++distance) {
+                        int relative = (local + direction * distance) % count;
+                        if (relative < 0) relative += count;
+                        const int next = first + relative;
+                        const auto name = displayedGridParameterName(lsampler::grid[size_t(next)]);
+                        if (name.isNotEmpty() && juce::CharacterFunctions::toLowerCase(name[0]) == initial) {
+                            selectParameter(next, true);
+                            break;
+                        }
                     }
                     return true;
                 }
@@ -3230,10 +3286,18 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (isActionButton(source))
     {
+        if ((source == &sliceEditorButton || source == &sampleSetButton)
+            && (code == juce::KeyPress::returnKey || code == juce::KeyPress::spaceKey))
+        {
+            if (source == &sliceEditorButton) openSliceEditor(false);
+            else enterSampleSetEditor();
+            return true;
+        }
         if (code == juce::KeyPress::tabKey)
         {
-            std::array<juce::Component*, 8> buttons {
-                &loadSample, &loadSlot, &saveSlot, &loadBank, &saveBank, &help, &aboutButton, &advancedButton
+            std::array<juce::Component*, 10> buttons {
+                &loadSample, &loadSlot, &saveSlot, &loadBank, &saveBank,
+                &sliceEditorButton, &sampleSetButton, &help, &aboutButton, &advancedButton
             };
             const bool backwards = mods.isShiftDown();
             int index = -1;
