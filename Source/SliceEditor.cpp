@@ -280,8 +280,8 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
         auto& enabled = lsampler::keyboardDiagnosticEnabled();
         enabled = !enabled;
         announceToActiveScreenReader(*this, enabled
-            ? "Keyboard diagnostic on. Press digits, punctuation or F11. Control Alt Shift D to stop."
-            : "Keyboard diagnostic off");
+            ? "Diagnostic active. Press zero or another digit. Press F11 again to stop."
+            : "Diagnostic off");
         return true;
     }
     if (lsampler::keyboardDiagnosticEnabled()) {

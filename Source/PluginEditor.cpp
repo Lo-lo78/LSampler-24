@@ -1755,15 +1755,15 @@ bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key, juce:
 
 bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, juce::Component* source)
 {
-    // TEST136: temporary diagnostic. In probe mode keys are reported and
-    // consumed before search/navigation. Ctrl+Alt+Shift+D toggles the probe.
+    // TEST137: temporary diagnostic. In probe mode keys are reported and
+    // consumed before search/navigation. F11 or Ctrl+Alt+Shift+D toggles the probe.
     if (lsampler::keyboardDiagnosticToggle(key))
     {
         auto& enabled = lsampler::keyboardDiagnosticEnabled();
         enabled = !enabled;
         lsampler::announceToActiveScreenReader(status,
-            enabled ? "Keyboard diagnostic on. Press digits, punctuation or F11. Control Alt Shift D to stop."
-                    : "Keyboard diagnostic off");
+            enabled ? "Diagnostic active. Press zero or another digit. Press F11 again to stop."
+                    : "Diagnostic off");
         return true;
     }
     if (lsampler::keyboardDiagnosticEnabled())
