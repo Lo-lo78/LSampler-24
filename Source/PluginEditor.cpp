@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "ParameterSearchKey.h"
+#include "KeyboardDiagnostic.h"
 #include <limits>
 #include <algorithm>
 #include "ScreenReaderAnnouncer.h"
@@ -1754,6 +1755,26 @@ bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key, juce:
 
 bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, juce::Component* source)
 {
+    // TEST136: temporary diagnostic. In probe mode keys are reported and
+    // consumed before search/navigation. Ctrl+Alt+Shift+D toggles the probe.
+    if (lsampler::keyboardDiagnosticToggle(key))
+    {
+        auto& enabled = lsampler::keyboardDiagnosticEnabled();
+        enabled = !enabled;
+        lsampler::announceToActiveScreenReader(status,
+            enabled ? "Keyboard diagnostic on. Press digits, punctuation or F11. Control Alt Shift D to stop."
+                    : "Keyboard diagnostic off");
+        return true;
+    }
+    if (lsampler::keyboardDiagnosticEnabled())
+    {
+        const auto context = sliceEditor != nullptr ? "Slice Editor, main route"
+            : source == nullptr ? "Main, no source" : "Main, component " + source->getName();
+        lsampler::announceToActiveScreenReader(status,
+            lsampler::keyboardDiagnosticReport(key, context));
+        return true;
+    }
+
     if (fileUiBusy || processor.isFileTaskRunning())
         return key.getKeyCode() != juce::KeyPress::escapeKey;
 

@@ -1,5 +1,6 @@
 #include "SliceEditor.h"
 #include "ParameterSearchKey.h"
+#include "KeyboardDiagnostic.h"
 #include "ScreenReaderAnnouncer.h"
 using namespace lsampler;
 namespace {
@@ -275,6 +276,19 @@ void SliceEditor::restore(bool forward) {
     item=std::min(item,std::max(0,count()-1));selected.reset();anchor=-1;auditionEdit();speak(forward?"Redo. ":"Undo. ");
 }
 bool SliceEditor::keyPressed(const juce::KeyPress& k) {
+    if (lsampler::keyboardDiagnosticToggle(k)) {
+        auto& enabled = lsampler::keyboardDiagnosticEnabled();
+        enabled = !enabled;
+        announceToActiveScreenReader(*this, enabled
+            ? "Keyboard diagnostic on. Press digits, punctuation or F11. Control Alt Shift D to stop."
+            : "Keyboard diagnostic off");
+        return true;
+    }
+    if (lsampler::keyboardDiagnosticEnabled()) {
+        announceToActiveScreenReader(*this,
+            lsampler::keyboardDiagnosticReport(k, "Slice Editor"));
+        return true;
+    }
     if(numeric)return true;
     const auto mods=k.getModifiers();const int code=k.getKeyCode();
     if (mods.isCtrlDown() && mods.isShiftDown() && !mods.isAltDown()
