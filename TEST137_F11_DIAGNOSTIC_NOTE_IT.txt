@@ -1,1 +1,0 @@
-TEST137: diagnostica tastiera attivabile direttamente da F11 in griglia e Slice Editor (oltre a Ctrl+Alt+Shift+D). Dopo l’annuncio Diagnostic active, provare 0, 1, . e lettere. F11 disattiva. La scorciatoia F11 e riservata solo durante questa diagnostica temporanea. Nessuna build eseguita.

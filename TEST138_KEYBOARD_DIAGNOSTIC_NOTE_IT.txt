@@ -1,0 +1,1 @@
+TEST138 diagnostica ricerca tastiera (base TEST135). In griglia: premere 0, poi P. NVDA legge codice, carattere e ultimo evento ricevuto. Ripetere con 1, punteggiatura e in Slice Editor Alt+E. P continua a cercare i parametri P. Nessuna compilazione eseguita.
