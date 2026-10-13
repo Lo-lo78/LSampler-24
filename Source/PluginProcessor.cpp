@@ -3235,7 +3235,9 @@ void LSampler24AudioProcessor::createHostParameters()
 {
     static_assert(std::atomic<double>::is_always_lock_free, "Automation requires lock-free real values");
     const auto add = [&](const juce::String& id,const juce::String& name,Descriptor d,std::atomic<uint64_t>& revision) {
-        auto* p=new HostParameter(id,name,d,revision,uiRevision);
+        auto* p=new HostParameter(id,name,d,revision,uiRevision,
+            (&revision != &globalHostGeneration && &revision != &bankMacroHostGeneration)
+                ? &slotHostGeneration : nullptr);
         addParameter(p); // AudioProcessor owns this fixed lifetime parameter.
         return p;
     };
@@ -3520,7 +3522,13 @@ void LSampler24AudioProcessor::updateAutomatedAudio(bool snapshotChanged)
     audioBankMacroGeneration = macroGeneration;
     // The audio callback only reads lock-free atomics. No host notifications,
     // allocation, files, or state-lock acquisition occur here.
-    std::array<double, parameterCount> macroOffsets {};
+    // The large offsets array is never read on an unchanged block. Avoid
+    // zero-initialising it thousands of times per second while idle.
+    const auto slotGeneration = slotHostGeneration.load(std::memory_order_acquire);
+    if (!snapshotChanged && !macroChanged && slotGeneration == audioSlotHostGeneration)
+        return;
+    audioSlotHostGeneration = slotGeneration;
+    std::array<double, parameterCount> macroOffsets;
     if (macroChanged || snapshotChanged)
         for (int i = 0; i < parameterCount; ++i)
             if (auto* macro = hostBankMacros[size_t(i)])

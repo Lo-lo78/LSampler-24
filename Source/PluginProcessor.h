@@ -290,6 +290,9 @@ private:
     void saveBankMacroState(juce::ValueTree& parent) const;
     void restoreBankMacroState(const juce::ValueTree& parent);
     std::array<std::atomic<uint64_t>,slotCount> hostGenerations {};
+    // One generation check per audio block instead of scanning every Slot.
+    std::atomic<uint64_t> slotHostGeneration {0};
+    uint64_t audioSlotHostGeneration = 0;
     std::atomic<uint64_t> globalHostGeneration {0};
     mutable std::array<uint64_t,slotCount> controlHostGenerations {};
     std::array<uint64_t,slotCount> audioHostGenerations {};

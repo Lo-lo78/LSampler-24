@@ -9,10 +9,11 @@ namespace lsampler {
 class HostParameter final : public juce::AudioProcessorParameterWithID {
 public:
     HostParameter(const juce::String& id, const juce::String& name, Descriptor descriptor,
-                  std::atomic<uint64_t>& generation, std::atomic<uint64_t>& ui)
+                  std::atomic<uint64_t>& generation, std::atomic<uint64_t>& ui,
+                  std::atomic<uint64_t>* slotAggregate = nullptr)
         : AudioProcessorParameterWithID(juce::ParameterID{id, 1}, name,
               juce::AudioProcessorParameterWithIDAttributes{}.withLabel(descriptor.unit)),
-          d(descriptor), real(descriptor.initial), revision(generation), uiRevision(ui) {
+          d(descriptor), real(descriptor.initial), revision(generation), uiRevision(ui), aggregateRevision(slotAggregate) {
         labels = juce::StringArray::fromTokens(d.labels, "|", "");
     }
     double load() const noexcept { return real.load(std::memory_order_acquire); }
@@ -26,6 +27,8 @@ public:
             v=std::clamp(std::round(v*8)/8,.125,512.0);
         if(real.exchange(v,std::memory_order_acq_rel)!=v) {
             revision.fetch_add(1,std::memory_order_release);
+            if (aggregateRevision != nullptr)
+                aggregateRevision->fetch_add(1, std::memory_order_release);
             uiRevision.fetch_add(1,std::memory_order_release);
             if(syncedRate && v!=0)syncedRate->storeReal(syncedRate->load());
         }
@@ -53,6 +56,7 @@ private:
     std::atomic<double> real;
     std::atomic<uint64_t>& revision;
     std::atomic<uint64_t>& uiRevision;
+    std::atomic<uint64_t>* aggregateRevision = nullptr;
     juce::StringArray labels;
 };
 inline bool hostAutomatable(P p) noexcept {
