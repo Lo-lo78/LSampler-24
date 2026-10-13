@@ -556,7 +556,7 @@ void GlobalVoicePool::advanceLoops(Voice& v,const SlotAudioState& s,double incre
     const LoopAudioState* active=(v.stage>=0 && v.stage<g.stageCount && v.skipStage!=v.stage)
         ? &g.stages[size_t(v.stage)] : nullptr;
     const bool fixed=active && active->fixedPitchTime && active->pitch!=0 && v.repeat>0
-        && (!v.loopsReleased||s.params[P::global_release_loops]!=0);
+        && (active->repeats==0 || !v.loopsReleased || s.params[P::global_release_loops]!=0);
     if(fixed) {
         // Compute the rate at repeat-pitch zero, retaining note, bend,
         // envelope and LFO pitch. The sample's source-rate ratio remains.
@@ -580,14 +580,14 @@ void GlobalVoicePool::advanceLoops(Voice& v,const SlotAudioState& s,double incre
               (v.stage<0 || v.position<g.stages[size_t(v.stage)].end*s.stretchFactor || v.skipStage==v.stage)) {
             ++v.stage;v.repeat=0;v.skipStage=-1;v.loopClock=0;
         }
-        if(v.stage>=0 && v.skipStage!=v.stage && (!v.loopsReleased||s.params[P::global_release_loops]!=0)) {
+        if(v.stage>=0 && v.skipStage!=v.stage && (g.stages[size_t(v.stage)].repeats==0 || !v.loopsReleased || s.params[P::global_release_loops]!=0)) {
             const auto& loop=g.stages[size_t(v.stage)];
             const double end=loop.end*s.stretchFactor;
             const double length=std::max(1.0,(loop.end-loop.start)*s.stretchFactor);
             if(fixed ? v.loopClock>=length : v.position>=end) {
                 const double overshoot=fixed ? v.loopClock-length : v.position-end;
                 const bool next=v.stage+1<g.stageCount;
-                const int repeats=v.loopsReleased&&loop.repeats==0?1:loop.repeats;
+                const int repeats=loop.repeats;
                 if(repeats==0||++v.repeat<=repeats) {
                     const double carried=wrap(overshoot,length);
                     // The outgoing tail has already been blended with the
@@ -670,7 +670,7 @@ void GlobalVoicePool::advanceSlice(Voice& v,const SlotAudioState& s,double incre
             const double high=std::min(loop.end,q.begin+q.length);
             if(loop.fixedPitchTime && loop.pitch!=0 && v.repeat>0)
                 clockIncrement*=autoSliceLoopPitchFactor(v,loop);
-            const bool canRepeat=!v.loopsReleased || s.params[P::global_release_loops]!=0;
+            const bool canRepeat=loop.repeats==0 || !v.loopsReleased || s.params[P::global_release_loops]!=0;
             if(canRepeat && high>low && q.readScale>0) {
                 // Convert the physical subloop boundaries to the *slice's*
                 // musical clock. Reversing the source scan reverses the order
@@ -682,7 +682,7 @@ void GlobalVoicePool::advanceSlice(Voice& v,const SlotAudioState& s,double incre
                 const double advanced=clockIncrement*q.pitch;
                 const double nextElapsed=q.elapsed+advanced;
                 if(nextElapsed>=endTime) {
-                    const int allowed=v.loopsReleased&&loop.repeats==0?1:loop.repeats;
+                    const int allowed=loop.repeats;
                     if(allowed==0 || v.repeat+1<=allowed) {
                         ++v.repeat;
                         const double length=endTime-beginTime;
@@ -954,7 +954,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
            && loop->crossfade>1 && loop->direction!=2) {
             // The fade belongs to THIS subloop; Main Loop never crossfades.
             // Ping Pong already reverses exactly at the end; no overlap skip.
-            const bool mayRepeat=(!v.loopsReleased || p[P::global_release_loops]!=0)
+            const bool mayRepeat=(loop->repeats==0 || !v.loopsReleased || p[P::global_release_loops]!=0)
                 && (loop->repeats==0 || v.repeat<(v.loopsReleased?std::min(loop->repeats,1):loop->repeats));
             const bool timeStretchPitch=loop->fixedPitchTime && loop->pitch!=0;
             if(mayRepeat && !timeStretchPitch && p[P::stretch_amount]==0) {

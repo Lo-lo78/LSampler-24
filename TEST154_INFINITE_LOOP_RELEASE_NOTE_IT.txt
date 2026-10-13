@@ -1,0 +1,5 @@
+TEST154 - Infinite subloops during ADSR Release
+
+Fixed the case where MIDI Note Off changed a subloop with repeats=0 (infinite) into one last repeat, or disabled it. Infinite subloops now continue reading audio through the ADSR release until the amp envelope naturally reaches silence. This applies to normal playback and automatic slice subloops, including crossfade and fixed-pitch loop clocks. Finite-loop and note-off behavior remain separately controlled by Repeat After Note Off. No VST3 automation IDs or parameters changed.
+
+Validation: static checks only, no compilation or listening test.
