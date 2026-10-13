@@ -75,6 +75,7 @@ private:
     double random(Voice&) noexcept;
     double oscillator(Voice&,double phase,int wave,bool lfo=false) noexcept;
     double lfoTick(Voice&,int index,const lsampler::LfoSettings&,double wheel) noexcept;
+    double lfoTickPrepared(Voice&,int index,const lsampler::LfoSettings&,double phaseIncrement) noexcept;
     double read(const Voice&,const lsampler::SlotAudioState&,double position,int channel) const noexcept;
     void processEffects(Voice&,const lsampler::SlotAudioState&,double& left,double& right);
     void applyMachine(Voice&,const lsampler::SlotAudioState&,double& left,double& right) noexcept;

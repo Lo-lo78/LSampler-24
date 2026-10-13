@@ -377,9 +377,12 @@ double GlobalVoicePool::oscillator(Voice& v,double phase,int wave,bool isLfo) no
 }
 double GlobalVoicePool::lfoTick(Voice& v,int index,const LfoSettings& s,double wheelValue) noexcept {
     if(!s.active && (s.wheel==0||wheelValue==0))return 0;
+    return lfoTickPrepared(v,index,s,s.rate*(s.sync?bpm:1));
+}
+double GlobalVoicePool::lfoTickPrepared(Voice& v,int index,const LfoSettings& s,double phaseIncrement) noexcept {
     ++diagnostics.lfo;
     auto& l=v.lfo[size_t(index)];++l.age;
-    l.phase+=s.rate*(s.sync?bpm:1);
+    l.phase+=phaseIncrement;
     if(s.oneShot)l.phase=std::min(1.0,l.phase);
     else if(l.phase>=1){l.phase=wrap(l.phase,1);if(s.wave==5)l.hold=random(v);}
     double raw=s.wave==5?l.hold:oscillator(v,l.phase,s.wave,true);
@@ -724,6 +727,13 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
     const auto& g=s.playback[size_t(v.sampleIndex)];
     // These cannot change within a render span. MIDI changes start a new span.
     const double wheelValue=wheel[size_t(v.channel)];
+    // MIDI/tempo/state cannot change within this render span. Keep the same
+    // multiplication and per-sample oscillator/envelope evaluation; only hoist
+    // invariant eligibility and phase-step calculations out of the sample loop.
+    const bool lfo1Running=!Simple && (s.lfo[0].active || (s.lfo[0].wheel!=0 && wheelValue!=0));
+    const bool lfo2Running=!Simple && (s.lfo[1].active || (s.lfo[1].wheel!=0 && wheelValue!=0));
+    const double lfo1Step=lfo1Running?s.lfo[0].rate*(s.lfo[0].sync?bpm:1):0;
+    const double lfo2Step=lfo2Running?s.lfo[1].rate*(s.lfo[1].sync?bpm:1):0;
     const double velocitySmoothing=std::min(1.0,1/(.002*hostSampleRate));
     const double loopLevelSmoothing=std::min(1.0,1/(.002*hostSampleRate));
     // Match filterCoefficients() operation-for-operation. These terms depend
@@ -794,7 +804,16 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             if(pitch!=v.pitchCached){v.increment=std::pow(2.0,pitch/12)*g.sourceRatio;v.pitchCached=pitch;}
             if(!BasicRead&&v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);continue;
         }
-        const double l1=Simple?0:lfoTick(v,0,s.lfo[0],wheelValue),l2=Simple?0:lfoTick(v,1,s.lfo[1],wheelValue);
+        double l1=0,l2=0;
+        if constexpr(!Simple) {
+            if constexpr(Optimised) {
+                if(lfo1Running)l1=lfoTickPrepared(v,0,s.lfo[0],lfo1Step);
+                if(lfo2Running)l2=lfoTickPrepared(v,1,s.lfo[1],lfo2Step);
+            } else {
+                l1=lfoTick(v,0,s.lfo[0],wheelValue);
+                l2=lfoTick(v,1,s.lfo[1],wheelValue);
+            }
+        }
         const LoopAudioState* loop=(BasicRead||!v.slice.active||usesAutoSliceLoops(v))
             && v.stage>=0 && v.stage<g.stageCount ? &g.stages[size_t(v.stage)] : nullptr;
         // Use repeat modulation from the first repeat, including 1- and

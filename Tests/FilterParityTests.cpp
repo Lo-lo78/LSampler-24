@@ -1,5 +1,6 @@
 #include "../Source/SamplerVoice.h"
 #include "ReferenceTEST59/SamplerVoice.h"
+#include "FlagCacheTests.h"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -267,6 +268,8 @@ int main(int argc,char** argv) {
     std::ofstream csv(directory.getChildFile("FILTER_TEST62_BENCHMARK.csv").getFullPathName().toStdString());
     try {
         check(report.good()&&csv.good(),"Cannot create report files");
+        runFlagCacheTests(report);
+        benchmarkFlagCache(report);
         report<<"LSampler TEST62 vs frozen TEST59: Sample Set candidate, single-sample parity gate\n"
               <<"Exact sample comparison, all 50 channels; no error tolerance.\n"
               <<"Timings cover voice rendering, not REAPER GUI, driver or plugin output stage.\n"

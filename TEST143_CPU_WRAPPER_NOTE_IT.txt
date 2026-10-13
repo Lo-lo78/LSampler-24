@@ -1,0 +1,75 @@
+LSampler-24 TEST143 - Riduzione costo notifiche VST3 e invarianti LFO
+Base: TEST142 consegnata in questa conversazione.
+
+COSTO INDIVIDUATO NEL SORGENTE
+JUCE 8.0.15 chiama forAllChangedParameters dopo processAudio quando l'host
+fornisce outputParameterChanges. CachedParamValues utilizza FlagCache<1>.
+La versione originale scambia atomicamente con zero ogni parola di 32 flag,
+poi ne controlla tutti i 32 bit, anche quando nessun parametro e cambiato.
+Con migliaia di parametri questo lavoro si ripete per ogni blocco, anche quando
+processBlock del campionatore termina subito per assenza di voci.
+E un costo dimostrabile dal sorgente, NON una misura della sua percentuale
+sul consumo 0.005c riportato da REAPER.
+
+MODIFICA PRINCIPALE
+La lettura atomica di una parola vuota permette di saltare sia lo scambio
+atomico in scrittura sia la scansione dei suoi 32 bit. I gruppi non vuoti
+mantengono il drenaggio originale. Non vengono rimossi parametri, controlli
+MIDI o notifiche: una scrittura concorrente resta rilevabile nel drenaggio
+corrente o successivo. L'audio e i valori in ingresso non passano per questa
+scorciatoia. La modifica vale durante idle e riproduzione.
+
+La patch e applicata automaticamente durante la configurazione del build
+tramite cmake/OptimiseJuceFlagCache.cmake, dopo il recupero di JUCE 8.0.15.
+Controlla SHA256 originale e modificato, tollera CRLF e riconosce una patch
+gia applicata. Se il sorgente JUCE e diverso, il build si ferma esplicitamente
+invece di applicare una sostituzione incerta. Non serve modificare JUCE a mano.
+
+MODIFICA NEL RENDERING
+Per ciascuna voce, l'attivazione degli LFO e l'incremento della loro fase sono
+calcolati una volta per tratto di rendering fra eventi MIDI. Sono costanti
+all'interno di quel tratto. Gli LFO spenti evitano la chiamata per campione.
+Oscillatore, smoothing, delay, one shot, casualita e modulazione dei filtri
+continuano a essere elaborati per ogni campione nello stesso ordine.
+Non sono ridotte frequenza di aggiornamento, precisione o qualita dei filtri.
+I calcoli pow/tan/sin dei filtri realmente modulati restano: sostituirli con
+aggiornamenti piu radi o approssimazioni potrebbe cambiare il suono.
+
+VERIFICHE ESEGUITE QUI, SENZA COMPILARE
+- Integrita riferimento TEST59: PASS.
+- Contratto statico automazioni storico: PASS.
+- Applicazione esatta della patch sul sorgente JUCE ufficiale: PASS, hash
+  originale e risultante verificati, nessuna altra parte dell'header cambiata.
+- Modello di interleaving con due produttori: nessun flag perso.
+- Revisione delle modifiche LFO: nessuna formula o ordine degli aggiornamenti
+  per campione modificato; solo estrazione di invarianti.
+
+TEST NATIVI PREDISPOSTI, NON ESEGUITI QUI
+Il test gia eseguito dalla tua GitHub Actions include ora:
+- FlagCache vuota; limiti fra parole; notifiche ripetute; clear; flag multipli;
+  riscritture durante callback; due produttori concorrenti; ultimo valore.
+- Benchmark isolato, 9000 parametri sintetici, 4096 drenaggi, cinque prove,
+  mediana e ordine alternato. Stampa vecchio/nuovo costo in millisecondi.
+  Non e un benchmark dell'intero plugin e non e una previsione del valore c.
+- Il confronto audio bit per bit gia presente resta attivo e bloccante.
+
+Nel riepilogo della Actions e nel FILTER_TEST62_REPORT.txt cerca:
+TEST143 JUCE FlagCache PASS
+TEST143 isolated FlagCache idle
+TEST143 isolated FlagCache sparse
+I nomi storici degli artifact della Actions sono conservati.
+
+PROVA IN REAPER
+Confronta TEST142 e TEST143 nello stesso progetto, con stesso buffer,
+frequenza e uscite; misura idle con finestra chiusa e aperta. Poi prova il
+banco con filtri e due LFO, stesso MIDI e stessa release. Verifica anche
+registrazione/lettura automazioni e cambi di parametri mentre suona.
+La CPU finale va misurata: questa consegna non garantisce un valore 0.003c.
+
+FONTI DI IMPLEMENTAZIONE, VERSIONE FISSATA 8.0.15
+https://github.com/juce-framework/JUCE/blob/8.0.15/modules/juce_audio_processors_headless/utilities/juce_FlagCache.h
+https://github.com/juce-framework/JUCE/blob/8.0.15/modules/juce_audio_processors_headless/format_types/juce_VST3Common.h
+https://github.com/juce-framework/JUCE/blob/8.0.15/modules/juce_audio_plugin_client/juce_audio_plugin_client_VST3.cpp
+
+COMMIT
+TEST143: skip empty JUCE parameter flag groups and hoist LFO span invariants

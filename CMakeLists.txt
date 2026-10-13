@@ -16,6 +16,7 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(JUCE)
+include(cmake/OptimiseJuceFlagCache.cmake)
 
 
 juce_add_binary_data(LSampler24HelpData
