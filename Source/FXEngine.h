@@ -43,7 +43,8 @@ public:
         tailFrames = 0;
     }
     bool hasTail() const noexcept { return tailFrames > 0; }
-    void process(juce::AudioBuffer<float>& buffer, const std::array<float, lsampler::fx::count>& p) noexcept {
+    void process(juce::AudioBuffer<float>& buffer, const std::array<float, lsampler::fx::count>& p,
+                 const std::array<juce::AudioBuffer<float>,3>* slotSends = nullptr) noexcept {
         using namespace lsampler::fx;
         if (p[master] < .5f) { if (tailFrames > 0) reset(); return; }
         const bool chorus = p[chorusOn] > .5f && p[chorusMix] > .001f;
@@ -60,8 +61,25 @@ public:
         // The wet algorithms are entirely silent until actual nonzero input;
         // zero buffers never start/retrigger DSP work in idle.
         bool input = false;
-        for (int i=0; i<count; ++i)
-            if (std::abs(outL[i]) > 1.e-9f || std::abs(outR[i]) > 1.e-9f) { input=true; break; }
+        if (slotSends == nullptr)
+        {
+            for (int i = 0; i < count; ++i)
+                if (std::abs(outL[i]) > 1.e-9f || std::abs(outR[i]) > 1.e-9f)
+                { input = true; break; }
+        }
+        else
+        {
+            // Dry notes with all three per-Slot Sends at zero must not wake
+            // the FX engines or manufacture a long silent reverb tail.
+            for (int send = 0; send < 3 && !input; ++send)
+            {
+                if ((send == 0 && !chorus) || (send == 1 && !delay) || (send == 2 && !reverb)) continue;
+                for (int i = 0; i < count; ++i)
+                    if (std::abs((*slotSends)[size_t(send)].getSample(0, i)) > 1.e-9f
+                        || std::abs((*slotSends)[size_t(send)].getSample(1, i)) > 1.e-9f)
+                    { input = true; break; }
+            }
+        }
         if (!input && tailFrames <= 0) return;
         if (input) {
             // Do not run twelve seconds of silent DSP for a chorus-only note.
@@ -130,6 +148,12 @@ public:
         const float earlySpacing = float(sampleRate * .001 * modeFactor * (3.0 + 22.0*roomSize));
         for (int i=0;i<count;++i) {
             const float dryL=outL[i], dryR=outR[i];
+            const float cLIn = slotSends ? (*slotSends)[0].getSample(0, i) : dryL;
+            const float cRIn = slotSends ? (*slotSends)[0].getSample(1, i) : dryR;
+            const float dLIn = slotSends ? (*slotSends)[1].getSample(0, i) : dryL;
+            const float dRIn = slotSends ? (*slotSends)[1].getSample(1, i) : dryR;
+            const float rLIn = slotSends ? (*slotSends)[2].getSample(0, i) : dryL;
+            const float rRIn = slotSends ? (*slotSends)[2].getSample(1, i) : dryR;
             float l=dryL, r=dryR;
             if (chorus) {
                 smoothedRate += (rate-smoothedRate)*.0005f;
@@ -141,8 +165,8 @@ public:
                 const float dR=float((.006 + .012*(.5+.5*b*.65))*sampleRate);
                 const float cL=read(chorusL,chorusWrite,dL);
                 const float cR=read(chorusR,chorusWrite,dR);
-                chorusL[size_t(chorusWrite)]=dryL;
-                chorusR[size_t(chorusWrite)]=dryR;
+                chorusL[size_t(chorusWrite)]=cLIn;
+                chorusR[size_t(chorusWrite)]=cRIn;
                 chorusWrite=(chorusWrite+1)%int(chorusL.size());
                 const float hL=cL-hpLX+hpCoefficient*hpLY;
                 const float hR=cR-hpRX+hpCoefficient*hpRY;
@@ -161,7 +185,7 @@ public:
                 tapeDCX[1]=rawR; tapeDCY[1]=wetR;
                 const float fbL=juce::jlimit(-2.0f,2.0f,tone(rawL,p[delayToneL],0)*p[delayFeedbackL]*.4999f);
                 const float fbR=juce::jlimit(-2.0f,2.0f,tone(rawR,p[delayToneR],1)*p[delayFeedbackR]*.4999f);
-                const float monoIn=.5f*(dryL+dryR);
+                const float monoIn=.5f*(dLIn+dRIn);
                 tapeL[size_t(tapeWrite)]=juce::jlimit(-4.0f,4.0f,monoIn + fbL);
                 tapeR[size_t(tapeWrite)]=juce::jlimit(-4.0f,4.0f,monoIn + fbR);
                 tapeWrite=(tapeWrite+1)%int(tapeL.size());
@@ -185,8 +209,11 @@ public:
             if (reverb) {
                 // Predelay, early reflections and a stereo FDN. No heap
                 // allocation or lock in the sample callback.
-                predelayL[size_t(preWrite)]=l;
-                predelayR[size_t(preWrite)]=r;
+                // Per-slot sends are independent: with Reverb Send 0, this
+                // slot must not reach the reverb through chorus/delay returns.
+                // Legacy fallback retains the original serial FX topology.
+                predelayL[size_t(preWrite)]=slotSends ? rLIn : l;
+                predelayR[size_t(preWrite)]=slotSends ? rRIn : r;
                 const float preL=read(predelayL,preWrite,float(preFrames));
                 const float preR=read(predelayR,preWrite,float(preFrames));
                 // Six decorrelated, adjustable early reflections. 0% removes

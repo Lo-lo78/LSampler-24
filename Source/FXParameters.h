@@ -17,7 +17,7 @@ enum P : int {
 inline constexpr std::array<Descriptor, count> parameters {{
     {"master", "FX Master", "FX", Kind::enumeration, 0, 0, 1, 1, 1, "", 0, "Off|On"},
     {"chorus_on", "Chorus", "Chorus", Kind::enumeration, 0, 0, 1, 1, 1, "", 0, "Off|On"},
-    {"chorus_mix", "Chorus Mix", "Chorus", Kind::continuous, 30, 0, 100, 1, 1, "%", 0, ""},
+    {"chorus_mix", "Chorus Send", "Chorus", Kind::continuous, 30, 0, 100, 1, 1, "%", 0, ""},
     {"chorus_rate", "Chorus Rate", "Chorus", Kind::continuous, .3, 0, 1, .01, .01, "", 2, ""},
     {"chorus_width", "Chorus Width", "Chorus", Kind::continuous, 1, 0, 1, .01, .01, "", 2, ""},
     {"delay_on", "Dual Delay", "Dual Delay", Kind::enumeration, 0, 0, 1, 1, 1, "", 0, "Off|On"},

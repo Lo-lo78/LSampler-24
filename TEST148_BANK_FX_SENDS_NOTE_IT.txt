@@ -1,0 +1,12 @@
+LSampler-24 TEST148 — Mandate FX solo in Alt+K
+
+Base TEST147. Nessun algoritmo FX, preset Slot o parametro DSP storico modificato.
+
+- Nel pannello Alt+F non compaiono più Chorus Mix, Delay Send e Reverb Send.
+- Nella pagina Alt+K compare la categoria finale "Bank FX Sends" con 3 soli controlli: Chorus Send, Delay Send, Reverb Send (0..100%).
+- I tre controlli corrispondono alle stesse automazioni VST3 TEST147 (chorus_mix, delay_mix, reverb_mix): nessun ID aggiunto, spostato o riutilizzato.
+- Il comportamento audio è identico per gli stessi valori. Sono mandate GLOBALI del banco, NON mandate indipendenti per Slot: questo richiederebbe separare il routing delle voci.
+- Sono salvate tramite saveFXState() nel Bank (.lsampler-24-b) e nello stato del progetto REAPER, NON nei preset Slot. Il caricamento di uno Slot non le altera.
+- Ctrl+End in Alt+K raggiunge Reverb Send, Alt+Shift+Right permette di cambiare categoria. Esc torna alla pagina di provenienza.
+- I limiti non producono annunci extra; Backspace sulla mandata pone a 0. Alt+U continua a funzionare per le macro normali, senza trasformare i Send in offset.
+- Non compilato: GitHub Actions rimane la verifica finale.

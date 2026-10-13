@@ -76,15 +76,16 @@ public:
 
     // UI order is independent of persistent VST3 parameter IDs.
     // Keep delay and reverb additions in their respective groups.
-    static constexpr std::array<int, lsampler::fx::count> displayOrder {{
-        0, 1, 2, 3, 4,
-        5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+    static constexpr int visibleCount = lsampler::fx::count - 3;
+    static constexpr std::array<int, visibleCount> displayOrder {{
+        0, 1, 3, 4,
+        5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
         lsampler::fx::delayGain,
-        17, 18, 19, 20, 21, 22, 23, 24, 25,
+        17, 19, 20, 21, 22, 23, 24, 25,
         lsampler::fx::reverbXOver, lsampler::fx::reverbBass, lsampler::fx::reverbGain
     }};
     static int displayPosition(int parameter) noexcept {
-        for (int i=0; i<lsampler::fx::count; ++i)
+        for (int i=0; i<visibleCount; ++i)
             if (displayOrder[size_t(i)]==parameter) return i;
         return 0;
     }
@@ -92,7 +93,7 @@ public:
         setTitle("FX Grid");
         grid.setWantsKeyboardFocus(true);
         grid.setDescription({});
-        for (int i=0;i<lsampler::fx::count;++i) grid.addItem(textFor(displayOrder[size_t(i)]),i+1);
+        for (int i=0;i<visibleCount;++i) grid.addItem(textFor(displayOrder[size_t(i)]),i+1);
         grid.setSelectedItemIndex(0,juce::dontSendNotification);
         grid.onChange = [this] {
             const int item=grid.getSelectedItemIndex();
@@ -128,7 +129,7 @@ public:
     std::function<void(juce::Component&)> onToggleSlotPreview;
     std::function<bool()> onPreviewSpace;
     void enter() {
-        for(int i=0;i<lsampler::fx::count;++i) refreshRow(i);
+        for (const int i : displayOrder) refreshRow(i);
         grid.setSelectedItemIndex(displayPosition(cursor),juce::dontSendNotification);
         configureValue();
         setVisible(true);
@@ -184,7 +185,12 @@ private:
             :labels[juce::jlimit(0,labels.size()-1,int(std::round(x-d.minimum)))];
         return juce::String(d.name)+", "+text;
     }
-    void refreshRow(int i) { grid.changeItemText(displayPosition(i)+1,textFor(i)); }
+    void refreshRow(int i) {
+        // Hidden bank sends are not represented in the FX combo box.
+        if (i == lsampler::fx::chorusMix || i == lsampler::fx::delayMix || i == lsampler::fx::reverbMix)
+            return;
+        grid.changeItemText(displayPosition(i)+1,textFor(i));
+    }
     void configureValue() {
         const auto& d=lsampler::fx::parameters[size_t(cursor)];
         synchronising=true;
@@ -223,10 +229,10 @@ private:
     }
     int groupEnd(int position) const {
         const auto* category=lsampler::fx::parameters[size_t(displayOrder[size_t(position)])].category;
-        while(position+1<lsampler::fx::count && std::strcmp(lsampler::fx::parameters[size_t(displayOrder[size_t(position+1)])].category,category)==0)++position;
+        while(position+1<visibleCount && std::strcmp(lsampler::fx::parameters[size_t(displayOrder[size_t(position+1)])].category,category)==0)++position;
         return position;
     }
-    void choosePosition(int position) { choose(displayOrder[size_t(juce::jlimit(0,lsampler::fx::count-1,position))]); }
+    void choosePosition(int position) { choose(displayOrder[size_t(juce::jlimit(0,visibleCount-1,position))]); }
     void announceGrid(const juce::String& message) {
         // One transient UIA notification. Never leave a duplicate description
         // that NVDA will read again when the control is focused.
@@ -360,7 +366,7 @@ private:
                     const int pos=displayPosition(cursor),begin=groupBegin(pos),row=pos-begin;
                     const bool back=code==juce::KeyPress::leftKey;
                     const int next=back ? (begin>0 ? groupBegin(begin-1) : begin)
-                                        : (groupEnd(pos)+1<lsampler::fx::count ? groupEnd(pos)+1 : begin);
+                                        : (groupEnd(pos)+1<visibleCount ? groupEnd(pos)+1 : begin);
                     choosePosition(std::min(next+row,groupEnd(next)));return true;
                 }
                 if(code==juce::KeyPress::pageUpKey) {choosePosition(std::max(groupBegin(displayPosition(cursor)),displayPosition(cursor)-8));return true;}

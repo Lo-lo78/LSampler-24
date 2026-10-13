@@ -19,7 +19,7 @@ assert ids[:26] == ["master","chorus_on","chorus_mix","chorus_rate","chorus_widt
 assert processor.index('for (int i=0;i<lsampler::fx::count;++i) {\n        const auto& d=lsampler::fx::parameters') > processor.index('// TEST130: Only after ALL prior')
 assert all(m in processor for m in ('saveFXState(bank);','restoreFXState(bank);','saveFXState(state);','restoreFXState(state);'))
 assert 'fxEngine.hasTail()' in processor
-assert processor.index('fxEngine.process(buffer, values)') < processor.index('    applyOutputStage(buffer, routes);')
+assert processor.index('fxEngine.process(buffer, values, useSlotFXSends ? &fxSlotSendBuffers : nullptr)') < processor.index('    applyOutputStage(buffer, routes);')
 assert 'std::vector<float> chorusL' in dsp and 'reverbNetwork.process' in dsp and 'pan1L' in dsp
 assert all(m in ui for m in ("shortcut=='f'", 'getFXHostParameter(cursor)', 'processor.setFXParameter(cursor,', 'grid.grabKeyboardFocus()'))
 assert 'void LSampler24AudioProcessorEditor::openFX()' in editor

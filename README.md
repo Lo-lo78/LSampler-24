@@ -51,3 +51,8 @@ Non modificato DSP, ID di automazione, formato preset, logica Shuffle. Non compi
 
 ## TEST74: Stretch smoothing nel Slice Sequencer
 Il percorso overlap-add di Stretch Amount/Frequency ora è condiviso anche da Slice Engine / Alt+E. Il processing resta confinato alla slice corrente e rispetta Reverse; a Stretch Amount 0 resta bypassato.
+
+
+### TEST149 — Bank Sends indipendenti per Slot
+
+Le griglie dei 24 slot terminano con Bank Chorus Send, Bank Delay Send e Bank Reverb Send (0–100%). Ogni valore è salvato nel proprio file Slot; i parametri dei motori FX Alt+F **non** sono salvati nello Slot. In Alt+K restano i tre Send generali del banco, che si moltiplicano per quelli degli slot. I Bank salvano sia le 72 mandate dei 24 slot, sia gli FX condivisi e i tre Send generali. Le automazioni VST3 degli slot sono aggiunte in fondo agli ID esistenti. I vecchi slot sul master caricano mandate al 100%; quelli indirizzati alle uscite separate hanno 0% per mantenere il precedente routing, ma possono ora inviare agli FX condivisi. Nessuna compilazione viene effettuata durante la preparazione del sorgente.

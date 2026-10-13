@@ -15,8 +15,11 @@ assert 'entry.parameter == int(P::global_one_shot)' in cpp
 assert 'juce::String("Main Playback Mode")' in cpp
 assert 'const juce::String name = displayedGridParameterName(e);' in cpp
 assert cpp.count('displayedGridParameterName(') == 5  # declaration, two labels, two searches
-assert 'const auto name=displayedGridParameterName(lsampler::grid[size_t(next)]);' in cpp
-assert 'const auto name = displayedGridParameterName(lsampler::grid[size_t(bankMacroEntries[size_t(cursor)])]);' in cpp
+assert 'const auto name=isSlotBankSend(next) ? slotBankSendName(next)' in cpp
+assert ': displayedGridParameterName(lsampler::grid[size_t(next)]);' in cpp
+# TEST148: Alt+K also contains 3 bank-only FX sends, resolved by bankEntryName.
+assert 'const auto name = bankEntryName(bankMacroEntries[size_t(cursor)]);' in cpp
+assert 'return displayedGridParameterName(lsampler::grid[size_t(index)]);' in cpp
 assert 'descriptor(lsampler::grid[size_t(next)]).name' not in cpp
 
 # Main Grid: plain Left/Right retains row; Alt+Shift always starts row zero.

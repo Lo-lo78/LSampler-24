@@ -767,6 +767,10 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         const int rightChannel=p[P::mode]==0?0:std::min(1,v.sample->audio.getNumChannels()-1);
         dataR=v.sample->audio.getReadPointer(rightChannel)+g.start;
     }
+    // FX sends are independent from the Slot's direct output route: even a
+    // voice routed to 3/4 etc. can feed the shared stereo FX return on 1/2.
+    const bool sendToFX = fxSendLevels != nullptr && fxSendBuses[0] != nullptr;
+    const auto sends = sendToFX ? (*fxSendLevels)[size_t(v.slotIndex)] : std::array<float,3> {};
     for(int frame=start;frame<start+count && v.active;++frame) {
         if(v.amp.phase==0){stop(v);break;}
         if(!BasicRead && v.slice.active) {
@@ -1083,6 +1087,13 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         }
         left*=gain*panL;right*=gain*panR;
         if(!BasicRead&&s.machine)applyMachine(v,s,left,right);
+        if (sendToFX)
+            for (int send = 0; send < 3; ++send)
+                if (sends[size_t(send)] > 0.0f && fxSendBuses[size_t(send)])
+                {
+                    fxSendBuses[size_t(send)]->addSample(0, frame, float(left) * sends[size_t(send)]);
+                    fxSendBuses[size_t(send)]->addSample(1, frame, float(right) * sends[size_t(send)]);
+                }
         if(!BasicRead&&v.slice.active&&v.slice.output>0) {
             const int route=outputRoutes[size_t(v.slice.output)];
             if(route>=0&&route+1<output.getNumChannels()) {

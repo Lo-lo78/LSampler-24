@@ -27,7 +27,7 @@ assert 'static constexpr int pageStep = 40' in ui
 assert '"Delay Send"' in params and '"Reverb Send"' in params
 assert re.search(r'\{"reverb_decay",.*?3000,\s*0,\s*20000,\s*1,\s*1,\s*"ms"',params)
 assert len(re.findall(r'^\s*\{"[a-z0-9_]+",',params,re.M))==30
-assert 'const float monoIn=.5f*(dryL+dryR);' in dsp
+assert 'const float monoIn=.5f*(dLIn+dRIn);' in dsp
 assert 'constexpr float equalGain=1.25f;' in dsp
 assert 'reverbNetwork.configure(p, mode)' in dsp and 'reverbNetwork.process(preL, preR, tailL, tailR)' in dsp
 assert 'p[reverbWidth]*.01f' in dsp and 'const float mid=' in dsp and 'const float side=' in dsp

@@ -208,6 +208,12 @@ public:
     double getSlotParameter(int gridIndex, int loopIndex = 0) const;
     void setSlotParameter(int gridIndex, double value, int loopIndex = 0);
     void resetSlotParameter(int gridIndex, int loopIndex = 0);
+    // Per-slot send to the BANK's shared effects. 0..100%, saved in Slot and Bank.
+    // FX algorithms/settings are never embedded in a Slot preset.
+    static constexpr int slotFXSendCount = 3;
+    double getSlotFXSend(int slot, int send) const noexcept;
+    void setSlotFXSend(int slot, int send, double value) noexcept;
+    juce::AudioProcessorParameter* getSlotFXSendHostParameter(int slot, int send) const noexcept;
     double getFXParameter(int index) const noexcept;
     void setFXParameter(int index, double value) noexcept;
     juce::AudioProcessorParameter* getFXHostParameter(int index) const noexcept;
@@ -290,6 +296,12 @@ private:
     };
     std::array<HostSlot,slotCount> hostSlots;
     std::array<lsampler::HostParameter*,lsampler::fx::count> hostFX {};
+    std::array<std::array<lsampler::HostParameter*,slotFXSendCount>,slotCount> hostSlotFXSends {};
+    std::array<std::atomic<uint64_t>,slotCount> slotFXSendRevisions {};
+    // All scratch buffers are allocated at prepareToPlay, not in the sample callback.
+    std::array<juce::AudioBuffer<float>,slotFXSendCount> fxSlotSendBuffers;
+    juce::AudioBuffer<float> fxVoiceOnlyBuffer;
+    std::array<std::array<float,slotFXSendCount>,slotCount> audioSlotFXSends {};
     std::atomic<uint64_t> fxHostGeneration {0};
     LSamplerFXEngine fxEngine;
     std::array<lsampler::HostParameter*,lsampler::globalParameterCount> hostGlobals {};
@@ -419,6 +431,7 @@ private:
     LibraryManager library;
     juce::String currentBankName; // Metadata only; protected by stateLock.
     SlotState slotClipboard;
+    std::array<double,slotFXSendCount> slotClipboardFXSends {100.0,100.0,100.0};
     bool slotClipboardHasData = false;
 
     std::unique_ptr<LSamplerReaperHostExtension> reaperHostExtension;

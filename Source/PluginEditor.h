@@ -659,6 +659,20 @@ private:
     int bankMacroCursor = 0;
     int bankMacroLastCursor = 0;
     std::vector<int> bankMacroEntries;
+    // UI-only rows at the end of Alt+K. FX automation IDs and the normal
+    // lsampler::grid are unchanged. They are bank-wide sends, not slot data.
+    static constexpr int slotBankSendFirst = int(lsampler::grid.size()) - lsampler::globalParameterCount;
+    static constexpr int slotBankSendCount = 3;
+    bool isSlotBankSend(int index) const noexcept;
+    int slotBankSendIndex(int index) const noexcept { return index - slotBankSendFirst; }
+    juce::String slotBankSendName(int index) const;
+    static const lsampler::Descriptor& slotBankSendDescriptor() noexcept;
+    static constexpr int bankFXFirst = int(lsampler::grid.size());
+    static constexpr int bankFXCount = 3;
+    bool isBankFXSend(int index) const noexcept;
+    int bankFXParameter(int index) const noexcept;
+    const lsampler::GridEntry& bankEntry(int index) const noexcept;
+    juce::String bankEntryName(int index) const;
     LSampler24AudioProcessor::BankMacroSnapshot bankMacroReference;
     std::array<double, lsampler::parameterCount> bankMacroAmounts {};
     void openBankMacro();

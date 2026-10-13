@@ -1,0 +1,45 @@
+LSampler-24 TEST149 — Bank Sends per Slot
+
+1. Slot Grid / Value
+   Gli ultimi tre controlli della griglia di ciascuno dei 24 Slot sono:
+   - Bank Chorus Send (0-100%, default 100%)
+   - Bank Delay Send (0-100%, default 100%)
+   - Bank Reverb Send (0-100%, default 100%)
+   Sono modificabili con i consueti comandi Grid/Value e automatizzabili
+   indipendentemente (72 nuovi parametri VST3 aggiunti in fondo).
+
+2. Alt+K: Bank FX Sends
+   Rimangono i tre Send generali del banco, che moltiplicano le rispettive
+   mandate degli Slot. Il routing usa un solo Chorus, un solo Dual Delay
+   e un solo Reverb, NON 24 istanze per motore.
+
+3. Alt+F: FX Master
+   Contiene soltanto motori ed effetti condivisi. Caricare uno Slot non
+   modifica MAI i parametri Alt+F, tipo di riverbero, delay, chorus,
+   valori di Gain o Send generali Alt+K.
+
+4. Salvataggio
+   - Slot: salva i tre Bank Send di QUELLO Slot, ma nessun parametro FX
+     Master e nessun Send generale del banco.
+   - Bank: salva 24 Slot con 72 Bank Send, tre Send generali e configurazione
+     completa dei motori FX condivisi.
+   - Stato del progetto: medesimo comportamento del Bank.
+   - Copia, taglia, incolla e azzera Slot: gestiscono i suoi tre Bank Send.
+
+5. Compatibilita' con i preset precedenti
+   Gli Slot salvati prima della TEST149, privi dei nuovi campi, caricano
+   Bank Send al 100% se usavano il bus principale, allo 0% se usavano
+   soltanto bus separati (per mantenere il vecchio comportamento).
+   Le tre nuove mandate possono essere attivate su un bus separato;
+   la loro uscita wet confluisce nel master stereo 1/2.
+
+6. Routing e CPU
+   Gli algoritmi FX non sono duplicati. I 24 Slot alimentano tre bus di
+   mandata stereo in memoria solo quando almeno un effetto e' attivo.
+   Le anteprime esterne degli audio file continuano a essere processate
+   con i Send generali del banco, indipendentemente dagli Slot.
+   Per garantire indipendenza per Slot, il Reverb riceve la sua specifica
+   mandata anziche' anche i ritorni Chorus/Delay.
+
+VERIFICHE: controlli statici PASS. Nessuna compilazione, esecuzione audio,
+verifica REAPER o prova con NVDA effettuata durante la preparazione.

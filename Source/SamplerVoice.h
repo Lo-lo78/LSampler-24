@@ -26,6 +26,10 @@ public:
     int activeVoiceCount() const noexcept;
     int activeVoiceCount(int slot) const noexcept;
     void render(juce::AudioBuffer<float>& output,int start,int count);
+    // Optional three stereo buses, fed independently by slot (no allocations).
+    void setFXSendContext(std::array<juce::AudioBuffer<float>*,3> buses,
+        const std::array<std::array<float,3>,slotCount>* levels) noexcept
+    { fxSendBuses = buses; fxSendLevels = levels; }
     // Offline comparison hook: the full scalar path, with read reuse disabled.
     // Not a plugin parameter, not a user-visible quality setting.
     void renderReferenceForTesting(juce::AudioBuffer<float>& output,int start,int count);
@@ -116,6 +120,8 @@ private:
     std::array<uint32_t, slotCount> shuffleTurns {};
     int activeTotal = 0, previewTotal = 0;
     std::array<int,25> outputRoutes {};
+    std::array<juce::AudioBuffer<float>*,3> fxSendBuses {};
+    const std::array<std::array<float,3>,slotCount>* fxSendLevels = nullptr;
     const std::array<lsampler::SlotAudioState,slotCount>* states=nullptr;
     double hostSampleRate=44100,bpm=120;
     uint64_t ageCounter=0,noteCounter=0;

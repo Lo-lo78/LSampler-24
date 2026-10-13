@@ -305,6 +305,10 @@ void LSampler24AudioProcessor::prepareToPlay(double sampleRate, int)
     libraryPreviewVoicePool.setStates(&libraryPreviewStates);
     outputGlueEnvelope = 0.0;
     fxEngine.prepare(sampleRate);
+    // Allocate once outside the real-time callback (supports large offline blocks).
+    constexpr int scratchFrames = 131072;
+    for (auto& bus : fxSlotSendBuffers) bus.setSize(2, scratchFrames, false, true, true);
+    fxVoiceOnlyBuffer.setSize(2, scratchFrames, false, true, true);
     {
         const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         preparedSampleRate = sampleRate > 0 ? sampleRate : 44100;
@@ -318,6 +322,7 @@ void LSampler24AudioProcessor::releaseResources()
     voicePool.allNotesOff();
     libraryPreviewVoicePool.allNotesOff();
     fxEngine.reset();
+    voicePool.setFXSendContext({}, nullptr);
     libraryPreviewPlaying = false;
     libraryPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
     previewPlaying = false;
@@ -626,6 +631,25 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             importPreviewPlayingAtomic.store(importPreviewPlaying, std::memory_order_relaxed);
         }
     }
+    // FX send scratch buffers are optional. If a host sends an abnormally large
+    // block, fall back to the original master-FX path without touching RT heap.
+    const bool useSlotFXSends = buffer.getNumChannels() >= 2
+        && buffer.getNumSamples() <= fxVoiceOnlyBuffer.getNumSamples()
+        && getFXParameter(lsampler::fx::master) >= 0.5
+        && ((getFXParameter(lsampler::fx::chorusOn) >= 0.5 && getFXParameter(lsampler::fx::chorusMix) > 0.0)
+            || (getFXParameter(lsampler::fx::delayOn) >= 0.5 && getFXParameter(lsampler::fx::delayMix) > 0.0)
+            || (getFXParameter(lsampler::fx::reverbType) >= 0.5 && getFXParameter(lsampler::fx::reverbMix) > 0.0));
+    if (useSlotFXSends)
+    {
+        for (auto& bus : fxSlotSendBuffers) bus.clear(0, buffer.getNumSamples());
+        for (int slot = 0; slot < slotCount; ++slot)
+            for (int send = 0; send < slotFXSendCount; ++send)
+                audioSlotFXSends[size_t(slot)][size_t(send)] = float(getSlotFXSend(slot, send) * .01);
+        std::array<juce::AudioBuffer<float>*,slotFXSendCount> buffers {
+            &fxSlotSendBuffers[0], &fxSlotSendBuffers[1], &fxSlotSendBuffers[2] };
+        voicePool.setFXSendContext(buffers, &audioSlotFXSends);
+    }
+    else voicePool.setFXSendContext({}, nullptr);
     const auto& audio = automatedAudio;
     const auto slotHasAudio = [](const lsampler::SlotAudioState& state) noexcept
     {
@@ -844,6 +868,12 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             voicePool.pitchBend(channel, (int(d[1] & 127) | (int(d[2] & 127) << 7)) - 8192);
     }
     voicePool.render(buffer, offset, buffer.getNumSamples()-offset);
+    // Remember just the slot voices on the main bus. Preview sources added
+    // below are still sent to the shared effects at unity, as in TEST148.
+    if (useSlotFXSends)
+        for (int ch = 0; ch < 2; ++ch)
+            fxVoiceOnlyBuffer.copyFrom(ch, 0, buffer, ch, 0, buffer.getNumSamples());
+    voicePool.setFXSendContext({}, nullptr);
     libraryPreviewVoicePool.render(buffer, 0, buffer.getNumSamples());
     if (libraryPreviewPlaying && !libraryPreviewVoicePool.hasPreviewVoices(0))
     {
@@ -905,8 +935,23 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         std::array<float, lsampler::fx::count> values {};
         for (int i=0;i<lsampler::fx::count;++i)
             values[size_t(i)] = float(hostFX[size_t(i)]->load());
+        if (useSlotFXSends)
+        {
+            // Import/library previews bypass Slot send amounts; they still
+            // inherit the selected bank's master FX, as in previous builds.
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                const auto* all = buffer.getReadPointer(ch);
+                const auto* slotOnly = fxVoiceOnlyBuffer.getReadPointer(ch);
+                for (int n = 0; n < buffer.getNumSamples(); ++n)
+                {
+                    const float nonSlot = all[n] - slotOnly[n];
+                    for (auto& bus : fxSlotSendBuffers) bus.addSample(ch, n, nonSlot);
+                }
+            }
+        }
         if (values[lsampler::fx::master] >= .5f || fxEngine.hasTail())
-            fxEngine.process(buffer, values);
+            fxEngine.process(buffer, values, useSlotFXSends ? &fxSlotSendBuffers : nullptr);
     }
     applyOutputStage(buffer, routes);
     // Tap the final main stereo bus without changing a sample or DSP state.
@@ -1304,6 +1349,31 @@ void LSampler24AudioProcessor::setRootNote(int n) {
 }
 void LSampler24AudioProcessor::setVolume(float v) { const juce::ScopedLock lock(stateLock); absorbHostValuesLocked(); slots[size_t(currentSlot.load())].parameters[P::input_gain]=v>0?20*std::log10(juce::jlimit(.000001f,1.0f,v)):-120; markAudioStateDirty(); }
 
+double LSampler24AudioProcessor::getSlotFXSend(int slot, int send) const noexcept
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount) || !juce::isPositiveAndBelow(send, slotFXSendCount)) return 100.0;
+    const auto* parameter = hostSlotFXSends[size_t(slot)][size_t(send)];
+    return parameter ? parameter->load() : 100.0;
+}
+
+juce::AudioProcessorParameter* LSampler24AudioProcessor::getSlotFXSendHostParameter(int slot, int send) const noexcept
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount) || !juce::isPositiveAndBelow(send, slotFXSendCount)) return nullptr;
+    return hostSlotFXSends[size_t(slot)][size_t(send)];
+}
+
+void LSampler24AudioProcessor::setSlotFXSend(int slot, int send, double value) noexcept
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount) || !juce::isPositiveAndBelow(send, slotFXSendCount)) return;
+    auto* parameter = hostSlotFXSends[size_t(slot)][size_t(send)];
+    if (!parameter) return;
+    const auto actual = juce::jlimit(0.0, 100.0, std::isfinite(value) ? std::round(value) : 100.0);
+    if (parameter->load() == actual) return;
+    parameter->beginChangeGesture();
+    parameter->setValueNotifyingHost(parameter->encode(actual));
+    parameter->endChangeGesture();
+}
+
 double LSampler24AudioProcessor::getFXParameter(int index) const noexcept
 {
     return juce::isPositiveAndBelow(index,int(lsampler::fx::count))
@@ -1606,6 +1676,8 @@ bool LSampler24AudioProcessor::copyCurrentSlot()
 {
     const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     slotClipboard = slots[static_cast<size_t>(currentSlot.load())];
+    for (int send = 0; send < slotFXSendCount; ++send)
+        slotClipboardFXSends[size_t(send)] = getSlotFXSend(currentSlot.load(), send);
     slotClipboardHasData = true;
     return true;
 }
@@ -1614,8 +1686,13 @@ bool LSampler24AudioProcessor::cutCurrentSlot()
 {
     const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     slotClipboard = slots[static_cast<size_t>(currentSlot.load())];
+    for (int send = 0; send < slotFXSendCount; ++send)
+        slotClipboardFXSends[size_t(send)] = getSlotFXSend(currentSlot.load(), send);
     slotClipboardHasData = true;
-    slots[static_cast<size_t>(currentSlot.load())] = SlotState{};
+    const int slot = currentSlot.load();
+    slots[static_cast<size_t>(slot)] = SlotState{};
+    for (auto* parameter : hostSlotFXSends[size_t(slot)])
+        if (parameter) parameter->storeReal(100.0);
     markAudioStateDirty();
     stopVoicesMask.fetch_or(1u << currentSlot.load(std::memory_order_relaxed), std::memory_order_release);
     return true;
@@ -1627,6 +1704,9 @@ bool LSampler24AudioProcessor::pasteCurrentSlot()
     if (!slotClipboardHasData)
         return false;
     slots[static_cast<size_t>(currentSlot.load())] = slotClipboard;
+    for (int send = 0; send < slotFXSendCount; ++send)
+        if (auto* parameter = hostSlotFXSends[size_t(currentSlot.load())][size_t(send)])
+            parameter->storeReal(slotClipboardFXSends[size_t(send)]);
     markAudioStateDirty();
     stopVoicesMask.fetch_or(1u << currentSlot.load(std::memory_order_relaxed), std::memory_order_release);
     return true;
@@ -1635,7 +1715,10 @@ bool LSampler24AudioProcessor::pasteCurrentSlot()
 void LSampler24AudioProcessor::clearCurrentSlot()
 {
     const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
-    slots[static_cast<size_t>(currentSlot.load())] = SlotState{};
+    const int slot = currentSlot.load();
+    slots[static_cast<size_t>(slot)] = SlotState{};
+    for (auto* parameter : hostSlotFXSends[size_t(slot)])
+        if (parameter) parameter->storeReal(100.0);
     markAudioStateDirty();
     stopVoicesMask.fetch_or(1u << currentSlot.load(std::memory_order_relaxed), std::memory_order_release);
 }
@@ -1643,8 +1726,12 @@ void LSampler24AudioProcessor::clearCurrentSlot()
 void LSampler24AudioProcessor::clearBank()
 {
     const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
-    for (auto& slot : slots)
-        slot = SlotState{};
+    for (int index = 0; index < slotCount; ++index)
+    {
+        slots[size_t(index)] = SlotState{};
+        for (auto* parameter : hostSlotFXSends[size_t(index)])
+            if (parameter) parameter->storeReal(100.0);
+    }
     currentBankName.clear();
     markAudioStateDirty();
     stopVoicesMask.fetch_or(0xffffffu, std::memory_order_release);
@@ -1897,6 +1984,10 @@ juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slotIndex, const juc
     tree.setProperty("highKey", s.parameters[P::high], nullptr);
     tree.setProperty("rootNote", s.parameters[P::root], nullptr);
     tree.setProperty("volume", std::pow(10.0,s.parameters[P::input_gain]/20.0), nullptr);
+    // Slot preset keeps only these three send amounts. Never writes FX engine parameters.
+    tree.setProperty("bankChorusSend", getSlotFXSend(slotIndex, 0), nullptr);
+    tree.setProperty("bankDelaySend", getSlotFXSend(slotIndex, 1), nullptr);
+    tree.setProperty("bankReverbSend", getSlotFXSend(slotIndex, 2), nullptr);
     juce::ValueTree values("Parameters");
     for(int i=0;i<parameterCount;++i) values.setProperty(parameters[size_t(i)].key,s.parameters.values[size_t(i)],nullptr);
     tree.addChild(values,-1,nullptr);
@@ -2067,6 +2158,16 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
         const juce::ScopedValueSetter<bool> restoring(restoringHostState, true);
         // Force every restored value, even one equal to the previous control mirror.
         publishHostValuesLocked(false, slotIndex);
+        // Legacy main-routed slots keep the previous FX sound at 100%.
+        // Legacy slots routed to separate pins could NOT reach Master FX:
+        // start their new sends at 0% to preserve that old routing. Editing
+        // any of these send controls now permits a separate FX return on 1/2.
+        static constexpr const char* sendKeys[] = {"bankChorusSend", "bankDelaySend", "bankReverbSend"};
+        const double oldDefault = slots[size_t(slotIndex)].parameters[P::output_route] < 0.5 ? 100.0 : 0.0;
+        for (int send = 0; send < slotFXSendCount; ++send)
+            if (auto* parameter = hostSlotFXSends[size_t(slotIndex)][size_t(send)])
+                parameter->storeReal(juce::jlimit(0.0, 100.0,
+                    double(tree.getProperty(sendKeys[send], oldDefault))));
         markAudioStateDirty();
     }
 
@@ -2423,7 +2524,11 @@ bool LSampler24AudioProcessor::loadBankPreset(const juce::File& presetFile, juce
     {
         const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         for (int i = count; i < slotCount; ++i)
+        {
             slots[static_cast<size_t>(i)] = SlotState{};
+            for (auto* parameter : hostSlotFXSends[size_t(i)])
+                if (parameter) parameter->storeReal(100.0);
+        }
     }
 
     currentSlot = juce::jlimit(0, slotCount - 1, static_cast<int>(bank.getProperty("currentSlot", 0)));
@@ -3406,6 +3511,18 @@ void LSampler24AudioProcessor::createHostParameters()
         const auto& d=lsampler::fx::parameters[size_t(i)];
         hostFX[size_t(i)] = add("fx_"+juce::String(d.key), "FX - "+juce::String(d.name), d, fxHostGeneration);
     }
+    // TEST149: 72 NEW independent lanes, appended after ALL previous FX lanes.
+    // Existing VST3 numeric host indices and parameter IDs are never reordered.
+    constexpr const char* suffixes[] = {"bank_chorus_send", "bank_delay_send", "bank_reverb_send"};
+    constexpr const char* labels[] = {"Bank Chorus Send", "Bank Delay Send", "Bank Reverb Send"};
+    const lsampler::Descriptor sendDescriptor { "bank_fx_send", "Bank FX Send", "Bank Sends",
+        lsampler::Kind::continuous, 100, 0, 100, 1, 1, "%", 0, "" };
+    for (int slot = 0; slot < slotCount; ++slot)
+        for (int send = 0; send < slotFXSendCount; ++send)
+            hostSlotFXSends[size_t(slot)][size_t(send)] = add(
+                "slot" + juce::String(slot + 1).paddedLeft('0', 2) + "_" + suffixes[send],
+                "Slot " + juce::String(slot + 1) + " - " + labels[send],
+                sendDescriptor, slotFXSendRevisions[size_t(slot)]);
     hostParametersReady=true;
 }
 
