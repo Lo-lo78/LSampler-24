@@ -1,0 +1,9 @@
+TEST153 - Zero Crossing sui frame PCM e cucitura dei loop
+Base TEST152. Solo modifiche al sorgente; nessuna compilazione locale.
+
+- Start/End: la scelta considera i due frame attorno al cambio di segno e penalizza il residuo del canale stereo peggiore. Nessun taglio se non esistono attraversamenti nel raggio di ricerca.
+- Loop: confronta la vera discontinuita' fra End-1 e Start, la pendenza dei bordi, e la forma vicina; privilegia una giunzione meno udibile.
+- Loop: percentuali con bias di 0.25 frame per mantenere gli indici interi durante la conversione con floor() nel motore audio.
+- Nessuna variazione di parametri VST3, scorciatoie, effetti o percorsi di salvataggio.
+
+Limiti: un attraversamento dello zero non elimina ogni click su forme d'onda complesse; un crossfade e' ancora utile. Test audio e build GitHub Actions necessari.

@@ -1552,38 +1552,42 @@ void LSampler24AudioProcessor::applyZeroCrossing(bool loopWindow,int loopIndex) 
     const int last=loopWindow?std::clamp(int(count*p[P::sample_end]*.01),first+2,count):count;
     if(last-first<3)return;
 
-    // Stay close to the boundaries chosen by the user. A full-file scan could
-    // silently move an endpoint seconds away if there is no suitable crossing.
-    // 40 ms covers even rather low fundamentals; it is capped for very high
-    // source rates, and is never used in the audio callback.
+    // Examine real, source-rate PCM frames; a sign change in only one stereo
+    // channel does not mean the splice is near zero in the other channel.
     const double sourceRate=slot.sample->sourceSampleRate>1.0
         ?slot.sample->sourceSampleRate:44100.0;
     const int radius=juce::jlimit(32,4096,int(std::ceil(sourceRate*.040)));
     const double peak=std::max(1.0e-5,slot.sample->peak);
+    const int channels=a.getNumChannels();
     struct Crossing {int frame; double score;};
     auto candidates=[&](int target) {
         std::vector<Crossing> choices;
         const int from=std::max(first+1,target-radius);
         const int to=std::min(last-1,target+radius);
-        const int channels=a.getNumChannels();
         for(int i=from;i<=to;++i) {
             if(!sampleCrossesZero(a,i,first,last))continue;
-            double amplitude=0.0;
-            for(int ch=0;ch<channels;++ch)
-                amplitude+=std::abs(double(a.getSample(ch,i-1)))
-                          +std::abs(double(a.getSample(ch,i)));
-            // Prefer a nearby crossing that is also quiet on BOTH channels.
-            // The old criterion could accept a crossing on only one stereo side.
-            const double nearZero=amplitude/(2.0*channels*peak);
-            const double proximity=double(std::abs(i-target))/radius;
-            choices.push_back({i,proximity*.8+std::min(2.0,nearZero)*.2});
+            // The cut is on a PCM frame, not at an interpolated fraction.
+            // Test BOTH adjacent frames of every crossing and favour a small
+            // residual on the worst stereo channel (not the average).
+            for(int frame=i-1;frame<=i;++frame) {
+                if(frame<first+1 || frame>=last)continue;
+                double worst=0.0,mean=0.0;
+                for(int ch=0;ch<channels;++ch) {
+                    const double v=std::abs(double(a.getSample(ch,frame)))/peak;
+                    worst=std::max(worst,v);mean+=v;
+                }
+                mean/=channels;
+                const double distance=double(std::abs(frame-target))/radius;
+                choices.push_back({frame, distance*.25+worst*2.5+mean*.5});
+            }
         }
         std::sort(choices.begin(),choices.end(),[](const Crossing& x,const Crossing& y) {
             return x.score<y.score;
         });
-        if(choices.size()>32)choices.resize(32);
-        // No good candidate nearby: do not relocate the cut across the sample.
-        if(choices.empty())choices.push_back({target,0.0});
+        // Keep diversity of choices when matching both loop endpoints.
+        if(choices.size()>48)choices.resize(48);
+        // Do not destructively trim to a non-crossing just because no crossing
+        // exists in the search window.
         return choices;
     };
     auto targetFrame=[&](double percent) {
@@ -1597,34 +1601,35 @@ void LSampler24AudioProcessor::applyZeroCrossing(bool loopWindow,int loopIndex) 
         int bestStart=-1,bestEnd=-1;
         double bestScore=std::numeric_limits<double>::infinity();
         for(const auto& st:starts)for(const auto& en:ends) {
-            if(en.frame<=st.frame+1)continue;
-            // Equal-polarity slopes and similar waveforms across the splice
-            // are more useful than two unrelated points at zero amplitude.
-            double waveformMismatch=0.0;
-            int comparisons=0;
-            int oppositeSlopes=0;
-            for(int ch=0;ch<a.getNumChannels();++ch) {
-                const double startSlope=double(a.getSample(ch,st.frame))
-                                       -double(a.getSample(ch,st.frame-1));
-                const double endSlope=double(a.getSample(ch,en.frame))
-                                     -double(a.getSample(ch,en.frame-1));
-                if(startSlope*endSlope<0.0)++oppositeSlopes;
-                for(int offset=-6;offset<=6;++offset) {
-                    if(st.frame+offset<first || st.frame+offset>=last
-                       ||en.frame+offset<first || en.frame+offset>=last)continue;
-                    waveformMismatch+=std::min(2.0,std::abs(double(a.getSample(ch,st.frame+offset))
-                                                            -double(a.getSample(ch,en.frame+offset)))/peak);
-                    ++comparisons;
+            if(en.frame<=st.frame+2 || en.frame-2<first || st.frame+1>=last)continue;
+            // The playback splice joins the LAST frame before End to the
+            // FIRST frame at Start, not the two End/Start frame values.
+            // Compare the actual seam and the neighbouring waveform slopes.
+            double jump=0.0, slopeMismatch=0.0, shapeMismatch=0.0;
+            for(int ch=0;ch<channels;++ch) {
+                const auto at=[&](int i){return double(a.getSample(ch,i));};
+                const double before=at(en.frame-1),after=at(st.frame);
+                jump=std::max(jump,std::abs(before-after)/peak);
+                const double slopeBefore=before-at(en.frame-2);
+                const double slopeAfter=at(st.frame+1)-after;
+                slopeMismatch=std::max(slopeMismatch,std::abs(slopeBefore-slopeAfter)/peak);
+                // A matching phase alone is insufficient on complex waves;
+                // compare a short neighbourhood on the two sides of the seam.
+                for(int k=0;k<8;++k) {
+                    if(en.frame-1-k<first || st.frame+k>=last)break;
+                    shapeMismatch+=std::min(2.0,std::abs(at(en.frame-1-k)-at(st.frame+k))/peak);
                 }
             }
-            const double averageMismatch=comparisons>0?waveformMismatch/comparisons:0.0;
-            const double slopePenalty=double(oppositeSlopes)/a.getNumChannels();
-            const double score=st.score+en.score+.8*averageMismatch+.65*slopePenalty;
+            shapeMismatch/=std::max(1,channels*8);
+            const double score=st.score+en.score+3.0*jump+1.5*slopeMismatch+.15*shapeMismatch;
             if(score<bestScore) {bestScore=score;bestStart=st.frame;bestEnd=en.frame;}
         }
         if(bestStart<0)return;
-        l[size_t(L::start)]=100.0*(bestStart-first)/(last-first);
-        l[size_t(L::end)]=100.0*(bestEnd-first)/(last-first);
+        // Playback converts the percentage back with floor(). A small positive
+        // fractional-frame bias makes the selected integer survive that roundtrip.
+        // Without it, a floating-point rounding error shifts the seam by 1 frame.
+        l[size_t(L::start)]=100.0*(bestStart-first+0.25)/(last-first);
+        l[size_t(L::end)]=100.0*(bestEnd-first+0.25)/(last-first);
     } else {
         // Use the exact integer frame boundaries after snapping. Converting a
         // chosen crossing to a percentage and then floor/ceil-ing it again
@@ -1638,7 +1643,7 @@ void LSampler24AudioProcessor::applyZeroCrossing(bool loopWindow,int loopIndex) 
             const double score=st.score+en.score;
             if(score<bestScore) {bestScore=score;startSample=st.frame;endSample=en.frame;}
         }
-        if(startSample<0)return;
+        if(startSample<0 || endSample<=startSample+2)return;
         const int newCount=endSample-startSample;
 
         auto trimmed = std::make_shared<SharedSample>();
