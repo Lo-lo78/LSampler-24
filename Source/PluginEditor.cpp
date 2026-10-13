@@ -250,10 +250,12 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     addButton(advancedButton, 9);
     addButton(fxButton, 10);
     fxButton.setButtonText("FX");
-    fxButton.setDescription("Alt+F. Master effects Grid");
+    fxButton.setDescription("Alt+F");
     fxButton.onClick=[this] { openFX(); };
     addChildComponent(fxPanel);
     fxPanel.onClose=[this] { closeFX(); };
+    fxPanel.onToggleSlotPreview=[this](juce::Component& target) { toggleSlotPreview(target); };
+    fxPanel.onPreviewSpace=[this] { return toggleSlotPreviewIfEnabled(); };
     // Show keyboard equivalents directly on the mouse buttons so sighted users
     // discover the accessible workflow while exploring the interface.
     loadSample.setButtonText("Load Sample");
@@ -471,6 +473,30 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     refreshSlotCells();
     leaveSlotParameters();
     startTimerHz(10);
+}
+
+void LSampler24AudioProcessorEditor::toggleSlotPreview(juce::Component& announcementTarget)
+{
+    // One mode shared by Slots and FX. Turning it on also immediately
+    // auditions the currently selected slot; Space then toggles playback.
+    slotPreviewMode = !slotPreviewMode;
+    if (slotPreviewMode)
+    {
+        processor.requestPreviewStart();
+        lsampler::announceToActiveScreenReader(announcementTarget, "Slot preview On");
+    }
+    else
+    {
+        processor.requestPreviewStop();
+        lsampler::announceToActiveScreenReader(announcementTarget, "DAW space On");
+    }
+}
+
+bool LSampler24AudioProcessorEditor::toggleSlotPreviewIfEnabled()
+{
+    if (!slotPreviewMode) return false; // Let REAPER handle Space as usual.
+    processor.requestPreviewToggle();
+    return true;
 }
 
 void LSampler24AudioProcessorEditor::openFX()
@@ -2841,19 +2867,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         }
         else
         {
-            // On the slot page the default is DAW Space. Alt+P enables the
-            // selection-following configured-slot audition mode.
-            slotPreviewMode = !slotPreviewMode;
-            if (slotPreviewMode)
-            {
-                processor.requestPreviewStart();
-                lsampler::announceToActiveScreenReader(*announceSource, "Slot preview On");
-            }
-            else
-            {
-                processor.requestPreviewStop();
-                lsampler::announceToActiveScreenReader(*announceSource, "DAW space On");
-            }
+            // Slots and FX use exactly the same preview-mode implementation.
+            toggleSlotPreview(*announceSource);
         }
         return true;
     }
@@ -3401,12 +3416,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     if (code == juce::KeyPress::spaceKey && !mods.isAltDown() && !mods.isCtrlDown()
         && !mods.isShiftDown() && !mods.isCommandDown())
     {
-        if (slotPreviewMode)
-        {
-            processor.requestPreviewToggle();
-            return true;
-        }
-        return false;
+        return toggleSlotPreviewIfEnabled();
     }
 
     const int currentSlot = processor.getCurrentSlot();

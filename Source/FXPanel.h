@@ -15,7 +15,10 @@ public:
     struct Grid final : juce::ComboBox {
         std::function<bool(const juce::KeyPress&)> onKey;
         bool keyPressed(const juce::KeyPress& k) override {
-            return onKey && onKey(k) ? true : juce::ComboBox::keyPressed(k);
+            if (onKey && onKey(k)) return true;
+            if (k.getKeyCode() == juce::KeyPress::spaceKey)
+                return false; // DAW Space when Alt+P slot audition is off
+            return juce::ComboBox::keyPressed(k);
         }
         void focusGained(FocusChangeType cause) override {
             setTitle("FX Grid");
@@ -33,17 +36,24 @@ public:
     struct Value final : juce::Slider {
         std::function<bool(const juce::KeyPress&)> onKey;
         bool keyPressed(const juce::KeyPress& k) override {
-            return onKey && onKey(k) ? true : juce::Slider::keyPressed(k);
+            if (onKey && onKey(k)) return true;
+            if (k.getKeyCode() == juce::KeyPress::spaceKey)
+                return false; // DAW Space when Alt+P slot audition is off
+            return juce::Slider::keyPressed(k);
         }
         void setLineReadingMode() {
             setTitle(parameterName);
             setName(parameterName);
-            setDescription({});
+            // NVDA+Up reads only parameter and value once the entry cue ends.
+            setDescription({}); // no second, persistent shortcut announcement
         }
         void setEntryAccessibility() {
             setTitle("Value. " + parameterName);
             setName("Value. " + parameterName);
-            setDescription({}); // no second "FX Value. Alt+L..." announcement
+            // Same one-time focus cue as the main sampler Value control.
+            // Removed from the accessible description after 220 ms, so
+            // subsequent changes are announced once by the native slider.
+            setDescription("Alt+V");
         }
         void setParameterName(const juce::String& name) {
             parameterName = name;
@@ -99,6 +109,10 @@ public:
     }
 
     std::function<void()> onClose;
+    // Preview uses the editor's *same* Alt+P / Space logic as the Slots page.
+    // FX has no separate audition engine or mode state.
+    std::function<void(juce::Component&)> onToggleSlotPreview;
+    std::function<bool()> onPreviewSpace;
     void enter() {
         for(int i=0;i<lsampler::fx::count;++i) refreshRow(i);
         grid.setSelectedItemIndex(cursor,juce::dontSendNotification);
@@ -117,6 +131,7 @@ public:
         g.drawText("Grid  |  FX Master  •  Chorus  •  Dual Delay  •  Reverb",32,80,getWidth()-64,25,juce::Justification::centredLeft);
         g.drawText("Alt+L: Grid    Alt+V: Value    Esc: Grid / Close    Tab: Grid / Value",32,380,getWidth()-64,28,juce::Justification::centredLeft);
         g.drawText("Alt+arrows: edit/step   Alt+PgUp/PgDn: coarse   Alt+Home/End: limits",32,420,getWidth()-64,28,juce::Justification::centredLeft);
+        g.drawText("Alt+P: Slot preview on/off   Space: preview when enabled",32,457,getWidth()-64,24,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xffe8b76b));
         g.drawRoundedRectangle(juce::Rectangle<float>(24,145,float(getWidth()-48),220),5,2);
         g.setFont(juce::Font(juce::FontOptions(19.f)));
@@ -263,6 +278,23 @@ private:
             return true;
         }
         if(alt && shortcut=='f') return true; // Alt+F only opens FX; Esc closes it
+        if(alt && shortcut=='p') {
+            if (onToggleSlotPreview) {
+                onToggleSlotPreview(valueFocused ? static_cast<juce::Component&>(value)
+                                                 : static_cast<juce::Component&>(grid));
+                // The announcement utility temporarily sets the component's
+                // accessible description. Clear it immediately so that NVDA
+                // does not repeat "Slot preview On" on the next value change.
+                if (valueFocused) value.setLineReadingMode();
+                else grid.setDescription({});
+            }
+            return true;
+        }
+        // Mirror the Slots page: Space auditions only while Alt+P preview is
+        // enabled; otherwise it goes to the DAW (never opens the FX ComboBox).
+        if(code==juce::KeyPress::spaceKey && !mods.isAltDown() && !mods.isCtrlDown()
+           && !mods.isShiftDown() && !mods.isCommandDown())
+            return onPreviewSpace ? onPreviewSpace() : false;
         if(alt && shortcut=='l') {grid.grabKeyboardFocus();return true;}
         if(alt && shortcut=='v') {value.grabKeyboardFocus();return true;}
         if(code==juce::KeyPress::escapeKey) {

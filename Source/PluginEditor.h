@@ -504,6 +504,9 @@ private:
     void selectParameter(int index, bool announce);
     void refreshParameterGrid();
     void configureValueForSelectedParameter();
+    // Shared Slots/FX audition, using the selected slot and one persistent mode.
+    void toggleSlotPreview(juce::Component& announcementTarget);
+    bool toggleSlotPreviewIfEnabled();
     void focusValue();
     void focusParameterGrid();
     void focusMainParameterGrid();

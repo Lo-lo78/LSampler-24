@@ -1,0 +1,19 @@
+TEST146 - Anteprima da FX e annunci NVDA
+
+Base: TEST145. Solo sorgente; non compilato, nessun binario.
+
+- Pulsante FX: descrizione accessibile esattamente "Alt+F" senza "Master effects Grid".
+- FX Value: prima lettura NVDA "Value. <Parametro> [cursore] <Valore> Alt+V";
+  dopo l'ingresso il suggerimento e il prefisso Value spariscono come nella
+  griglia parametri principale (lettura riga piu' breve).
+- FX Alt+P: attiva/disattiva esattamente la modalita' Slot preview condivisa
+  con la schermata degli slot. Quando si attiva, avvia subito lo slot scelto,
+  quando si disattiva ferma l'anteprima e restituisce Space a REAPER.
+- FX Space: solo con modalita' Slot preview attiva, alterna play/stop del
+  campione; se disattivata, non apre il menu ComboBox e non consuma Space.
+- Gli annunci "Slot preview On" e "DAW space On" non restano nella
+  descrizione accessibile di Grid/Value, prevenendo ripetizioni NVDA.
+- Nessuna modifica al DSP, ai parametri FX o agli ID di automazione VST3.
+
+Verificare in REAPER: Alt+P e Space sia in FX Grid sia in FX Value, e spazio
+host con anteprima disattiva; ingressi in Value con Alt+V, Tab e Invio.

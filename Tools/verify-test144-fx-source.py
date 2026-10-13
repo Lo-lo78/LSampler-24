@@ -23,5 +23,5 @@ assert 'std::vector<float> chorusL' in dsp and 'reverbNetwork.process' in dsp an
 assert all(m in ui for m in ("shortcut=='f'", 'getFXHostParameter(cursor)', 'processor.setFXParameter(cursor,', 'grid.grabKeyboardFocus()'))
 assert 'void LSampler24AudioProcessorEditor::openFX()' in editor
 assert 'sliceEditor->onRequestFX=' in editor
-assert 'fxButton.setDescription("Alt+F.' in editor
+assert 'fxButton.setDescription("Alt+F");' in editor
 print('PASS: FX off in old projects; 26 unique host IDs; appended automation; audio tail and persistence; FX UI and Slice shortcut.')
