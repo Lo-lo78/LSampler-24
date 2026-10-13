@@ -652,6 +652,11 @@ private:
 
     bool parameterPage = false;
     bool globalOpen = false;
+    // Rebuilding the same ComboBox from inside its key callback can leave
+    // JUCE/Windows accessibility dispatch with stale combo child objects.
+    // Alt+K transitions are queued on the message thread after key dispatch.
+    bool bankMacroTransitionPending = false;
+    bool updatingParameterUi = false;
     bool bankMacroOpen = false;
     bool bankMacroReturnWasParameterPage = false;
     bool bankMacroUniform = false;
@@ -675,6 +680,7 @@ private:
     juce::String bankEntryName(int index) const;
     LSampler24AudioProcessor::BankMacroSnapshot bankMacroReference;
     std::array<double, lsampler::parameterCount> bankMacroAmounts {};
+    void queueBankMacroToggle();
     void openBankMacro();
     void closeBankMacro(bool restoreFocus = true);
     void selectBankMacroEntry(int position, bool announce);

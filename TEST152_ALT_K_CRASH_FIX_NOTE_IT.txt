@@ -1,0 +1,24 @@
+LSampler-24 TEST152 - Protezioni Alt+K / Bank Macro (13 ottobre 2026)
+
+Base: TEST151. Questa correzione non modifica il DSP, i campioni, i banchi,
+le macro, gli ID VST3 e gli algoritmi FX.
+
+Correzioni in PluginEditor:
+- Alt+K apre/chiude la vista Bank Macro mediante una callback differita sul
+  message thread, DOPO il completamento della pressione del tasto. Evita di
+  cancellare e ricreare il ComboBox durante la dispatch Windows/JUCE/NVDA.
+- Evita rientri indesiderati di onChange e onValueChange durante il
+  ripopolamento della griglia e il cambio di modalità.
+- All'uscita da Alt+K reimposta subito l'indice ordinario prima di lasciare
+  Bank Macro. Gli indici ausiliari Bank FX Sends sono oltre la griglia reale:
+  lasciarli attivi fuori da Alt+K esponeva letture fuori limite.
+- Controlla esplicitamente la dimensione del catalogo e degli indici.
+
+Verifica in REAPER: avviare una nuova istanza, premere Alt+K da Slots,
+Esc, Alt+K ancora; poi in Bank Macro raggiungere gli ultimi tre Bank FX
+Sends e uscire con Esc, alternare tra Alt+K e griglia Slot, ripetere su
+un banco con molti slot. Controllare NVDA e le automazioni.
+
+Il crash effettivo di REAPER non e' stato riprodotto localmente. Questa e'
+una patch difensiva con controlli statici, non una garanzia di soluzione.
+Non e' stata eseguita alcuna compilazione.

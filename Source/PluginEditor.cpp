@@ -367,10 +367,12 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     parameterSelector.setSelectedItemIndex(selectedParameter, juce::dontSendNotification);
     parameterSelector.onChange = [this]
     {
+        if (updatingParameterUi) return;
         const int index = parameterSelector.getSelectedItemIndex();
         if (index >= 0)
         {
             const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
+            if (bankMacroOpen && bankMacroEntries.empty()) return;
             if (bankMacroOpen)
                 bankMacroCursor = juce::jlimit(0, int(bankMacroEntries.size()) - 1, index);
             selectedParameter = bankMacroOpen ? bankMacroEntries[size_t(bankMacroCursor)]
@@ -400,7 +402,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     parameterValue.addKeyListener(this);
     parameterValue.onValueChange = [this]
     {
-        if (!parameterPage) return;
+        if (!parameterPage || updatingParameterUi) return;
         setSelectedParameterValue(parameterValue.getValue());
         refreshParameterGrid();
         announceSelectedValue();
@@ -865,6 +867,11 @@ const GridEntry& LSampler24AudioProcessorEditor::bankEntry(int index) const noex
         static const GridEntry send { -1, -1, Action::none, "Bank FX Sends", -1 };
         return send;
     }
+    if (!juce::isPositiveAndBelow(index, int(lsampler::grid.size())))
+    {
+        static const GridEntry invalid { -1, -1, Action::none, "Bank Macro", -1 };
+        return invalid;
+    }
     return lsampler::grid[size_t(index)];
 }
 
@@ -872,6 +879,7 @@ juce::String LSampler24AudioProcessorEditor::bankEntryName(int index) const
 {
     if (isBankFXSend(index))
         return "Bank " + juce::String(lsampler::fx::parameters[size_t(bankFXParameter(index))].name);
+    if (!juce::isPositiveAndBelow(index, int(lsampler::grid.size()))) return "Bank Macro";
     return displayedGridParameterName(lsampler::grid[size_t(index)]);
 }
 
@@ -972,6 +980,7 @@ void LSampler24AudioProcessorEditor::setSelectedParameterValue(double value)
 }
 juce::String LSampler24AudioProcessorEditor::formatParameter(int index,double value) const {
     if (isBankFXSend(index) || isSlotBankSend(index)) return juce::String(value, 0) + " %";
+    if (!juce::isPositiveAndBelow(index, int(lsampler::grid.size()))) return {};
     const auto& e=lsampler::grid[size_t(index)];const auto& d=descriptor(e);
     if(d.kind==Kind::note)return value<0?juce::String("Off"):midiNoteText(juce::roundToInt(value));
     if(e.parameter==int(P::global_one_shot)) {
@@ -1001,6 +1010,7 @@ juce::String LSampler24AudioProcessorEditor::formatParameter(int index,double va
 }
 juce::String LSampler24AudioProcessorEditor::bankMacroRelativeText(int gridIndex, double offset) const
 {
+    if (!juce::isPositiveAndBelow(gridIndex, int(lsampler::grid.size()))) return {};
     const auto& entry = lsampler::grid[size_t(gridIndex)];
     const auto& d = descriptor(entry);
     const int parameter = entry.parameter;
@@ -1073,6 +1083,7 @@ juce::String LSampler24AudioProcessorEditor::bankMacroValueText(int gridIndex) c
 {
     if (isBankFXSend(gridIndex))
         return formatParameter(gridIndex, processor.getFXParameter(bankFXParameter(gridIndex)));
+    if (!juce::isPositiveAndBelow(gridIndex, int(lsampler::grid.size()))) return {};
     const auto& entry = lsampler::grid[size_t(gridIndex)];
     const int parameter = entry.parameter;
     const auto value = bankMacroUniform ? bankMacroAmounts[size_t(parameter)]
@@ -1100,6 +1111,7 @@ juce::String LSampler24AudioProcessorEditor::parameterCellText(int index) const 
             && observedAutomationParameter == automationGridSelection()) ? ", Auto" : "";
         return bankEntryName(index) + ", " + bankMacroValueText(index) + marker;
     }
+    if (!juce::isPositiveAndBelow(index, int(lsampler::grid.size()))) return {};
     const auto& e=lsampler::grid[size_t(index)];
     const juce::String prefix=std::strcmp(e.category,"Loops")==0?"Loop "+juce::String(selectedLoop+1)+" ":juce::String();
     const juce::String name = displayedGridParameterName(e);
@@ -1110,6 +1122,8 @@ juce::String LSampler24AudioProcessorEditor::parameterCellText(int index) const 
     return prefix+name+", "+formatParameter(index,processor.getSlotParameter(index,selectedLoop)) + marker;
 }
 void LSampler24AudioProcessorEditor::refreshParameterGrid() {
+    // ComboBox rebuilds must never re-enter selection/value callbacks.
+    const juce::ScopedValueSetter<bool> uiGuard(updatingParameterUi, true);
     // Update one selected parameter, not the entire 143-parameter grid.
     auto* selectedHost = automationGridSelection();
     if (selectedHost != observedAutomationParameter)
@@ -1121,6 +1135,7 @@ void LSampler24AudioProcessorEditor::refreshParameterGrid() {
     parameterSelector.clear(juce::dontSendNotification);
     if (bankMacroOpen)
     {
+        if (bankMacroEntries.empty()) return;
         for (int i = 0; i < int(bankMacroEntries.size()); ++i)
             parameterSelector.addItem(parameterCellText(bankMacroEntries[size_t(i)]), i + 1);
         bankMacroCursor = juce::jlimit(0, int(bankMacroEntries.size()) - 1, bankMacroCursor);
@@ -1254,6 +1269,23 @@ void LSampler24AudioProcessorEditor::leaveSlotParameters()
     resized();
 }
 
+// Do not clear/repopulate the focused ComboBox from inside its own Alt+K
+// keyPressed/KeyListener dispatch (including the NVDA accessibility call).
+// A queued transition also collapses repeated listener dispatch into one action.
+void LSampler24AudioProcessorEditor::queueBankMacroToggle()
+{
+    if (bankMacroTransitionPending) return;
+    bankMacroTransitionPending = true;
+    juce::MessageManager::callAsync(
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+        {
+            if (safeThis == nullptr) return;
+            safeThis->bankMacroTransitionPending = false;
+            if (safeThis->bankMacroOpen) safeThis->closeBankMacro();
+            else safeThis->openBankMacro();
+        });
+}
+
 // The Relative mode edits host-automatable, persistent Bank Macro offsets;
 // Set All is a deliberate one-shot edit of the ordinary per-slot parameters.
 void LSampler24AudioProcessorEditor::openBankMacro()
@@ -1280,6 +1312,10 @@ void LSampler24AudioProcessorEditor::openBankMacro()
     int count = 0;
     for (bool occupied : bankMacroReference.occupied) if (occupied) ++count;
     // Alt+K also opens on an empty bank so the global FX sends are editable.
+    // The three bank-wide sends ensure the list is non-empty; still guard
+    // unexpected catalog changes before indexing a row.
+    if (bankMacroEntries.empty()) return;
+    const juce::ScopedValueSetter<bool> uiGuard(updatingParameterUi, true);
     bankMacroReturnWasParameterPage = parameterPage;
     bankMacroReturnParameter = selectedParameter;
     bankMacroOpen = true;
@@ -1308,7 +1344,12 @@ void LSampler24AudioProcessorEditor::openBankMacro()
 void LSampler24AudioProcessorEditor::closeBankMacro(bool restoreFocus)
 {
     if (!bankMacroOpen) return;
+    const juce::ScopedValueSetter<bool> uiGuard(updatingParameterUi, true);
     bankMacroLastCursor = bankMacroCursor;
+    // The last Bank FX Send uses a UI-only index beyond grid.size(). Never
+    // expose it to ordinary parameter callbacks once macro mode is closed.
+    selectedParameter = juce::jlimit(0, slotBankSendFirst + slotBankSendCount - 1,
+                                     bankMacroReturnParameter);
     bankMacroOpen = false;
     bankMacroUniform = false;
     parameterSelector.setBankMacroContext(false);
@@ -2866,8 +2907,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isShiftDown()
         && !mods.isCommandDown() && ch == 'k' && !sourceIsValueEditor)
     {
-        if (bankMacroOpen) closeBankMacro();
-        else openBankMacro();
+        queueBankMacroToggle();
         return true;
     }
 
