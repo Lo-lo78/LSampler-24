@@ -397,12 +397,18 @@ void LSampler24AudioProcessor::markAudioStateDirty()
 
 void LSampler24AudioProcessor::syncAudioStateFromSlots()
 {
-    if ((middleSnapshot.load(std::memory_order_acquire) & 4) != 0) {
+    // Read the revision BEFORE consuming state. A concurrent publication must
+    // remain visible on the next block, never be acknowledged without a read.
+    // Every changed HostParameter publishes uiRevision after its slot/macro
+    // generation. Snapshot publication is checked independently: it follows
+    // the UI revision and owns the sample lifetime handshake.
+    const auto revision = uiRevision.load(std::memory_order_acquire);
+    const bool snapshotChanged = (middleSnapshot.load(std::memory_order_acquire) & 4) != 0;
+    if (!snapshotChanged && revision == audioSyncRevision) return;
+    if (snapshotChanged)
         readerSnapshot = middleSnapshot.exchange(readerSnapshot, std::memory_order_acq_rel) & 3;
-        updateAutomatedAudio(true);
-    } else {
-        updateAutomatedAudio(false);
-    }
+    updateAutomatedAudio(snapshotChanged);
+    audioSyncRevision = revision;
 }
 
 void LSampler24AudioProcessor::applyOutputStage(juce::AudioBuffer<float>& buffer, const std::array<int, 25>& routes) noexcept
@@ -541,16 +547,20 @@ void LSampler24AudioProcessor::applyOutputStage(juce::AudioBuffer<float>& buffer
 void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
-    // The host can hand us dirty channel memory even for a silent instrument.
-    // Clear ALL enabled buses before a silent return; never skip this call.
     buffer.clear();
-
-    // TEST141: decide whether audio work is needed BEFORE synchronising the
-    // potentially large 24-slot snapshot or host automation. When inactive,
-    // these changes can remain published in their lock-free atomics / triple
-    // buffers. The first active block consumes them before MIDI, preview or DSP.
-    // Keep every wake condition from TEST140, including MIDI CC/bend/sustain and
-    // preview stop/seek commands: no sound, transport or note state is discarded.
+    syncAudioStateFromSlots();
+    if (resetOutputEnvelope.load(std::memory_order_acquire) && resetOutputEnvelope.exchange(false)) outputGlueEnvelope = 0.0;
+    if ((libraryPreviewMiddle.load(std::memory_order_acquire) & 4) != 0) {
+        // Stop old voices before handing their snapshot back to the publisher.
+        libraryPreviewVoicePool.stopPreviewVoices();
+        libraryPreviewReader = libraryPreviewMiddle.exchange(libraryPreviewReader, std::memory_order_acq_rel) & 3;
+        libraryPreviewStates[0] = (*libraryPreviewSnapshots)[size_t(libraryPreviewReader)].state;
+        libraryPreviewVoicePool.setStates(&libraryPreviewStates);
+        libraryPreviewPlaying = false;
+        libraryPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
+    }
+    // Only sleep when no musical work or control command can be lost. MIDI CC,
+    // sustain, bend, every preview command and new preview data wake this block.
     if (midi.isEmpty() && voicePool.activeVoiceCount() == 0
         && libraryPreviewVoicePool.activeVoiceCount() == 0 && !importPreviewPlaying
         && !previewPlaying && !libraryPreviewPlaying && slicePreviewKind.load() == 0
@@ -562,10 +572,6 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         && !importPreviewToggleRequested.load() && !importPreviewStopRequested.load()
         && !importPreviewSeekRequested.load() && (importPreviewMiddle.load() & 4) == 0)
     {
-        // Preserve the control-thread envelope reset even while no snapshot is
-        // consumed. No other idle-time state needs touching until playback resumes.
-        if (resetOutputEnvelope.exchange(false, std::memory_order_acq_rel))
-            outputGlueEnvelope = 0.0;
         // Same zero-input release equation as the output stage, evaluated once
         // per silent block. The output has no delay/reverb tail to truncate.
         if (outputGlueEnvelope > 0.0 && getGlobalOutputParameter(GlobalP::output_stage) >= 0.5) {
@@ -574,21 +580,6 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             if (outputGlueEnvelope < 1.0e-20) outputGlueEnvelope = 0.0;
         }
         return;
-    }
-
-    // Both host automation and sample snapshots are consumed at the beginning
-    // of the FIRST active block, never after its notes are triggered.
-    syncAudioStateFromSlots();
-    if (resetOutputEnvelope.exchange(false, std::memory_order_acq_rel))
-        outputGlueEnvelope = 0.0;
-    if ((libraryPreviewMiddle.load(std::memory_order_acquire) & 4) != 0) {
-        // Stop old voices before handing their snapshot back to the publisher.
-        libraryPreviewVoicePool.stopPreviewVoices();
-        libraryPreviewReader = libraryPreviewMiddle.exchange(libraryPreviewReader, std::memory_order_acq_rel) & 3;
-        libraryPreviewStates[0] = (*libraryPreviewSnapshots)[size_t(libraryPreviewReader)].state;
-        libraryPreviewVoicePool.setStates(&libraryPreviewStates);
-        libraryPreviewPlaying = false;
-        libraryPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
     }
     if ((importPreviewMiddle.load(std::memory_order_acquire) & 4) != 0)
     {
@@ -3250,9 +3241,7 @@ void LSampler24AudioProcessor::createHostParameters()
 {
     static_assert(std::atomic<double>::is_always_lock_free, "Automation requires lock-free real values");
     const auto add = [&](const juce::String& id,const juce::String& name,Descriptor d,std::atomic<uint64_t>& revision) {
-        auto* p=new HostParameter(id,name,d,revision,uiRevision,
-            (&revision != &globalHostGeneration && &revision != &bankMacroHostGeneration)
-                ? &slotHostGeneration : nullptr);
+        auto* p=new HostParameter(id,name,d,revision,uiRevision);
         addParameter(p); // AudioProcessor owns this fixed lifetime parameter.
         return p;
     };
@@ -3537,13 +3526,7 @@ void LSampler24AudioProcessor::updateAutomatedAudio(bool snapshotChanged)
     audioBankMacroGeneration = macroGeneration;
     // The audio callback only reads lock-free atomics. No host notifications,
     // allocation, files, or state-lock acquisition occur here.
-    // The large offsets array is never read on an unchanged block. Avoid
-    // zero-initialising it thousands of times per second while idle.
-    const auto slotGeneration = slotHostGeneration.load(std::memory_order_acquire);
-    if (!snapshotChanged && !macroChanged && slotGeneration == audioSlotHostGeneration)
-        return;
-    audioSlotHostGeneration = slotGeneration;
-    std::array<double, parameterCount> macroOffsets;
+    std::array<double, parameterCount> macroOffsets {};
     if (macroChanged || snapshotChanged)
         for (int i = 0; i < parameterCount; ++i)
             if (auto* macro = hostBankMacros[size_t(i)])

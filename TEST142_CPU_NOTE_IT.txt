@@ -1,0 +1,37 @@
+LSampler-24 TEST142 - Ottimizzazione sincronizzazione audio
+Base: TEST139 GUIDA AGGIORNATA fornita in questa conversazione.
+
+Modifiche:
+- Prima di entrare nella routine di ricostruzione dello stato audio, verifica
+  una revisione atomica comune e la presenza indipendente di nuovi snapshot.
+  Senza cambiamenti evita la chiamata, i suoi oggetti temporanei e il controllo
+  delle 24 revisioni degli slot. Vale a riposo e durante la riproduzione.
+- Le scritture di parametri con valore gia presente evitano lo scambio atomico
+  in scrittura. I cambiamenti effettivi mantengono lo scambio e le notifiche.
+- La revisione viene letta PRIMA di consumare i dati, per non riconoscere
+  prematuramente modifiche concorrenti. I nuovi snapshot restano indipendenti.
+
+Il rendering DSP, l'ordine dei calcoli audio, filtri, LFO, inviluppi, loop,
+interpolazione, stadio di uscita e gestione delle anteprime non sono modificati.
+Non sono stati spostati o rimossi i controlli MIDI e i comandi di risveglio.
+Identificatori e ordine dei parametri host conservati.
+
+Verifiche eseguite, senza compilare:
+- Verifica hash riferimento TEST59 e dipendenze DSP: PASS.
+- Verifica statica contratto automazioni: PASS (manifest storico 6629).
+- Confronto archivio: modificati solo i tre file sorgente dichiarati.
+
+Limiti:
+Non e stato eseguito il plugin, un confronto audio o un benchmark in REAPER.
+Il guadagno CPU non e quantificabile dal solo sorgente; 0.003c non e garantito.
+Il costo del wrapper VST3/host puo restare visibile anche con callback inattiva.
+
+Prova consigliata dopo compilazione su GitHub Actions:
+1. Stesso progetto, frequenza, buffer e numero di uscite della TEST139.
+2. Misura idle con finestra chiusa e poi aperta, a parita di condizioni.
+3. Suona un banco con release lunga, filtri e LFO; attendi la fine delle voci.
+4. Verifica automazione di slot e Bank Macro, sustain, pitch bend e anteprime.
+5. Carica un banco a riposo e controlla la prima nota e la prima anteprima.
+
+Commit suggerito:
+TEST142: skip unchanged audio state sync and redundant atomic parameter writes
