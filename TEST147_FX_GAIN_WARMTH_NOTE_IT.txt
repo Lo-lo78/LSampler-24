@@ -1,0 +1,9 @@
+LSampler-24 TEST147 — FX gain and reverb tone
+
+- Reverb Size default: 80%; Reverb Damping default: 10% (new patches/initial state).
+- New Reverb XOver / Open Sky (50–1000 Hz, default 360 Hz): changes the balance of diffusion versus unfiltered taps in the late reverb FDN, inspired by LJuno-116.
+- New Reverb Bass / Warmth (0.5–2.0x, default 1.3x): influences the damping cutoff and low-frequency presence of the FDN, inspired by LJuno-116.
+- Delay Gain and Reverb Gain: -24 to +24 dB, default 0 dB; post-send gain. Use caution at high gain.
+- UI places Delay Gain last in Dual Delay, and Reverb Gain last in Reverb, independently of their persistent VST3 parameter IDs.
+- Append-only four FX host parameter IDs; original 26 unchanged. The algorithms are not identical to LJuno Reverb 2.
+- No build was run; static checks only. Verify with GitHub Actions and listening tests.

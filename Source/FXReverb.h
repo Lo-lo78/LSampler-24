@@ -31,7 +31,7 @@ public:
 
     void configure(const std::array<float, lsampler::fx::count>& p, int mode) noexcept {
         using namespace lsampler::fx;
-        const std::array<float, 4> signature {float(mode), p[reverbSize], p[reverbDecay], p[reverbDamping]};
+        const std::array<float, 6> signature {float(mode), p[reverbSize], p[reverbDecay], p[reverbDamping], p[reverbXOver], p[reverbBass]};
         if (signature == configured) return;
         if (configured[0] >= 0.0f && configured[0] != float(mode)) reset();
         configured = signature;
@@ -57,7 +57,14 @@ public:
         }
         const float damper = std::clamp(p[reverbDamping] * .01f, 0.0f, 1.0f);
         // 0% = open / bright; 100% = deliberately very dark.
-        const double hz = 17000.0 * std::pow(240.0 / 17000.0, double(damper));
+        // LJuno-inspired warmth: lower damping cutoff with higher bass multiplier.
+        const double warmth = std::clamp(double(p[reverbBass]), .5, 2.0);
+        const double hz = 17000.0 * std::pow(240.0 / 17000.0, double(damper))
+                          * std::pow(1.3 / warmth, 0.65);
+        // XOver / Open Sky controls the amount of high-frequency diffusion
+        // retained in the late feedback network.
+        const double openSky = std::clamp((double(p[reverbXOver]) - 50.0) / 950.0, 0.0, 1.0);
+        diffusion = float(.56 + .44 * openSky);
         dampAlpha = float(1.0 - std::exp(-6.283185307179586 * hz / sampleRate));
         lengthGlide = float(1.0 - std::exp(-1.0 / (.060 * sampleRate)));
     }
@@ -78,7 +85,7 @@ public:
             const float read = line[size_t(index)]
                 + f * (line[size_t((index+1) % int(line.size()))] - line[size_t(index)]);
             damped[k] += dampAlpha * (read - damped[k]);
-            taps[k] = damped[k];
+            taps[k] = damped[k] * diffusion + read * (1.0f - diffusion);
         }
         wetL = norm * (taps[0] + taps[1] - taps[2] - taps[3]
                      + taps[4] + taps[5] - taps[6] - taps[7]);
@@ -105,7 +112,7 @@ private:
     double sampleRate = 44100.0;
     std::array<std::vector<float>, 8> lines;
     std::array<float, 8> damped {}, readLength {}, targetLength {}, feedback {};
-    std::array<float, 4> configured {-1,-1,-1,-1};
-    float dampAlpha = 1.0f, lengthGlide = .001f;
+    std::array<float, 6> configured {-1,-1,-1,-1,-1,-1};
+    float dampAlpha = 1.0f, lengthGlide = .001f, diffusion = 1.0f;
     int writePos = 0;
 };

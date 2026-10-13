@@ -11,6 +11,7 @@ enum P : int {
     delaySpread, delayDrive, delayGlide,
     reverbType, reverbMix, reverbSize, reverbDecay, reverbDamping,
     reverbWidth, reverbPredelay, reverbEarly, reverbTone,
+    delayGain, reverbXOver, reverbBass, reverbGain,
     count
 };
 inline constexpr std::array<Descriptor, count> parameters {{
@@ -33,12 +34,16 @@ inline constexpr std::array<Descriptor, count> parameters {{
     {"delay_glide", "Delay Tape Glide", "Dual Delay", Kind::continuous, 180, 1, 2000, 1, 1, "ms", 0, ""},
     {"reverb_type", "Reverb Type", "Reverb", Kind::enumeration, 0, 0, 4, 1, 1, "", 0, "Off|Studio Room|Concert Hall|Plate|Cathedral"},
     {"reverb_mix", "Reverb Send", "Reverb", Kind::continuous, 24, 0, 100, 1, 1, "%", 0, ""},
-    {"reverb_size", "Reverb Size", "Reverb", Kind::continuous, 70, 0, 100, 1, 1, "%", 0, ""},
+    {"reverb_size", "Reverb Size", "Reverb", Kind::continuous, 80, 0, 100, 1, 1, "%", 0, ""},
     {"reverb_decay", "Reverb Decay", "Reverb", Kind::continuous, 3000, 0, 20000, 1, 1, "ms", 0, ""},
-    {"reverb_damping", "Reverb Damping", "Reverb", Kind::continuous, 45, 0, 100, 1, 1, "%", 0, ""},
+    {"reverb_damping", "Reverb Damping", "Reverb", Kind::continuous, 10, 0, 100, 1, 1, "%", 0, ""},
     {"reverb_width", "Reverb Width", "Reverb", Kind::continuous, 100, 0, 100, 1, 1, "%", 0, ""},
     {"reverb_predelay", "Reverb Predelay", "Reverb", Kind::continuous, 35, 0, 180, 1, 1, "ms", 0, ""},
     {"reverb_early", "Early Reflections", "Reverb", Kind::continuous, 28, 0, 100, 1, 1, "%", 0, ""},
-    {"reverb_tone", "Reverb Tail Tone", "Reverb", Kind::continuous, 55, 0, 100, 1, 1, "%", 0, ""}
+    {"reverb_tone", "Reverb Tail Tone", "Reverb", Kind::continuous, 55, 0, 100, 1, 1, "%", 0, ""},
+    {"delay_gain", "Delay Gain", "Dual Delay", Kind::continuous, 0, -24, 24, 1, 1, "dB", 0, ""},
+    {"reverb_xover", "Reverb XOver / Open Sky", "Reverb", Kind::continuous, 360, 50, 1000, 1, 1, "Hz", 0, ""},
+    {"reverb_bass", "Reverb Bass / Warmth", "Reverb", Kind::continuous, 1.3, .5, 2, .1, .1, "x", 1, ""},
+    {"reverb_gain", "Reverb Gain", "Reverb", Kind::continuous, 0, -24, 24, 1, 1, "dB", 0, ""}
 }};
 }

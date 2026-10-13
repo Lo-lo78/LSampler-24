@@ -77,8 +77,8 @@ public:
 
         const float chorusGain = p[chorusMix] * .01f * (.5f + .5f*p[chorusWidth]);
         const float rate = p[chorusRate];
-        const float delayMixGain = p[delayMix] * .01f; // additive send, dry stays unity
-        const float wetReverb = p[reverbMix] * .01f;
+        const float delayMixGain = p[delayMix] * .01f * std::pow(10.0f, p[delayGain] / 20.0f); // additive send, dry stays unity
+        const float wetReverb = p[reverbMix] * .01f * std::pow(10.0f, p[reverbGain] / 20.0f);
         const float spread = p[delaySpread];
         const float drive = p[delayDrive] * .01f;
         const float drive2 = drive*drive;
