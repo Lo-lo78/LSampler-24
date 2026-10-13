@@ -304,6 +304,7 @@ void LSampler24AudioProcessor::prepareToPlay(double sampleRate, int)
     libraryPreviewVoicePool.prepare(sampleRate);
     libraryPreviewVoicePool.setStates(&libraryPreviewStates);
     outputGlueEnvelope = 0.0;
+    fxEngine.prepare(sampleRate);
     {
         const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         preparedSampleRate = sampleRate > 0 ? sampleRate : 44100;
@@ -316,6 +317,7 @@ void LSampler24AudioProcessor::releaseResources()
 {
     voicePool.allNotesOff();
     libraryPreviewVoicePool.allNotesOff();
+    fxEngine.reset();
     libraryPreviewPlaying = false;
     libraryPreviewPlayingAtomic.store(false, std::memory_order_relaxed);
     previewPlaying = false;
@@ -562,7 +564,7 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     // Only sleep when no musical work or control command can be lost. MIDI CC,
     // sustain, bend, every preview command and new preview data wake this block.
     if (midi.isEmpty() && voicePool.activeVoiceCount() == 0
-        && libraryPreviewVoicePool.activeVoiceCount() == 0 && !importPreviewPlaying
+        && libraryPreviewVoicePool.activeVoiceCount() == 0 && !fxEngine.hasTail() && !importPreviewPlaying
         && !previewPlaying && !libraryPreviewPlaying && slicePreviewKind.load() == 0
         && stopVoicesMask.load() == 0 && slicePreviewCommand.load() < 0
         && !previewToggleRequested.load() && previewStartSlot.load() < 0
@@ -897,6 +899,15 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         importPreviewPositionSeconds.store(importPreviewPosition / juce::jmax(1.0, sourceRate), std::memory_order_relaxed);
     }
 
+    // Stereo master effects run before the existing output stage. The 24
+    // optional routed bus pairs are never modified by the global wet returns.
+    {
+        std::array<float, lsampler::fx::count> values {};
+        for (int i=0;i<lsampler::fx::count;++i)
+            values[size_t(i)] = float(hostFX[size_t(i)]->load());
+        if (values[lsampler::fx::master] >= .5f || fxEngine.hasTail())
+            fxEngine.process(buffer, values);
+    }
     applyOutputStage(buffer, routes);
     // Tap the final main stereo bus without changing a sample or DSP state.
     for (int channel = 0; channel < juce::jmin(2, buffer.getNumChannels()); ++channel) {
@@ -1292,6 +1303,47 @@ void LSampler24AudioProcessor::setRootNote(int n) {
     requestPreviewRestartIfPlaying();
 }
 void LSampler24AudioProcessor::setVolume(float v) { const juce::ScopedLock lock(stateLock); absorbHostValuesLocked(); slots[size_t(currentSlot.load())].parameters[P::input_gain]=v>0?20*std::log10(juce::jlimit(.000001f,1.0f,v)):-120; markAudioStateDirty(); }
+
+double LSampler24AudioProcessor::getFXParameter(int index) const noexcept
+{
+    return juce::isPositiveAndBelow(index,int(lsampler::fx::count))
+        ? hostFX[size_t(index)]->load() : 0.0;
+}
+
+juce::AudioProcessorParameter* LSampler24AudioProcessor::getFXHostParameter(int index) const noexcept
+{
+    return juce::isPositiveAndBelow(index,int(lsampler::fx::count))
+        ? hostFX[size_t(index)] : nullptr;
+}
+
+void LSampler24AudioProcessor::setFXParameter(int index, double value) noexcept
+{
+    if (!juce::isPositiveAndBelow(index,int(lsampler::fx::count))) return;
+    auto* parameter=hostFX[size_t(index)];
+    if (parameter == nullptr) return;
+    const auto actual=lsampler::sanitise(lsampler::fx::parameters[size_t(index)],value);
+    if (parameter->load() == actual) return;
+    parameter->beginChangeGesture();
+    parameter->setValueNotifyingHost(parameter->encode(actual));
+    parameter->endChangeGesture();
+}
+
+void LSampler24AudioProcessor::saveFXState(juce::ValueTree& tree) const
+{
+    for (int i=0; i<lsampler::fx::count; ++i)
+        tree.setProperty("fx_"+juce::String(lsampler::fx::parameters[size_t(i)].key),getFXParameter(i),nullptr);
+}
+void LSampler24AudioProcessor::restoreFXState(const juce::ValueTree& tree)
+{
+    for (int i=0; i<lsampler::fx::count; ++i) {
+        const auto key="fx_"+juce::String(lsampler::fx::parameters[size_t(i)].key);
+        const auto& descriptor=lsampler::fx::parameters[size_t(i)];
+        const auto value=tree.hasProperty(key)
+            ? lsampler::sanitise(descriptor,double(tree.getProperty(key)))
+            : descriptor.initial;
+        hostFX[size_t(i)]->storeReal(value);
+    }
+}
 
 double LSampler24AudioProcessor::getGlobalOutputParameter(lsampler::GlobalP parameter) const noexcept
 {
@@ -2317,6 +2369,7 @@ bool LSampler24AudioProcessor::saveBankPreset(const juce::File& presetFile, juce
     for (int i = 0; i < slotCount; ++i)
         bank.addChild(makeSlotState(i, "Slot"), -1, nullptr);
     saveBankMacroState(bank);
+    saveFXState(bank);
 
     if (!writePreset(presetFile, bank, error)) return false;
     { const juce::ScopedLock lock(stateLock); currentBankName = presetFile.getFileNameWithoutExtension(); }
@@ -2374,6 +2427,7 @@ bool LSampler24AudioProcessor::loadBankPreset(const juce::File& presetFile, juce
         if (bank.hasProperty(globalParameters[size_t(i)].key))
             setGlobalOutputParameter(static_cast<GlobalP>(i), double(bank.getProperty(globalParameters[size_t(i)].key)));
     restoreBankMacroState(bank);
+    restoreFXState(bank);
     resetOutputEnvelope.store(true, std::memory_order_release);
     markAudioStateDirty();
     if (ok)
@@ -3133,6 +3187,7 @@ void LSampler24AudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     for (int i = 0; i < slotCount; ++i)
         state.addChild(makeSlotState(i, "Slot"), -1, nullptr);
     saveBankMacroState(state);
+    saveFXState(state);
 
     if (auto xml = state.createXml())
         copyXmlToBinary(*xml, destData);
@@ -3164,6 +3219,7 @@ void LSampler24AudioProcessor::setStateInformation(const void* data, int sizeInB
                     globalOutputParameters[size_t(i)].store(value);
                 }
             restoreBankMacroState(state);
+            restoreFXState(state);
             resetOutputEnvelope.store(true, std::memory_order_release);
             markAudioStateDirty();
         }
@@ -3173,6 +3229,7 @@ void LSampler24AudioProcessor::setStateInformation(const void* data, int sizeInB
             restoreSlotState(0, state, error);
             currentSlot = 0;
             restoreBankMacroState(state);
+            restoreFXState(state);
             markAudioStateDirty();
         }
     }
@@ -3337,6 +3394,13 @@ void LSampler24AudioProcessor::createHostParameters()
             h.loops[size_t(j)][size_t(i)]=add(id+"loop"+juce::String(j+1).paddedLeft('0',2)+"_"+d.key,
                 name+"Loop "+juce::String(j+1)+" - "+d.name,d,revision);
         }
+    }
+    // TEST144: new independent FX automation lanes are appended strictly
+    // AFTER all previously registered VST3 parameters; existing IDs and
+    // host indices remain unchanged.
+    for (int i=0;i<lsampler::fx::count;++i) {
+        const auto& d=lsampler::fx::parameters[size_t(i)];
+        hostFX[size_t(i)] = add("fx_"+juce::String(d.key), "FX - "+juce::String(d.name), d, fxHostGeneration);
     }
     hostParametersReady=true;
 }

@@ -1,0 +1,35 @@
+TEST144 - Sezione FX master accessibile
+
+Alt+F apre la griglia FX. Pulsante FX nella schermata principale e nella
+pagina dei parametri. Alt+F funziona anche da Sample Set, browser e Slice
+Editor (che viene chiuso in sicurezza, poi il focus entra in FX).
+
+Effetti:
+* Chorus: modulazione in quadratura stereo, HP e breve delay derivati dalla
+  struttura di LJuno-116 TEST85.
+* Dual Delay: due nastri con Speed L/R, feedback separato, tono per
+  ripetizione, glide, drive e stereo spread equal power, ispirati al Delay 2
+  di LJuno-116 TEST85. Versione per il master stereo LSampler.
+* Reverb: Studio Room, Concert Hall, Plate e Cathedral; varianti algoritmiche
+  stereo basate su JUCE Reverb, con predelay, early reflections e tono.
+  NOTA: questi quattro riverberi sono nuovi algoritmi; non sono una copia
+  identica del motore LWS Reverb 2 di LJuno.
+
+Modalita' iniziali: FX Master Off, Chorus Off, Dual Delay Off, Reverb Type Off.
+I banchi precedenti e i vecchi progetti restano asciutti, senza modifiche DSP.
+Le automazioni FX sono aggiunte dopo tutte le automazioni TEST143 preesistenti.
+I parametri FX sono salvati nello stato host e nei preset Bank (non negli
+Slot singoli: l'FX e' un effetto master, non per slot).
+
+Tastiera FX:
+* Grid Up/Down: riga nella pagina; Left/Right: pagina FX mantenendo riga.
+* Alt+Up/Down: valore; Alt+Left/Right: passo grosso.
+* Tab: alterna Grid e Value; Alt+L/Alt+V: focus diretto.
+* Backspace: valore iniziale; Ctrl+Shift+A: automazione host.
+* Esc da Value: Grid. Esc da Grid o Alt+F: esce dalla sezione FX.
+
+I buffer FX sono preallocati in prepareToPlay. Il thread audio non alloca
+memoria. Con FX spenti, il percorso DSP originale e' preservato. Con FX
+attivi, le code continuano a suonare anche dopo l'ultima voce MIDI.
+Non compilato ne' ascoltato; usare GitHub Actions e confrontare idle,
+code, automazioni, caricamento/salvataggio e focus NVDA.

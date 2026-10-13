@@ -1,5 +1,6 @@
 #pragma once
 #include "HostParameter.h"
+#include "FXEngine.h"
 #include "BankMacroParameters.h"
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "SamplePool.h"
@@ -46,7 +47,7 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override { return 30.0; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -207,6 +208,9 @@ public:
     double getSlotParameter(int gridIndex, int loopIndex = 0) const;
     void setSlotParameter(int gridIndex, double value, int loopIndex = 0);
     void resetSlotParameter(int gridIndex, int loopIndex = 0);
+    double getFXParameter(int index) const noexcept;
+    void setFXParameter(int index, double value) noexcept;
+    juce::AudioProcessorParameter* getFXHostParameter(int index) const noexcept;
     double getGlobalOutputParameter(lsampler::GlobalP parameter) const noexcept;
     void setGlobalOutputParameter(lsampler::GlobalP parameter, double value) noexcept;
     double getSamplePlayStart() const;
@@ -249,6 +253,8 @@ private:
     void notifyHostControl(lsampler::HostParameter*);
     void handleAsyncUpdate() override;
     void createHostParameters();
+    void saveFXState(juce::ValueTree&) const;
+    void restoreFXState(const juce::ValueTree&);
     void absorbHostValuesLocked() const;
     void publishHostValuesLocked(bool notify = true, int forceSlot = -1);
     void updateAutomatedAudio(bool snapshotChanged);
@@ -283,6 +289,9 @@ private:
         mutable std::array<int,sampleSetSize> controlLow {}, controlHigh {};
     };
     std::array<HostSlot,slotCount> hostSlots;
+    std::array<lsampler::HostParameter*,lsampler::fx::count> hostFX {};
+    std::atomic<uint64_t> fxHostGeneration {0};
+    LSamplerFXEngine fxEngine;
     std::array<lsampler::HostParameter*,lsampler::globalParameterCount> hostGlobals {};
     std::array<lsampler::HostParameter*,lsampler::parameterCount> hostBankMacros {};
     std::atomic<uint64_t> bankMacroHostGeneration {0};

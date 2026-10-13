@@ -275,6 +275,13 @@ void SliceEditor::restore(bool forward) {
     item=std::min(item,std::max(0,count()-1));selected.reset();anchor=-1;auditionEdit();speak(forward?"Redo. ":"Undo. ");
 }
 bool SliceEditor::keyPressed(const juce::KeyPress& k) {
+    if(k.getModifiers().isAltDown() && !k.getModifiers().isCtrlDown()
+       && !k.getModifiers().isShiftDown() &&
+       (juce::CharacterFunctions::toLowerCase(k.getTextCharacter())=='f'
+        || juce::CharacterFunctions::toLowerCase(juce::juce_wchar(k.getKeyCode()))=='f')) {
+        if(onRequestFX)onRequestFX();
+        return true;
+    }
     if(numeric)return true;
     const auto mods=k.getModifiers();const int code=k.getKeyCode();
     if (mods.isCtrlDown() && mods.isShiftDown() && !mods.isAltDown()

@@ -4,6 +4,7 @@
 #include "PluginProcessor.h"
 #include "SliceEditor.h"
 #include "RackGui.h"
+#include "FXPanel.h"
 #include <array>
 #include <functional>
 #include <vector>
@@ -65,7 +66,7 @@ public:
         const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
         const bool dedicated = (mods.isCtrlDown() && mods.isShiftDown() && !mods.isAltDown()
                             && !mods.isCommandDown() && juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code)) == 'a')
-                            || code==juce::KeyPress::F6Key || (mods.isAltDown() && (ch=='e' || ch=='k' || ch=='u')) || (mods.isCtrlDown() && !mods.isAltDown()
+                            || code==juce::KeyPress::F6Key || (mods.isAltDown() && (ch=='e' || ch=='k' || ch=='u' || ch=='f')) || (mods.isCtrlDown() && !mods.isAltDown()
                                 && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
                                     || code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
                             || (mods.isAltDown() && !mods.isCtrlDown() && ch == 'l');
@@ -126,7 +127,7 @@ public:
         const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
         const bool dedicated = (mods.isCtrlDown() && mods.isShiftDown() && !mods.isAltDown()
                             && !mods.isCommandDown() && juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code)) == 'a')
-                            || code==juce::KeyPress::F6Key || (mods.isAltDown() && (ch=='e' || ch=='k' || ch=='u')) || (mods.isCtrlDown() && !mods.isAltDown()
+                            || code==juce::KeyPress::F6Key || (mods.isAltDown() && (ch=='e' || ch=='k' || ch=='u' || ch=='f')) || (mods.isCtrlDown() && !mods.isAltDown()
                                 && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
                                     || code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
                             || (mods.isAltDown() && !mods.isCtrlDown() && ch == 'l');
@@ -527,6 +528,8 @@ private:
     void openContactEmail();
     bool navigateAboutText(const juce::KeyPress& key);
     void setMainControlsEnabled(bool enabled);
+    void openFX();
+    void closeFX();
     bool isActionButton(const juce::Component* component) const;
     int slotCellIndex(const juce::Component* component) const;
 
@@ -544,6 +547,10 @@ private:
     juce::TextButton help { "Help" };
     juce::TextButton aboutButton { "About" };
     juce::TextButton advancedButton { "Advanced" };
+    juce::TextButton fxButton { "FX" };
+    LSamplerFXPanel fxPanel { processor };
+    juce::Component::SafePointer<juce::Component> fxReturnFocus;
+    bool fxOpen = false;
     // Two discoverable actions on the main parameter page.  Their descriptions
     // carry the shortcuts; NVDA announces the Button role automatically.
     juce::TextButton sliceEditorButton { "Slice Editor" };

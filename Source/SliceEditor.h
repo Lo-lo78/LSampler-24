@@ -12,6 +12,7 @@ public:
     SliceEditor(LSampler24AudioProcessor&,int slot,bool sequencePage);
     ~SliceEditor() override;
     std::function<void()> onClose;
+    std::function<void()> onRequestFX;
     std::function<bool(juce::AudioProcessorParameter*, juce::Component*)> onToggleHostAutomationEnvelope;
     std::function<int(juce::AudioProcessorParameter*)> onHostAutomationEnvelopeState;
     void refreshAutomationIndicator();

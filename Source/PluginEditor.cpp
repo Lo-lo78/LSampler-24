@@ -248,6 +248,12 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     addButton(help, 7);
     addButton(aboutButton, 8);
     addButton(advancedButton, 9);
+    addButton(fxButton, 10);
+    fxButton.setButtonText("FX");
+    fxButton.setDescription("Alt+F. Master effects Grid");
+    fxButton.onClick=[this] { openFX(); };
+    addChildComponent(fxPanel);
+    fxPanel.onClose=[this] { closeFX(); };
     // Show keyboard equivalents directly on the mouse buttons so sighted users
     // discover the accessible workflow while exploring the interface.
     loadSample.setButtonText("Load Sample");
@@ -467,6 +473,28 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     startTimerHz(10);
 }
 
+void LSampler24AudioProcessorEditor::openFX()
+{
+    if (fxOpen || aboutOpen || fileUiBusy || processor.isFileTaskRunning()) return;
+    // Audio sample/browser windows can be obscured without losing selection,
+    // cursor, slot, pending edit or current bank. The overlay owns keyboard focus.
+    fxReturnFocus=juce::Component::getCurrentlyFocusedComponent();
+    fxOpen=true;
+    fxPanel.setBounds(getLocalBounds());
+    fxPanel.enter();
+}
+
+void LSampler24AudioProcessorEditor::closeFX()
+{
+    if (!fxOpen)return;
+    fxOpen=false;
+    fxPanel.setVisible(false);
+    if (fxReturnFocus != nullptr && fxReturnFocus->isShowing())
+        fxReturnFocus->grabKeyboardFocus();
+    else if (parameterPage)parameterSelector.grabKeyboardFocus();
+    else slotCells[size_t(processor.getCurrentSlot())].grabKeyboardFocus();
+}
+
 LSampler24AudioProcessorEditor::~LSampler24AudioProcessorEditor()
 {
     processor.requestPreviewStop();
@@ -499,7 +527,9 @@ void LSampler24AudioProcessorEditor::resized()
         && !importBrowserActive && !slotLibraryActive && !sampleSetActive;
     sliceEditorButton.setVisible(showParameterTools);
     sampleSetButton.setVisible(showParameterTools);
+    fxButton.setVisible(!aboutOpen && !importBrowserActive && !slotLibraryActive && !sampleSetActive && !propertiesOpen);
     if(sliceEditor)sliceEditor->setBounds(getLocalBounds());
+    fxPanel.setBounds(getLocalBounds());
     if (propertiesOpen)
     {
         propertiesPanel.setBounds(getLocalBounds().reduced(20).withTrimmedTop(42).withTrimmedBottom(18));
@@ -532,6 +562,8 @@ void LSampler24AudioProcessorEditor::resized()
     // Below the numeric edit field, above the Slice/Master panels.
     sliceEditorButton.setBounds(618, 614, 148, 32);
     sampleSetButton.setBounds(774, 614, 148, 32);
+    fxButton.setBounds(930, 614, 172, 32);
+    fxPanel.setBounds(getLocalBounds());
     const std::array<juce::TextButton*,6> buttons { &loadSample,&loadSlot,&saveSlot,&loadBank,&saveBank,&help };
     for(int i=0;i<6;++i)buttons[size_t(i)]->setBounds(16+(i%3)*118,574+(i/3)*36,114,32);
     aboutButton.setBounds(370,610,114,32);
@@ -1430,9 +1462,9 @@ void LSampler24AudioProcessorEditor::setSelectedParameterBoundary(bool maximum)
 void LSampler24AudioProcessorEditor::setMainControlsEnabled(bool enabled)
 {
     for (auto& cell : slotCells) cell.setEnabled(enabled);
-    for (auto* control : std::array<juce::Component*, 12> {
+    for (auto* control : std::array<juce::Component*, 13> {
              &loadSample, &loadSlot, &saveSlot, &loadBank, &saveBank, &help, &aboutButton, &advancedButton,
-             &parameterSelector, &parameterValue, &sliceEditorButton, &sampleSetButton })
+             &parameterSelector, &parameterValue, &sliceEditorButton, &sampleSetButton, &fxButton })
         control->setEnabled(enabled);
 }
 
@@ -1542,7 +1574,7 @@ bool LSampler24AudioProcessorEditor::isActionButton(const juce::Component* compo
 {
     return component == &loadSample || component == &loadSlot || component == &saveSlot
         || component == &loadBank || component == &saveBank || component == &help || component == &aboutButton || component == &advancedButton
-        || component == &sliceEditorButton || component == &sampleSetButton;
+        || component == &sliceEditorButton || component == &sampleSetButton || component == &fxButton;
 }
 
 int LSampler24AudioProcessorEditor::slotCellIndex(const juce::Component* component) const
@@ -1756,6 +1788,18 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 {
     if (fileUiBusy || processor.isFileTaskRunning())
         return key.getKeyCode() != juce::KeyPress::escapeKey;
+
+    // A dedicated FX Grid is reachable from every ordinary sampler page.
+    // Do not intercept typing in the modal file-name and rename dialogs.
+    if (!fxOpen && !aboutOpen && !fileUiBusy && !processor.isFileTaskRunning()
+        && key.getModifiers().isAltDown() && !key.getModifiers().isCtrlDown()
+        && !key.getModifiers().isShiftDown() && !key.getModifiers().isCommandDown()
+        && (juce::CharacterFunctions::toLowerCase(key.getTextCharacter()) == 'f'
+            || juce::CharacterFunctions::toLowerCase(juce::juce_wchar(key.getKeyCode())) == 'f'))
+    {
+        openFX();return true;
+    }
+    if (fxOpen) return fxPanel.keyPressed(key);
 
     if (aboutOpen)
     {
@@ -3091,7 +3135,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     {
         // Main parameter page: Grid -> Value -> Edit -> Slice -> Sample Set
         // -> Grid. Reverse navigation is symmetrical with Shift+Tab.
-        if (!globalOpen && (source == &sliceEditorButton || source == &sampleSetButton))
+        if (!globalOpen && (source == &sliceEditorButton || source == &sampleSetButton || source == &fxButton))
         {
             if (code == juce::KeyPress::tabKey)
             {
@@ -3100,9 +3144,14 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                     if (mods.isShiftDown()) openValueEditor();
                     else focusParameterActionButton(sampleSetButton);
                 }
-                else
+                else if (source == &sampleSetButton)
                 {
                     if (mods.isShiftDown()) focusParameterActionButton(sliceEditorButton);
+                    else focusParameterActionButton(fxButton);
+                }
+                else
+                {
+                    if (mods.isShiftDown()) focusParameterActionButton(sampleSetButton);
                     else focusParameterGrid();
                 }
                 return true;
@@ -3110,7 +3159,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             if (code == juce::KeyPress::returnKey || code == juce::KeyPress::spaceKey)
             {
                 if (source == &sliceEditorButton) openSliceEditor(false);
-                else enterSampleSetEditor();
+                else if (source == &sampleSetButton) enterSampleSetEditor();
+                else openFX();
                 return true;
             }
             if (code == juce::KeyPress::escapeKey) { focusParameterGrid(); return true; }
@@ -3212,7 +3262,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             {
                 if(mods.isShiftDown())
                 {
-                    if (!globalOpen) focusParameterActionButton(sampleSetButton);
+                    if (!globalOpen) focusParameterActionButton(fxButton);
                     else openValueEditor();
                 }
                 else focusValue();
@@ -3271,7 +3321,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                         int relative = (local + direction * distance) % count;
                         if (relative < 0) relative += count;
                         const int next = first + relative;
-                        const auto name = displayedGridParameterName(lsampler::grid[size_t(next)]);
+                        const auto name=displayedGridParameterName(lsampler::grid[size_t(next)]);
                         if (name.isNotEmpty()
                             && (juce::CharacterFunctions::toLowerCase(name[0]) == initial
                                 || (initial == '0' && name.equalsIgnoreCase("Zero Crossing")))) {
@@ -3288,18 +3338,19 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (isActionButton(source))
     {
-        if ((source == &sliceEditorButton || source == &sampleSetButton)
+        if ((source == &sliceEditorButton || source == &sampleSetButton || source == &fxButton)
             && (code == juce::KeyPress::returnKey || code == juce::KeyPress::spaceKey))
         {
             if (source == &sliceEditorButton) openSliceEditor(false);
-            else enterSampleSetEditor();
+            else if (source == &sampleSetButton) enterSampleSetEditor();
+            else openFX();
             return true;
         }
         if (code == juce::KeyPress::tabKey)
         {
-            std::array<juce::Component*, 10> buttons {
+            std::array<juce::Component*, 11> buttons {
                 &loadSample, &loadSlot, &saveSlot, &loadBank, &saveBank,
-                &sliceEditorButton, &sampleSetButton, &help, &aboutButton, &advancedButton
+                &sliceEditorButton, &sampleSetButton, &fxButton, &help, &aboutButton, &advancedButton
             };
             const bool backwards = mods.isShiftDown();
             int index = -1;
@@ -3541,6 +3592,8 @@ void LSampler24AudioProcessorEditor::refreshMeters()
 
 void LSampler24AudioProcessorEditor::timerCallback()
 {
+    if (fxOpen) fxPanel.refreshIfAutomated();
+
     if (processor.isFileTaskRunning()) {
         if (!fileUiBusy) {
             fileTaskTitle = "File operation";
@@ -6568,6 +6621,13 @@ void LSampler24AudioProcessorEditor::openSliceEditor(bool sequencer)
         (juce::AudioProcessorParameter* parameter, juce::Component* target)
     {
         return safeThis != nullptr && safeThis->toggleHostAutomationEnvelope(parameter, target);
+    };
+    sliceEditor->onRequestFX=[safeThis=juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)] {
+        // Modal slice focus must be dismissed on the message queue, never
+        // destroy SliceEditor from inside its own keyPressed callback.
+        juce::MessageManager::callAsync([safeThis] {
+            if(safeThis!=nullptr) { safeThis->closeSliceEditor(); safeThis->openFX(); }
+        });
     };
     sliceEditor->onClose=[safeThis=juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)] {
         // Never delete the focused component in the middle of its keyPressed call.

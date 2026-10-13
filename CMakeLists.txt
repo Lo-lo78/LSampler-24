@@ -43,6 +43,9 @@ juce_add_plugin(LSampler24
 target_sources(LSampler24 PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginProcessor.h
+    Source/FXParameters.h
+    Source/FXEngine.h
+    Source/FXPanel.h
     Source/PluginEditor.cpp
     Source/PluginEditor.h
     Source/RackGui.h
@@ -75,6 +78,7 @@ target_compile_definitions(LSampler24 PUBLIC
 target_link_libraries(LSampler24 PRIVATE
     LSampler24HelpData
     juce::juce_audio_utils
+    juce::juce_dsp
     juce::juce_cryptography
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
