@@ -56,3 +56,14 @@ Il percorso overlap-add di Stretch Amount/Frequency ora è condiviso anche da Sl
 ### TEST149 — Bank Sends indipendenti per Slot
 
 Le griglie dei 24 slot terminano con Bank Chorus Send, Bank Delay Send e Bank Reverb Send (0–100%). Ogni valore è salvato nel proprio file Slot; i parametri dei motori FX Alt+F **non** sono salvati nello Slot. In Alt+K restano i tre Send generali del banco, che si moltiplicano per quelli degli slot. I Bank salvano sia le 72 mandate dei 24 slot, sia gli FX condivisi e i tre Send generali. Le automazioni VST3 degli slot sono aggiunte in fondo agli ID esistenti. I vecchi slot sul master caricano mandate al 100%; quelli indirizzati alle uscite separate hanno 0% per mantenere il precedente routing, ma possono ora inviare agli FX condivisi. Nessuna compilazione viene effettuata durante la preparazione del sorgente.
+
+
+## TEST151 — Gate Reverb, Delay Sync, Level, Resonance e memoria Alt+F
+
+- **Alt+F / Dual Delay**: Sync Off / 1/32 / 1/24 / 1/16 / 1/12 / 1/8 / 1/6 / 1/4, legato al BPM di REAPER. Off utilizza Delay Time in millisecondi; con Sync attivo le due velocità L/R moltiplicano la durata della divisione. I tempi che superano la capacità del buffer sono limitati alla durata massima del Delay.
+- **Delay Tone L/R + Resonance L/R**: ciascuna risonanza è immediatamente dopo il rispettivo Tone, 0–100%, default 0 (suono precedente invariato).
+- **Delay Level L/R**: da -inf a 0 dB, default 0 dB, collocati prima del Delay Gain globale. Agiscono soltanto sull'uscita wet del rispettivo delay e non sul feedback.
+- **Reverb Gate Threshold**: Off oppure da -79 a 0 dB; Off è il default ed equivale all'algoritmo precedente. **Reverb Gate Decay**: 0–5000 ms, default 300 ms. Apertura immediata, chiusura lineare dopo che il segnale inviato al Reverb scende sotto la soglia; non esiste Attack.
+- La posizione corrente di Grid in Alt+F è mantenuta nell'istanza VST3 anche quando REAPER distrugge/ricrea la finestra, ed è conservata anche nello stato del progetto. Non viene inserita in uno Slot.
+- Nuovi ID FX sempre aggiunti **dopo** i 30 esistenti; send Slot/Bank, riverbero di default, salvataggio slot e bank rimangono invariati.
+- Nessuna compilazione locale: usare GitHub Actions. I controlli statici da soli non dimostrano parità sonora né assenza di problemi di build.

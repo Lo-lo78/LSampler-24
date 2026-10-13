@@ -1,0 +1,23 @@
+LSampler-24 TEST150 — Alt+Delete, inizializzazione completa del banco
+
+Base: TEST149. Nessuna compilazione effettuata.
+
+Correzione:
+- Alt+Delete nella pagina Slot continua a cancellare tutti e 24 gli Slot e i relativi tre Bank Send.
+- Ripristina tutti i 30 parametri di Alt+F ai valori iniziali di FXParameters.h,
+  inclusi FX Master Off, Chorus Off, Dual Delay Off, Reverb Type Off,
+  Reverb Size 80, Damping 10, Send FX, Gain, XOver e Warmth.
+- Ripristina gli offset delle Bank Macro di Alt+K a zero.
+- Ripristina lo stadio di uscita e i parametri globali ai valori iniziali.
+- Le code degli effetti vengono azzerate nel successivo blocco audio,
+  sempre sul thread audio, senza toccare i buffer DSP dal thread della GUI.
+- Salvataggio di Slot non include la configurazione di Alt+F, mentre Bank
+  e stato del progetto conservano i rispettivi dati come in TEST149.
+- Gli ID delle automazioni VST3 e il DSP delle voci sono invariati.
+
+Regressioni aggiunte in Tests/SamplerTests.cpp: modifica FX, Gain, Send,
+Reverb, Macro e Output; salva Bank, inizializza, verifica tutti i default,
+poi ricarica il banco salvato e controlla la persistenza.
+
+Da compilare esclusivamente con GitHub Actions; provare in REAPER Alt+Delete,
+Alt+F, Alt+K e il recupero delle impostazioni dopo il caricamento di un Bank.

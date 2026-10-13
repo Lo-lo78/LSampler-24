@@ -12,6 +12,8 @@ enum P : int {
     reverbType, reverbMix, reverbSize, reverbDecay, reverbDamping,
     reverbWidth, reverbPredelay, reverbEarly, reverbTone,
     delayGain, reverbXOver, reverbBass, reverbGain,
+    delaySync, delayLevelL, delayLevelR, delayResonanceL, delayResonanceR,
+    reverbGateThreshold, reverbGateDecay,
     count
 };
 inline constexpr std::array<Descriptor, count> parameters {{
@@ -44,6 +46,13 @@ inline constexpr std::array<Descriptor, count> parameters {{
     {"delay_gain", "Delay Gain", "Dual Delay", Kind::continuous, 0, -24, 24, 1, 1, "dB", 0, ""},
     {"reverb_xover", "Reverb XOver / Open Sky", "Reverb", Kind::continuous, 360, 50, 1000, 1, 1, "Hz", 0, ""},
     {"reverb_bass", "Reverb Bass / Warmth", "Reverb", Kind::continuous, 1.3, .5, 2, .1, .1, "x", 1, ""},
-    {"reverb_gain", "Reverb Gain", "Reverb", Kind::continuous, 0, -24, 24, 1, 1, "dB", 0, ""}
+    {"reverb_gain", "Reverb Gain", "Reverb", Kind::continuous, 0, -24, 24, 1, 1, "dB", 0, ""},
+    {"delay_sync", "Delay Sync", "Dual Delay", Kind::enumeration, 0, 0, 7, 1, 1, "", 0, "Off|1/32|1/24|1/16|1/12|1/8|1/6|1/4"},
+    {"delay_level_l", "Delay Level L", "Dual Delay", Kind::continuous, 0, -96, 0, 1, 1, "dB", 0, ""},
+    {"delay_level_r", "Delay Level R", "Dual Delay", Kind::continuous, 0, -96, 0, 1, 1, "dB", 0, ""},
+    {"delay_resonance_l", "Delay Resonance L", "Dual Delay", Kind::continuous, 0, 0, 100, 1, 1, "%", 0, ""},
+    {"delay_resonance_r", "Delay Resonance R", "Dual Delay", Kind::continuous, 0, 0, 100, 1, 1, "%", 0, ""},
+    {"reverb_gate_threshold", "Reverb Gate Threshold", "Reverb", Kind::continuous, -80, -80, 0, 1, 1, "dB", 0, ""},
+    {"reverb_gate_decay", "Reverb Gate Decay", "Reverb", Kind::continuous, 300, 0, 5000, 1, 1, "ms", 0, ""}
 }};
 }

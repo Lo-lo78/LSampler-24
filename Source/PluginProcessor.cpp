@@ -555,6 +555,11 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 {
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
+    // Reset the audio-thread-owned FX histories after a Bank Init (Alt+Delete).
+    // This must precede the idle shortcut, otherwise an old reverb/delay tail
+    // could survive until the next note or an FX automation change.
+    if (resetFXEngineRequested.exchange(false, std::memory_order_acq_rel))
+        fxEngine.reset();
     syncAudioStateFromSlots();
     if (resetOutputEnvelope.load(std::memory_order_acquire) && resetOutputEnvelope.exchange(false)) outputGlueEnvelope = 0.0;
     if ((libraryPreviewMiddle.load(std::memory_order_acquire) & 4) != 0) {
@@ -951,7 +956,7 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             }
         }
         if (values[lsampler::fx::master] >= .5f || fxEngine.hasTail())
-            fxEngine.process(buffer, values, useSlotFXSends ? &fxSlotSendBuffers : nullptr);
+            fxEngine.process(buffer, values, useSlotFXSends ? &fxSlotSendBuffers : nullptr, bpm);
     }
     applyOutputStage(buffer, routes);
     // Tap the final main stereo bus without changing a sample or DSP state.
@@ -1729,10 +1734,31 @@ void LSampler24AudioProcessor::clearBank()
     for (int index = 0; index < slotCount; ++index)
     {
         slots[size_t(index)] = SlotState{};
+        // A fresh Slot has three independent Bank Sends at 100%.
         for (auto* parameter : hostSlotFXSends[size_t(index)])
             if (parameter) parameter->storeReal(100.0);
     }
+    // Alt+Delete initialises the WHOLE bank. Bank Macro offsets, every FX
+    // control (including the three general Sends), and the output stage all
+    // return to their exact catalog defaults, as in a new plugin instance.
+    // Do not change VST3 IDs or touch standalone Slot preset contents.
+    for (auto* parameter : hostBankMacros)
+        if (parameter) parameter->storeReal(parameter->d.initial);
+    for (int index = 0; index < lsampler::fx::count; ++index)
+        if (auto* parameter = hostFX[size_t(index)])
+            parameter->storeReal(lsampler::fx::parameters[size_t(index)].initial);
+    for (int index = 0; index < globalParameterCount; ++index)
+    {
+        const double initial = globalParameters[size_t(index)].initial;
+        if (auto* parameter = hostGlobals[size_t(index)])
+            parameter->storeReal(initial);
+        globalOutputParameters[size_t(index)].store(initial, std::memory_order_relaxed);
+    }
     currentBankName.clear();
+    // Never reset the actual FX engine from the UI thread: the callback owns
+    // its tape, chorus, predelay and reverb histories.
+    resetFXEngineRequested.store(true, std::memory_order_release);
+    resetOutputEnvelope.store(true, std::memory_order_release);
     markAudioStateDirty();
     stopVoicesMask.fetch_or(0xffffffu, std::memory_order_release);
 }
@@ -3297,6 +3323,7 @@ void LSampler24AudioProcessor::getStateInformation(juce::MemoryBlock& destData)
         state.addChild(makeSlotState(i, "Slot"), -1, nullptr);
     saveBankMacroState(state);
     saveFXState(state);
+    state.setProperty("fx_ui_cursor", getFXGridCursor(), nullptr);
 
     if (auto xml = state.createXml())
         copyXmlToBinary(*xml, destData);
@@ -3329,6 +3356,7 @@ void LSampler24AudioProcessor::setStateInformation(const void* data, int sizeInB
                 }
             restoreBankMacroState(state);
             restoreFXState(state);
+            setFXGridCursor(int(state.getProperty("fx_ui_cursor", 0)));
             resetOutputEnvelope.store(true, std::memory_order_release);
             markAudioStateDirty();
         }

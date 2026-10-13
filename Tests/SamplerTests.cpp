@@ -198,6 +198,62 @@ void persistenceAndProcessorTests(const juce::File& folder) {
     p.clearBank();process(p,audio,midi);require(p.getActiveVoiceCount()==0,"Clear bank stops all voices");
     std::cout<<"PASS processor offsets, mapping, layering, complete slot/bank/project persistence and v2 compatibility\n";
 }
+// TEST150: Alt+Delete must reconstruct the defaults of a newly loaded bank,
+// not merely erase its samples while retaining the previous FX settings.
+void bankInitialisationTests(const juce::File& folder) {
+    LSampler24AudioProcessor p(folder.getChildFile("bank-init-library"));
+    p.prepareToPlay(48000, 256);
+    p.setFXParameter(fx::master, 1);
+    p.setFXParameter(fx::chorusOn, 1);
+    p.setFXParameter(fx::chorusMix, 90);
+    p.setFXParameter(fx::delayOn, 1);
+    p.setFXParameter(fx::delayMix, 75);
+    p.setFXParameter(fx::delayGain, 15);
+    p.setFXParameter(fx::reverbType, 4);
+    p.setFXParameter(fx::reverbMix, 88);
+    p.setFXParameter(fx::reverbSize, 20);
+    p.setFXParameter(fx::reverbDamping, 89);
+    p.setFXParameter(fx::reverbDecay, 19000);
+    p.setFXParameter(fx::reverbGain, 12);
+    p.setBankMacroOffset(int(P::input_gain), 6);
+    p.setGlobalOutputParameter(GlobalP::bus_soft_drive, 65);
+    p.setSlotFXSend(0, 0, 10);
+    p.setSlotFXSend(0, 1, 20);
+    p.setSlotFXSend(0, 2, 30);
+    p.setSlotFXSend(23, 0, 0);
+
+    juce::String error;
+    const auto bank = folder.getChildFile("TEST150_FX_Reset.lsampler-24-b");
+    require(p.saveBankPreset(bank, error), "TEST150 save configured FX bank");
+    p.clearBank();
+    require(p.getCurrentBankName().isEmpty(), "TEST150 Bank Init clears bank name");
+    for (int i = 0; i < fx::count; ++i)
+        require(near(p.getFXParameter(i), fx::parameters[size_t(i)].initial, 1.e-8),
+                "TEST150 Bank Init resets every master FX control to its new-instance default");
+    require(near(p.getFXParameter(fx::reverbSize), 80), "TEST150 default reverb Size 80");
+    require(near(p.getFXParameter(fx::reverbDamping), 10), "TEST150 default reverb Damping 10");
+    require(near(p.getBankMacroOffset(int(P::input_gain)), 0), "TEST150 Bank Init clears macro offset");
+    for (int i = 0; i < globalParameterCount; ++i)
+        require(near(p.getGlobalOutputParameter(GlobalP(i)), globalParameters[size_t(i)].initial),
+                "TEST150 Bank Init restores default output parameters");
+    for (int slot = 0; slot < 24; ++slot)
+        for (int send = 0; send < 3; ++send)
+            require(near(p.getSlotFXSend(slot, send), 100), "TEST150 Bank Init restores Slot Bank Sends");
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    process(p, buffer, midi);
+    require(buffer.getMagnitude(0, 256) == 0, "TEST150 first block after Bank Init is silent");
+
+    require(p.loadBankPreset(bank, error), "TEST150 restore previously saved FX bank");
+    require(near(p.getFXParameter(fx::reverbSize), 20), "TEST150 bank restores custom reverb size");
+    require(near(p.getFXParameter(fx::reverbGain), 12), "TEST150 bank restores custom reverb gain");
+    require(near(p.getFXParameter(fx::delayGain), 15), "TEST150 bank restores custom delay gain");
+    require(near(p.getBankMacroOffset(int(P::input_gain)), 6), "TEST150 bank restores macro offset");
+    require(near(p.getSlotFXSend(0, 2), 30), "TEST150 bank restores Slot Bank Sends");
+    require(near(p.getGlobalOutputParameter(GlobalP::bus_soft_drive), 65), "TEST150 bank restores output settings");
+    std::cout << "PASS TEST150 Bank Init restores all FX, sends, macros and output defaults\n";
+}
+
 void concurrentPublicationTest(const juce::File& folder) {
     LSampler24AudioProcessor p(folder.getChildFile("library"));juce::String error;require(p.loadSample(folder.getChildFile("test.wav"),error),"Load concurrent test sample");p.prepareToPlay(48000,64);
     std::atomic<bool> start{false};std::atomic<unsigned> allocations{0},deletes{0};
@@ -413,7 +469,7 @@ int main() {
         juce::ScopedJuceInitialiser_GUI initialise;
         const auto folder=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("lsampler-regression","",false);folder.createDirectory();
         voiceOptimisationParityTests();catalogTests();cleanAndBypassTests();voiceTests();pitchAndStereoTests();dspReferenceTests();loopAndEffectTests();
-        persistenceAndProcessorTests(folder);concurrentPublicationTest(folder);idleAndFileWorkerTests(folder);editorTests(folder);runSliceTests(folder);
+        persistenceAndProcessorTests(folder);bankInitialisationTests(folder);concurrentPublicationTest(folder);idleAndFileWorkerTests(folder);editorTests(folder);runSliceTests(folder);
         require(realtimeAllocations==0&&realtimeDeletes==0,"Zero allocations and frees across all guarded render/note-on/process calls");
         folder.deleteRecursively();
         std::cout<<"PASS "<<checks<<" checks; zero guarded realtime allocations/deletions\n";return 0;

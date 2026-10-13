@@ -37,7 +37,7 @@ assert 'for (int send = 0; send < slotFXSendCount; ++send)' in cpp
 assert cpp.index('hostFX[size_t(i)] = add(') < cpp.index('hostSlotFXSends[size_t(slot)][size_t(send)] = add(')
 assert 'fxSlotSendBuffers' in cpp and 'fxVoiceOnlyBuffer.copyFrom' in cpp
 assert 'voicePool.setFXSendContext(buffers, &audioSlotFXSends)' in cpp
-assert 'fxEngine.process(buffer, values, useSlotFXSends ? &fxSlotSendBuffers : nullptr)' in cpp
+assert 'fxEngine.process(buffer, values, useSlotFXSends ? &fxSlotSendBuffers : nullptr, bpm)' in cpp
 assert 'if (sendToFX)' in voice and 'fxSendBuses[size_t(send)]->addSample' in voice
 assert 'const bool sendToFX = fxSendLevels != nullptr' in voice
 assert 'void setFXSendContext(' in voices
@@ -50,7 +50,7 @@ assert 'getFXParameter(lsampler::fx::master) >= 0.5' in cpp
 # Verify new IDs cannot collide with the frozen VST3 6629 or previously added effects.
 old_ids=[x['id'] for x in json.loads((root/'VST3_AUTOMATION_MANIFEST.json').read_text())]
 fx_names=re.findall(r'^\s*\{"([a-z0-9_]+)",',params,re.M)
-assert len(fx_names)==30
+assert len(fx_names)==37
 new=[f'slot{s:02d}_bank_{part}_send' for s in range(1,25) for part in ('chorus','delay','reverb')]
 assert len(new)==72 and len(set(new))==72
 assert not set(old_ids).intersection(new)

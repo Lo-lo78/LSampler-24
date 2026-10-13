@@ -37,6 +37,8 @@ public:
         tapeDCX[0] = tapeDCX[1] = tapeDCY[0] = tapeDCY[1] = 0;
         low[0] = low[1] = hiX[0] = hiX[1] = hiY[0] = hiY[1] = 0;
         tailLow[0] = tailLow[1] = 0;
+        resonantLow[0] = resonantLow[1] = resonantBand[0] = resonantBand[1] = 0;
+        gateLevel = 0.0f;
         pan1L=.9807852804f;pan1R=.1950903220f;
         pan2L=.1950903220f;pan2R=.9807852804f;
         reverbNetwork.reset();
@@ -44,7 +46,7 @@ public:
     }
     bool hasTail() const noexcept { return tailFrames > 0; }
     void process(juce::AudioBuffer<float>& buffer, const std::array<float, lsampler::fx::count>& p,
-                 const std::array<juce::AudioBuffer<float>,3>* slotSends = nullptr) noexcept {
+                 const std::array<juce::AudioBuffer<float>,3>* slotSends = nullptr, double bpm = 120.0) noexcept {
         using namespace lsampler::fx;
         if (p[master] < .5f) { if (tailFrames > 0) reset(); return; }
         const bool chorus = p[chorusOn] > .5f && p[chorusMix] > .001f;
@@ -81,14 +83,25 @@ public:
             }
         }
         if (!input && tailFrames <= 0) return;
+        constexpr std::array<int,8> divisions {0,32,24,16,12,8,6,4};
+        const int syncIndex = juce::jlimit(0,7,int(std::round(p[delaySync])));
+        const double safeBpm = std::isfinite(bpm) && bpm > 0 ? bpm : 120.0;
+        const double baseSeconds = syncIndex == 0
+            ? double(p[delayTime]) * .001
+            : 240.0 / (safeBpm * double(divisions[size_t(syncIndex)]));
         if (input) {
             // Do not run twelve seconds of silent DSP for a chorus-only note.
             // The active time-based effects alone determine the tail budget.
             const double delaySeconds = delay
-                ? 1.0 + .001 * double(p[delayTime]) * std::max(double(p[delaySpeedL]),double(p[delaySpeedR]))
+                ? 1.0 + std::min(baseSeconds * std::max(double(p[delaySpeedL]),double(p[delaySpeedR])),
+                    double(tapeL.size()-4) / sampleRate)
                     * (2.0 + 9.0 * std::min(.99,double(std::max(p[delayFeedbackL],p[delayFeedbackR]))*.5))
                 : 0.0;
-            const double reverbSeconds = reverb ? .45 + .001 * double(p[reverbDecay]) : 0.0;
+            // A gated tail can end sooner than the ungated RT60. Legacy default
+            // Threshold -80 (= Off) uses the original untouched budget.
+            const double reverbSeconds = !reverb ? 0.0 : p[reverbGateThreshold] <= -79.5f
+                ? .45 + .001 * double(p[reverbDecay])
+                : .45 + .001 * double(p[reverbPredelay] + p[reverbGateDecay]);
             tailFrames = juce::roundToInt(juce::jlimit(.12, 30.0,
                 std::max({chorus ? .12 : 0.0,delaySeconds,reverbSeconds})) * sampleRate);
         } else tailFrames = std::max(0, tailFrames - count);
@@ -104,30 +117,56 @@ public:
         const float driveBias = .185f * drive2;
         const float driveZeroSoft = driveBias/(1.0f+std::abs(driveBias));
         const float driveZero = driveZeroSoft*(1.0f-drive2)+driveBias*drive2;
-        const double tBase = p[delayTime] * .001 * sampleRate;
+        // Note-length divisions follow the DAW tempo. Off preserves the
+        // original millisecond delay precisely, including tape speed/glide.
+        const double tBase = baseSeconds * sampleRate;
+        const float levelL = p[delayLevelL] <= -95.5f ? 0.0f : std::pow(10.0f, p[delayLevelL] / 20.0f);
+        const float levelR = p[delayLevelR] <= -95.5f ? 0.0f : std::pow(10.0f, p[delayLevelR] / 20.0f);
         const float glide = float(1.0-std::exp(-1.0/(sampleRate*std::max(.001, double(p[delayGlide])*.001))));
         const float targetL = juce::jlimit(16.0f, float(tapeL.size()-4), float(tBase*p[delaySpeedL]));
         const float targetR = juce::jlimit(16.0f, float(tapeR.size()-4), float(tBase*p[delaySpeedR]));
         if (timeL <= 0) timeL = targetL;
         if (timeR <= 0) timeR = targetR;
         const float hpCoefficient = float(std::exp(-juce::MathConstants<double>::twoPi*120.0/sampleRate));
-        const auto tone = [this](float x, float control, int channel) noexcept -> float {
+        // Calculate resonance coefficients once per block, not per sample.
+        // Default resonance 0 skips this work and keeps the legacy filters.
+        std::array<float,2> resonanceAmount {}, resonanceCoeff {};
+        for (int channel = 0; channel < 2; ++channel) {
+            resonanceAmount[size_t(channel)] = .01f * p[channel == 0 ? delayResonanceL : delayResonanceR];
+            const float control = p[channel == 0 ? delayToneL : delayToneR];
+            if (resonanceAmount[size_t(channel)] > 0.0f && std::abs(control - .5f) > .0001f) {
+                const double cutoff = control < .5f ? 600.0 + 7000.0 * control / .5
+                                                     : 40.0 + 1800.0 * (control - .5) / 1.5;
+                resonanceCoeff[size_t(channel)] = juce::jlimit(.002f, .8f,
+                    float(2.0 * std::sin(juce::MathConstants<double>::pi * cutoff / sampleRate)));
+            }
+        }
+        // Gentle parallel band-pass emphasis around each Tone cutoff.
+        const auto tone = [this, &resonanceAmount, &resonanceCoeff](float x, float control, int channel) noexcept -> float {
+            float filtered = x;
+            double cutoff = 0.0;
             if (control < .4999f) {
-                const double cutoff=600.0 + 7000.0*control/.5;
+                cutoff=600.0 + 7000.0*control/.5;
                 const float c = float(1.0-std::exp(-juce::MathConstants<double>::twoPi*cutoff/sampleRate));
                 low[channel] += (x-low[channel])*c;
                 hiX[channel] = hiY[channel] = low[channel];
-                return low[channel];
+                filtered = low[channel];
             }
-            if (control > .5001f) {
-                const double cutoff=40.0 + 1800.0*(control-.5)/1.5;
+            else if (control > .5001f) {
+                cutoff=40.0 + 1800.0*(control-.5)/1.5;
                 const float c=float(std::exp(-juce::MathConstants<double>::twoPi*cutoff/sampleRate));
                 const float y=x-hiX[channel]+c*hiY[channel];
                 hiX[channel]=x; hiY[channel]=y; low[channel]=x;
-                return y;
+                filtered = y;
             }
-            low[channel] = hiX[channel] = hiY[channel] = x;
-            return x;
+            else low[channel] = hiX[channel] = hiY[channel] = x;
+            const float resonance = resonanceAmount[size_t(channel)];
+            if (resonance <= 0.0f || cutoff <= 0.0) return filtered;
+            // Bounded two-integrator bandpass. No trigonometric calls per sample.
+            const float f = resonanceCoeff[size_t(channel)];
+            resonantBand[channel] += f * (x - resonantLow[channel] - .85f * resonantBand[channel]);
+            resonantLow[channel] += f * resonantBand[channel];
+            return filtered + .35f * resonance * resonantBand[channel];
         };
         const auto shape = [=](float x) noexcept {
             const float u = juce::jlimit(-16.0f,16.0f,x*driveGain+driveBias);
@@ -146,6 +185,12 @@ public:
         // ER spacings grow with room size and vary across room algorithms.
         const float modeFactor = mode==1 ? .50f : mode==2 ? 1.0f : mode==3 ? .75f : 1.3f;
         const float earlySpacing = float(sampleRate * .001 * modeFactor * (3.0 + 22.0*roomSize));
+        // Gate values are block controls: never call pow() in the audio sample loop.
+        const bool gateEnabled = p[reverbGateThreshold] > -79.5f;
+        const float gateThresholdAmp = gateEnabled
+            ? std::pow(10.0f, p[reverbGateThreshold] / 20.0f) : 0.0f;
+        const float gateDecaySamples = float(sampleRate * .001 * p[reverbGateDecay]);
+        const float gateDecayStep = gateDecaySamples <= 1.0f ? 1.0f : 1.0f / gateDecaySamples;
         for (int i=0;i<count;++i) {
             const float dryL=outL[i], dryR=outR[i];
             const float cLIn = slotSends ? (*slotSends)[0].getSample(0, i) : dryL;
@@ -189,7 +234,7 @@ public:
                 tapeL[size_t(tapeWrite)]=juce::jlimit(-4.0f,4.0f,monoIn + fbL);
                 tapeR[size_t(tapeWrite)]=juce::jlimit(-4.0f,4.0f,monoIn + fbR);
                 tapeWrite=(tapeWrite+1)%int(tapeL.size());
-                const float wL=shape(wetL), wR=shape(wetR);
+                const float wL=shape(wetL)*levelL, wR=shape(wetR)*levelR;
                 // LJuno TEST85 LWS-7 equal-power stereo spread and smoothed pans.
                 const float angle1=(-spread+1.0f)*juce::MathConstants<float>::pi*.25f;
                 const float angle2=(spread+1.0f)*juce::MathConstants<float>::pi*.25f;
@@ -234,8 +279,18 @@ public:
                 reverbNetwork.process(preL, preR, tailL, tailR);
                 tailLow[0] += highTone*(tailL-tailLow[0]);
                 tailLow[1] += highTone*(tailR-tailLow[1]);
-                const float revL=tailLow[0]*1.80f+earlyL;
-                const float revR=tailLow[1]*1.80f+earlyR;
+                float revL=tailLow[0]*1.80f+earlyL;
+                float revR=tailLow[1]*1.80f+earlyR;
+                // Instant gate opening, decay-only closing. The threshold is
+                // measured on the pre-FX reverb send to avoid reverb self-keying.
+                // -80 dB is an explicit Off sentinel: old banks sound identical.
+                if (gateEnabled) {
+                    if (std::max(std::abs(rLIn), std::abs(rRIn)) >= gateThresholdAmp)
+                        gateLevel = 1.0f;
+                    else gateLevel = std::max(0.0f, gateLevel - gateDecayStep);
+                    revL *= gateLevel;
+                    revR *= gateLevel;
+                } else gateLevel = 1.0f;
                 // 0% = mono room; 100% = original decorrelated stereo.
                 const float mid=.5f*(revL+revR);
                 const float side=.5f*(revL-revR)*(p[reverbWidth]*.01f);
@@ -268,4 +323,5 @@ private:
     float pan1L=.9807852804f,pan1R=.1950903220f,pan2L=.1950903220f,pan2R=.9807852804f;
     float hpLX=0,hpLY=0,hpRX=0,hpRY=0;
     float tapeDCX[2]{},tapeDCY[2]{},low[2]{},hiX[2]{},hiY[2]{},tailLow[2]{};
+    float resonantLow[2]{}, resonantBand[2]{}, gateLevel=0.0f;
 };

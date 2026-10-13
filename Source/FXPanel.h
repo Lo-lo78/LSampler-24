@@ -79,10 +79,14 @@ public:
     static constexpr int visibleCount = lsampler::fx::count - 3;
     static constexpr std::array<int, visibleCount> displayOrder {{
         0, 1, 3, 4,
-        5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+        5, lsampler::fx::delaySync, 7, 8, 9, 10, 11, 12,
+        lsampler::fx::delayResonanceL, 13, lsampler::fx::delayResonanceR,
+        14, 15, 16, lsampler::fx::delayLevelL, lsampler::fx::delayLevelR,
         lsampler::fx::delayGain,
         17, 19, 20, 21, 22, 23, 24, 25,
-        lsampler::fx::reverbXOver, lsampler::fx::reverbBass, lsampler::fx::reverbGain
+        lsampler::fx::reverbXOver, lsampler::fx::reverbBass,
+        lsampler::fx::reverbGateThreshold, lsampler::fx::reverbGateDecay,
+        lsampler::fx::reverbGain
     }};
     static int displayPosition(int parameter) noexcept {
         for (int i=0; i<visibleCount; ++i)
@@ -97,7 +101,7 @@ public:
         grid.setSelectedItemIndex(0,juce::dontSendNotification);
         grid.onChange = [this] {
             const int item=grid.getSelectedItemIndex();
-            if(item>=0) { cursor=displayOrder[size_t(item)]; configureValue(); }
+            if(item>=0) { cursor=displayOrder[size_t(item)]; processor.setFXGridCursor(cursor); configureValue(); }
         };
         grid.onKey=[this](const juce::KeyPress& k){return handle(k,false);};
         addAndMakeVisible(grid);
@@ -129,6 +133,10 @@ public:
     std::function<void(juce::Component&)> onToggleSlotPreview;
     std::function<bool()> onPreviewSpace;
     void enter() {
+        // The editor may have been destroyed when REAPER closed its FX window.
+        // Cursor state belongs to the live processor instance, not this panel.
+        const int stored = processor.getFXGridCursor();
+        cursor = displayOrder[size_t(displayPosition(stored))];
         for (const int i : displayOrder) refreshRow(i);
         grid.setSelectedItemIndex(displayPosition(cursor),juce::dontSendNotification);
         configureValue();
@@ -181,7 +189,9 @@ private:
         const auto& d=lsampler::fx::parameters[size_t(i)];
         const auto x=processor.getFXParameter(i);
         const auto labels=juce::StringArray::fromTokens(d.labels,"|","");
-        const auto text=labels.isEmpty()?juce::String(x,d.decimals)+juce::String(d.unit)
+        const auto text=(i == lsampler::fx::delayLevelL || i == lsampler::fx::delayLevelR) && x <= -95.5
+            ? juce::String("-inf") : i == lsampler::fx::reverbGateThreshold && x <= -79.5
+            ? juce::String("Off") : labels.isEmpty()?juce::String(x,d.decimals)+juce::String(d.unit)
             :labels[juce::jlimit(0,labels.size()-1,int(std::round(x-d.minimum)))];
         return juce::String(d.name)+", "+text;
     }
@@ -200,12 +210,17 @@ private:
             const auto& desc=lsampler::fx::parameters[size_t(cursor)];
             const auto labels=juce::StringArray::fromTokens(desc.labels,"|","");
             if(!labels.isEmpty())return labels[juce::jlimit(0,labels.size()-1,int(std::round(v-desc.minimum)))];
+            if ((cursor == lsampler::fx::delayLevelL || cursor == lsampler::fx::delayLevelR) && v <= -95.5) return juce::String("-inf");
+            if (cursor == lsampler::fx::reverbGateThreshold && v <= -79.5) return juce::String("Off");
             return juce::String(v,desc.decimals)+juce::String(desc.unit);
         };
         value.valueFromTextFunction=[this](const juce::String& s) {
             const auto& desc=lsampler::fx::parameters[size_t(cursor)];
             const auto labels=juce::StringArray::fromTokens(desc.labels,"|","");
             const int index=labels.indexOf(s.trim(),true);
+            if (cursor == lsampler::fx::delayLevelL || cursor == lsampler::fx::delayLevelR)
+                if (s.trim().equalsIgnoreCase("-inf")) return -96.0;
+            if (cursor == lsampler::fx::reverbGateThreshold && s.trim().equalsIgnoreCase("Off")) return -80.0;
             return index>=0?double(index)+desc.minimum:s.getDoubleValue();
         };
         value.setValue(processor.getFXParameter(cursor),juce::dontSendNotification);

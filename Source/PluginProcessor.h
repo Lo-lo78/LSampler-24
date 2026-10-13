@@ -214,6 +214,11 @@ public:
     double getSlotFXSend(int slot, int send) const noexcept;
     void setSlotFXSend(int slot, int send, double value) noexcept;
     juce::AudioProcessorParameter* getSlotFXSendHostParameter(int slot, int send) const noexcept;
+    int getFXGridCursor() const noexcept { return fxGridCursor.load(std::memory_order_relaxed); }
+    void setFXGridCursor(int index) noexcept {
+        if (index >= 0 && index < lsampler::fx::count)
+            fxGridCursor.store(index, std::memory_order_relaxed);
+    }
     double getFXParameter(int index) const noexcept;
     void setFXParameter(int index, double value) noexcept;
     juce::AudioProcessorParameter* getFXHostParameter(int index) const noexcept;
@@ -303,7 +308,11 @@ private:
     juce::AudioBuffer<float> fxVoiceOnlyBuffer;
     std::array<std::array<float,slotFXSendCount>,slotCount> audioSlotFXSends {};
     std::atomic<uint64_t> fxHostGeneration {0};
+    std::atomic<int> fxGridCursor {0};
     LSamplerFXEngine fxEngine;
+    // Requests made by Alt+Delete run on the UI thread; only the audio thread
+    // may erase the FX delay/reverb buffers.
+    std::atomic<bool> resetFXEngineRequested { false };
     std::array<lsampler::HostParameter*,lsampler::globalParameterCount> hostGlobals {};
     std::array<lsampler::HostParameter*,lsampler::parameterCount> hostBankMacros {};
     std::atomic<uint64_t> bankMacroHostGeneration {0};

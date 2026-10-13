@@ -18,7 +18,7 @@ assert 'void setLineReadingMode()' in ui
 assert 'setDescription({}); // no second' in ui
 assert 'juce::AccessibilityEvent::valueChanged' in ui
 assert 'value.onValueChange' in ui and 'announceToActiveScreenReader(value' not in ui
-assert 'if(item>=0) { cursor=displayOrder[size_t(item)]; configureValue(); }' in ui
+assert 'if(item>=0) { cursor=displayOrder[size_t(item)]; processor.setFXGridCursor(cursor); configureValue(); }' in ui
 for name in ('pageUpKey','pageDownKey','homeKey','endKey','leftKey','rightKey'):
     assert name in ui
 assert 'changeStepWidth(-1)' in ui and 'changeStepWidth(1)' in ui
@@ -26,7 +26,7 @@ assert 'constexpr std::array<int,5> stepWidths {1,5,10,15,20}' in ui
 assert 'static constexpr int pageStep = 40' in ui
 assert '"Delay Send"' in params and '"Reverb Send"' in params
 assert re.search(r'\{"reverb_decay",.*?3000,\s*0,\s*20000,\s*1,\s*1,\s*"ms"',params)
-assert len(re.findall(r'^\s*\{"[a-z0-9_]+",',params,re.M))==30
+assert len(re.findall(r'^\s*\{"[a-z0-9_]+",',params,re.M))==37
 assert 'const float monoIn=.5f*(dLIn+dRIn);' in dsp
 assert 'constexpr float equalGain=1.25f;' in dsp
 assert 'reverbNetwork.configure(p, mode)' in dsp and 'reverbNetwork.process(preL, preR, tailL, tailR)' in dsp
