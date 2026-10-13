@@ -1330,6 +1330,7 @@ void LSampler24AudioProcessor::setFXParameter(int index, double value) noexcept
 
 void LSampler24AudioProcessor::saveFXState(juce::ValueTree& tree) const
 {
+    tree.setProperty("fx_schema_version", 2, nullptr);
     for (int i=0; i<lsampler::fx::count; ++i)
         tree.setProperty("fx_"+juce::String(lsampler::fx::parameters[size_t(i)].key),getFXParameter(i),nullptr);
 }
@@ -1338,10 +1339,13 @@ void LSampler24AudioProcessor::restoreFXState(const juce::ValueTree& tree)
     for (int i=0; i<lsampler::fx::count; ++i) {
         const auto key="fx_"+juce::String(lsampler::fx::parameters[size_t(i)].key);
         const auto& descriptor=lsampler::fx::parameters[size_t(i)];
-        const auto value=tree.hasProperty(key)
-            ? lsampler::sanitise(descriptor,double(tree.getProperty(key)))
-            : descriptor.initial;
-        hostFX[size_t(i)]->storeReal(value);
+        double raw=tree.hasProperty(key) ? double(tree.getProperty(key)) : descriptor.initial;
+        // TEST144 saved Reverb Decay as a percentage. Migrate its old banks
+        // and REAPER state to milliseconds without changing the persistent ID.
+        if (i == lsampler::fx::reverbDecay && tree.hasProperty(key)
+            && int(tree.getProperty("fx_schema_version", 1)) < 2)
+            raw = std::round(150.0 + 6500.0 * std::pow(juce::jlimit(0.0,100.0,raw)/100.0,1.30));
+        hostFX[size_t(i)]->storeReal(lsampler::sanitise(descriptor,raw));
     }
 }
 

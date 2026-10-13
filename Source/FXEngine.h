@@ -1,5 +1,6 @@
 #pragma once
 #include "FXParameters.h"
+#include "FXReverb.h"
 #include <juce_dsp/juce_dsp.h>
 #include <array>
 #include <vector>
@@ -18,10 +19,9 @@ public:
         chorusR.assign(chorusL.size(), 0.0f);
         tapeL.assign(size_t(sampleRate * 7.5) + 8, 0.0f);
         tapeR.assign(tapeL.size(), 0.0f);
-        predelayL.assign(size_t(sampleRate * .22) + 8, 0.0f);
+        predelayL.assign(size_t(sampleRate * .45) + 8, 0.0f);
         predelayR.assign(predelayL.size(), 0.0f);
-        reverbA.setSampleRate(sampleRate);
-        reverbB.setSampleRate(sampleRate);
+        reverbNetwork.prepare(sampleRate);
         reset();
     }
     void reset() noexcept {
@@ -39,7 +39,7 @@ public:
         tailLow[0] = tailLow[1] = 0;
         pan1L=.9807852804f;pan1R=.1950903220f;
         pan2L=.1950903220f;pan2R=.9807852804f;
-        reverbA.reset(); reverbB.reset();
+        reverbNetwork.reset();
         tailFrames = 0;
     }
     bool hasTail() const noexcept { return tailFrames > 0; }
@@ -70,14 +70,14 @@ public:
                 ? 1.0 + .001 * double(p[delayTime]) * std::max(double(p[delaySpeedL]),double(p[delaySpeedR]))
                     * (2.0 + 9.0 * std::min(.99,double(std::max(p[delayFeedbackL],p[delayFeedbackR]))*.5))
                 : 0.0;
-            const double reverbSeconds = reverb ? 3.0 + .26 * double(p[reverbDecay]) : 0.0;
+            const double reverbSeconds = reverb ? .45 + .001 * double(p[reverbDecay]) : 0.0;
             tailFrames = juce::roundToInt(juce::jlimit(.12, 30.0,
                 std::max({chorus ? .12 : 0.0,delaySeconds,reverbSeconds})) * sampleRate);
         } else tailFrames = std::max(0, tailFrames - count);
 
         const float chorusGain = p[chorusMix] * .01f * (.5f + .5f*p[chorusWidth]);
         const float rate = p[chorusRate];
-        const float delayMixGain = p[delayMix] * .01f;
+        const float delayMixGain = p[delayMix] * .01f; // additive send, dry stays unity
         const float wetReverb = p[reverbMix] * .01f;
         const float spread = p[delaySpread];
         const float drive = p[delayDrive] * .01f;
@@ -118,10 +118,16 @@ public:
             const float hard=juce::jlimit(-1.0f,1.0f,u);
             return x+((soft*(1.0f-drive2)+hard*drive2-driveZero)-x)*drive;
         };
-        if (reverb) updateReverb(p, mode);
+        if (reverb) reverbNetwork.configure(p, mode);
         const int preFrames = juce::jlimit(0, int(predelayL.size())-2, juce::roundToInt(p[reverbPredelay]*.001*sampleRate));
         const float early = p[reverbEarly]*.01f;
-        const float highTone = .02f + .96f*p[reverbTone]*.01f;
+        // Audible tone from ~350 Hz to ~18 kHz, computed only per audio block.
+        const double toneHz = 350.0 * std::pow(18000.0 / 350.0, double(p[reverbTone]) * .01);
+        const float highTone = float(1.0-std::exp(-juce::MathConstants<double>::twoPi*toneHz/sampleRate));
+        const float roomSize = p[reverbSize] * .01f;
+        // ER spacings grow with room size and vary across room algorithms.
+        const float modeFactor = mode==1 ? .50f : mode==2 ? 1.0f : mode==3 ? .75f : 1.3f;
+        const float earlySpacing = float(sampleRate * .001 * modeFactor * (3.0 + 22.0*roomSize));
         for (int i=0;i<count;++i) {
             const float dryL=outL[i], dryR=outR[i];
             float l=dryL, r=dryR;
@@ -168,34 +174,46 @@ public:
                 pan1R+=(std::sin(angle1)-pan1R)*panCoeff;
                 pan2L+=(std::cos(angle2)-pan2L)*panCoeff;
                 pan2R+=(std::sin(angle2)-pan2R)*panCoeff;
-                constexpr float equalGain=.353553390593274f;
+                // TEST144 applied an extra -9 dB (.3535) to the already
+                // mono-summed send. A full send was much quieter than Reverb.
+                // Stereo pan vectors are unity power; send=100 now reaches an
+                // appropriately strong echo without attenuating the dry path.
+                constexpr float equalGain=1.25f;
                 l+=delayMixGain*(wL*pan1L+wR*pan2L)*equalGain;
                 r+=delayMixGain*(wL*pan1R+wR*pan2R)*equalGain;
             }
             if (reverb) {
-                // Predelay, early reflections, parallel late halls. No heap
+                // Predelay, early reflections and a stereo FDN. No heap
                 // allocation or lock in the sample callback.
                 predelayL[size_t(preWrite)]=l;
                 predelayR[size_t(preWrite)]=r;
                 const float preL=read(predelayL,preWrite,float(preFrames));
                 const float preR=read(predelayR,preWrite,float(preFrames));
-                const int earlyOffset=juce::jmax(1,preFrames/2);
-                const float eL=read(predelayL,preWrite,float(earlyOffset));
-                const float eR=read(predelayR,preWrite,float(earlyOffset));
+                // Six decorrelated, adjustable early reflections. 0% removes
+                // early reflections entirely; 100% emphasises a convincing
+                // first-bounce pattern without changing the late RT60.
+                const float e1L=read(predelayL,preWrite,float(preFrames)+earlySpacing);
+                const float e1R=read(predelayR,preWrite,float(preFrames)+earlySpacing*1.13f);
+                const float e2L=read(predelayR,preWrite,float(preFrames)+earlySpacing*2.37f);
+                const float e2R=read(predelayL,preWrite,float(preFrames)+earlySpacing*2.87f);
+                const float e3L=read(predelayL,preWrite,float(preFrames)+earlySpacing*3.73f);
+                const float e3R=read(predelayR,preWrite,float(preFrames)+earlySpacing*4.19f);
                 preWrite=(preWrite+1)%int(predelayL.size());
-                float wetL=preL + eR*early*.23f;
-                float wetR=preR + eL*early*.23f;
-                reverbA.processStereo(&wetL,&wetR,1);
-                if (mode==2 || mode==4) {
-                    float bL=preR, bR=preL;
-                    reverbB.processStereo(&bL,&bR,1);
-                    wetL=.72f*wetL+.28f*bL;
-                    wetR=.72f*wetR+.28f*bR;
-                }
-                tailLow[0] += highTone*(wetL-tailLow[0]);
-                tailLow[1] += highTone*(wetR-tailLow[1]);
-                l += wetReverb*tailLow[0];
-                r += wetReverb*tailLow[1];
+                const float earlyL=early*(.48f*e1L+.35f*e2L-.27f*e3L);
+                const float earlyR=early*(.48f*e1R+.35f*e2R-.27f*e3R);
+                float tailL=0.0f,tailR=0.0f;
+                // Only the late network gets predelayed direct input. ER is a
+                // separately controlled send, not a hidden change to decay.
+                reverbNetwork.process(preL, preR, tailL, tailR);
+                tailLow[0] += highTone*(tailL-tailLow[0]);
+                tailLow[1] += highTone*(tailR-tailLow[1]);
+                const float revL=tailLow[0]*1.80f+earlyL;
+                const float revR=tailLow[1]*1.80f+earlyR;
+                // 0% = mono room; 100% = original decorrelated stereo.
+                const float mid=.5f*(revL+revR);
+                const float side=.5f*(revL-revR)*(p[reverbWidth]*.01f);
+                l += wetReverb*(mid+side);
+                r += wetReverb*(mid-side);
             }
             outL[i]=std::isfinite(l)?l:0;
             outR[i]=std::isfinite(r)?r:0;
@@ -214,32 +232,9 @@ private:
         const float frac=pos-float(a);
         return b[size_t(a)] + frac*(b[size_t(c)]-b[size_t(a)]);
     }
-    void updateReverb(const std::array<float,lsampler::fx::count>& p,int mode) noexcept {
-        using namespace lsampler::fx;
-        // JUCE Freeverb stereo comb/allpass network with independently tuned
-        // short/long rooms and a second, decorrelated large-hall engine.
-        juce::Reverb::Parameters a, b;
-        const float size=p[reverbSize]*.01f, decay=p[reverbDecay]*.01f;
-        a.roomSize=juce::jlimit(0.0f,.985f, .2f + size*.25f + decay*.40f + (mode==4?.12f:mode==2?.06f:0.f));
-        a.damping=juce::jlimit(0.0f,1.0f,p[reverbDamping]*.01f + (mode==3?.14f:0.f));
-        a.width=p[reverbWidth]*.01f;
-        a.wetLevel=1.0f; a.dryLevel=0.0f;
-        b=a;
-        b.roomSize=juce::jlimit(0.0f,.985f,a.roomSize+.055f);
-        b.damping=juce::jlimit(0.0f,1.0f,a.damping+.13f);
-        b.width=juce::jlimit(0.0f,1.0f,a.width*.85f);
-        // Update only on change to avoid repeated internal coefficient writes.
-        const std::array<float,5> signature {float(mode),a.roomSize,a.damping,a.width,b.roomSize};
-        if (signature != currentReverb) {
-            if (int(currentReverb[0]) != mode) { reverbA.reset(); reverbB.reset(); }
-            reverbA.setParameters(a); reverbB.setParameters(b);
-            currentReverb=signature;
-        }
-    }
     double sampleRate=44100;
     std::vector<float> chorusL, chorusR, tapeL, tapeR, predelayL, predelayR;
-    juce::Reverb reverbA, reverbB;
-    std::array<float,5> currentReverb { -1,-1,-1,-1,-1 };
+    LSamplerFXReverb reverbNetwork;
     int chorusWrite=0,tapeWrite=0,preWrite=0,tailFrames=0;
     double phase=0;
     float smoothedRate=0,timeL=0,timeR=0;

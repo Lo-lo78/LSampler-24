@@ -1,0 +1,36 @@
+TEST145 - Accessibilita' FX, send e riverbero a decadimento in ms
+
+Base: LSampler-24 TEST144. Solo sorgente: nessun build locale o binario.
+
+Tastiera: Alt+F APRE ovunque, non e' un toggle per uscire. Esc da Value
+ritorna a Grid, Esc da Grid esce e ripristina il focus precedente.
+In Grid: su/giu' parametri, sinistra/destra gruppi, PgUp/PgDn otto righe,
+Home/End ai bordi della categoria. Alt+su/giu' varia valore;
+Alt+sinistra/destra cambia il passo: 1, 5, 10, 15, 20;
+Alt+PgUp/PgDn cambia di 40 passi; Alt+Home/End massimo/minimo.
+In Value: stessi comandi con tasti non modificati e anche con Alt.
+I bordi di parametri, valori e passo NON ripetono messaggi NVDA.
+Gli slider Value usano lo stesso schema accessibile della griglia principale:
+all'ingresso 'Value. <Parametro> cursore d'avanzamento <Valore>' e poi
+solo il nome semplice per lettura della riga; nessuna description raddoppiata.
+
+Rinomine display: Delay Mix -> Delay Send, Reverb Mix -> Reverb Send.
+Chiavi di salvataggio e ID automazioni VST3 invariati (delay_mix/reverb_mix).
+Delay: guadagno della mandata wet aumentato da 0.353553 a 1.25, la via
+asciutta rimane invariata. Resta additive send, non crossfade dry/wet.
+
+Reverb Decay: 0..20000 ms (predefinito 3000 ms), con un FDN stereo a otto
+linee in feedback e matrice Hadamard ortonormale, calibrato al RT60 in ms.
+Damping: nuovo LP nella retroazione, 17 kHz -> 240 Hz.
+Size: tempo delle otto linee cambia di circa cinque volte.
+Early Reflections: sei tap differenziati e scalati dal controllo.
+Reverb Tail Tone: filtro wet con frequenza controllata.
+Quattro modalita': Studio Room, Concert Hall, Plate, Cathedral.
+I buffer sono preallocati nel prepareToPlay; FX disattivati non alterano
+il rendering originale. Con bank/progetto TEST144 la proprieta'
+fx_schema_version migra il vecchio Decay percentuale (0..100) a ms.
+Il vecchio ID automazione VST3 e' conservato, ma i vecchi envelope VST3
+normalizzati per Decay possono richiedere riadattamento al range in ms.
+
+Verificare in GitHub Actions: build VST3, stato/automazione, focus NVDA,
+riverbero fino a 20 sec, CPU con FX Off e On, clip/feedback massimo.

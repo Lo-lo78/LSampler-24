@@ -19,7 +19,7 @@ assert processor.index('for (int i=0;i<lsampler::fx::count;++i) {\n        const
 assert all(m in processor for m in ('saveFXState(bank);','restoreFXState(bank);','saveFXState(state);','restoreFXState(state);'))
 assert 'fxEngine.hasTail()' in processor
 assert processor.index('fxEngine.process(buffer, values)') < processor.index('    applyOutputStage(buffer, routes);')
-assert 'std::vector<float> chorusL' in dsp and 'reverbA.processStereo' in dsp and 'pan1L' in dsp
+assert 'std::vector<float> chorusL' in dsp and 'reverbNetwork.process' in dsp and 'pan1L' in dsp
 assert all(m in ui for m in ("shortcut=='f'", 'getFXHostParameter(cursor)', 'processor.setFXParameter(cursor,', 'grid.grabKeyboardFocus()'))
 assert 'void LSampler24AudioProcessorEditor::openFX()' in editor
 assert 'sliceEditor->onRequestFX=' in editor
