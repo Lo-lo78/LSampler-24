@@ -1,0 +1,10 @@
+TEST155 - Scorciatoie dei 10 subloop
+
+Nella griglia dei parametri, se la categoria attiva e` Loops:
+- Ctrl+Shift+Freccia su: seleziona il loop precedente (fino al numero 1).
+- Ctrl+Shift+Freccia giu`: seleziona il loop successivo (fino al numero 10).
+- Shift+Frecce rimane esclusivamente per navigare tra parametri con automazione DAW attiva.
+- Il cambio loop continua ad aggiornare la griglia e ad annunciare il parametro tramite screen reader.
+
+Modificato solo Source/PluginEditor.cpp; nessuna modifica DSP.
+Non compilato: build demandata a GitHub Actions.

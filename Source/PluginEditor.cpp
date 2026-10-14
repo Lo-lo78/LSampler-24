@@ -3464,9 +3464,12 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             if (target >= 0) selectParameter(target, true);
             return true;
         }
-        if(mods.isShiftDown()&&!mods.isCtrlDown()&&!mods.isAltDown()
-            &&std::strcmp(selectedEntry().category,"Loops")==0
-            &&(code==juce::KeyPress::upKey||code==juce::KeyPress::downKey)) {
+        // Ctrl+Shift+Up/Down switches the selected subloop; Shift+arrows
+        // remain reserved for navigating active DAW automation envelopes.
+        if(source == &parameterSelector && mods.isCtrlDown() && mods.isShiftDown()
+            && !mods.isAltDown() && !mods.isCommandDown()
+            && std::strcmp(selectedEntry().category,"Loops")==0
+            && (code==juce::KeyPress::upKey||code==juce::KeyPress::downKey)) {
             const int next=juce::jlimit(0,9,selectedLoop+(code==juce::KeyPress::upKey?-1:1));
             if(next!=selectedLoop) {selectedLoop=next;refreshParameterGrid();
                 lsampler::announceToActiveScreenReader(*source,parameterCellText(selectedParameter));}
