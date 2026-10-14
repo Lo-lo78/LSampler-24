@@ -66,6 +66,9 @@ public:
         const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
         const bool dedicated = (mods.isCtrlDown() && mods.isShiftDown() && !mods.isAltDown()
                             && !mods.isCommandDown() && juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code)) == 'a')
+                            || (mods.isAltDown() && mods.isShiftDown() && !mods.isCtrlDown()
+                                && !mods.isCommandDown()
+                                && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
                             || code==juce::KeyPress::F6Key || (mods.isAltDown() && (ch=='e' || ch=='k' || ch=='u' || ch=='f')) || (mods.isCtrlDown() && !mods.isAltDown()
                                 && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
                                     || code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))

@@ -1,0 +1,7 @@
+TEST156 - Navigazione dei 10 subloop
+
+Alt+Shift+Freccia su: loop precedente.
+Alt+Shift+Freccia giu: loop successivo.
+Shift+Frecce: navigazione fra i parametri con automazione DAW attiva, invariata.
+La scorciatoia Ctrl+Shift+Frecce non cambia piu il subloop.
+Nessuna modifica al DSP. Non compilato localmente.
