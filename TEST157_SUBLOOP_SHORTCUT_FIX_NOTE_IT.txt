@@ -1,0 +1,16 @@
+TEST157 — Correzione scorciatoia navigazione 10 sottoloop
+
+Problema nelle TEST155/TEST156: il gestore generico Alt+Frecce processava
+Alt+Shift+Su/Giù PRIMA del controllo specifico dei sottoloop, perciò
+modificava il parametro selezionato anziché cambiare il sottoloop.
+
+Correzione:
+- nella categoria Loops (griglia): Alt+Shift+Su/Giù seleziona
+  sottoloop precedente/successivo (limiti 1 e 10, senza wrap).
+- il controllo specifico precede il gestore generico Alt+Frecce.
+- il gestore generico modifica i valori solo senza Shift.
+- Shift+Frecce senza Alt rimane dedicato ai parametri automatizzati DAW.
+- il cambio sottoloop non cambia il valore dei parametri o la DSP; la
+  griglia viene aggiornata e NVDA annuncia Loop N, nome e valore.
+
+Nessuna compilazione eseguita.

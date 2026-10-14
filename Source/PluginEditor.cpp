@@ -3253,6 +3253,32 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         return true;
     }
 
+    // TEST157: subloop navigation MUST precede the generic Alt+arrow value
+    // handler below. TEST155/156 installed the shortcut after that handler,
+    // so Alt+Shift+Up/Down was swallowed as a parameter value change.
+    // Shift+arrows without Alt are exclusively DAW automation navigation.
+    if (parameterPage && !globalOpen && !bankMacroOpen
+        && source == &parameterSelector && !sourceIsValueEditor
+        && mods.isAltDown() && mods.isShiftDown()
+        && !mods.isCtrlDown() && !mods.isCommandDown()
+        && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
+    {
+        // On other parameter pages the shortcut is inert, rather than
+        // falling through as an unmodified Up/Down cursor movement.
+        if (std::strcmp(selectedEntry().category, "Loops") == 0)
+        {
+            const int direction = code == juce::KeyPress::upKey ? -1 : 1;
+            const int next = juce::jlimit(0, lsampler::loopCount - 1, selectedLoop + direction);
+            if (next != selectedLoop)
+            {
+                selectedLoop = next;
+                refreshParameterGrid();
+                lsampler::announceToActiveScreenReader(parameterSelector, parameterCellText(selectedParameter));
+            }
+        }
+        return true;
+    }
+
     if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
     {
         if (ch == 'o' && !mods.isShiftDown()) { actionOpenedByShortcut = true; enterImportBrowser(); return true; }
@@ -3284,7 +3310,9 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 }
         }
 
-        if (parameterPage && source != &parameterValue)
+        // Only unshifted Alt+arrows edit values; shifted Alt+arrows
+        // belong to subloop/page navigation and must not be consumed here.
+        if (parameterPage && source != &parameterValue && !mods.isShiftDown())
         {
             if (code == juce::KeyPress::upKey)       { changeSelectedParameterValue(1, false); return true; }
             if (code == juce::KeyPress::downKey)     { changeSelectedParameterValue(-1, false); return true; }
@@ -3462,17 +3490,6 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 }
             }
             if (target >= 0) selectParameter(target, true);
-            return true;
-        }
-        // Alt+Shift+Up/Down switches the selected subloop; Shift+arrows
-        // remain reserved for navigating active DAW automation envelopes.
-        if(source == &parameterSelector && mods.isAltDown() && mods.isShiftDown()
-            && !mods.isCtrlDown() && !mods.isCommandDown()
-            && std::strcmp(selectedEntry().category,"Loops")==0
-            && (code==juce::KeyPress::upKey||code==juce::KeyPress::downKey)) {
-            const int next=juce::jlimit(0,9,selectedLoop+(code==juce::KeyPress::upKey?-1:1));
-            if(next!=selectedLoop) {selectedLoop=next;refreshParameterGrid();
-                lsampler::announceToActiveScreenReader(*source,parameterCellText(selectedParameter));}
             return true;
         }
         if(code==juce::KeyPress::backspaceKey) {
