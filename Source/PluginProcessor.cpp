@@ -112,6 +112,64 @@ public:
         if (auto update = getApi<void (*)()>("UpdateArrange")) update();
         return true;
     }
+
+    bool deactivateAll(LSampler24AudioProcessor& processor, int& disabled, int& failed)
+    {
+        disabled = 0;
+        failed = 0;
+        // Resolve the FX once, then query its own parameter envelopes directly.
+        // Thousands of individual findFocusedFx() calls would repeatedly ask
+        // REAPER for focus and parameter names, potentially freezing its UI.
+        const auto& parameters = processor.getParameters();
+        if (parameters.isEmpty()) return false;
+        const auto fx = findFocusedFx(processor, parameters[0]);
+        if (!fx) return false;
+        const auto getEnvelope = getApi<void* (*)(void*, int, int, bool)>("GetFXEnvelope");
+        const auto attribute = getApi<bool (*)(void*, const char*, char*, bool)>("GetSetEnvelopeInfo_String");
+        const auto getNumParams = getApi<int (*)(void*, int)>("TrackFX_GetNumParams");
+        if (!getEnvelope || !attribute || !getNumParams) return false;
+        const int hostCount = getNumParams(fx.track, fx.index);
+        if (hostCount < parameters.size()) return false; // host index mismatch: never touch other FX
+
+        bool changed = false;
+        for (int i = 0; i < parameters.size(); ++i)
+        {
+            auto* env = getEnvelope(fx.track, fx.index, i, false);
+            if (env == nullptr) continue; // absent = not automated; never create it
+            char active[32] = {};
+            if (!attribute(env, "ACTIVE", active, false)
+                || (active[0] != '0' && active[0] != '1'))
+            {
+                ++failed;
+                continue;
+            }
+            if (active[0] == '0') continue;
+
+            char zero[] = "0";
+            if (!attribute(env, "ACTIVE", zero, true))
+            {
+                ++failed;
+                continue;
+            }
+            changed = true;
+            // Match the existing per-parameter deactivate behavior. Recorded
+            // envelope points are preserved; nothing is removed or reset.
+            attribute(env, "ARM", zero, true);
+            attribute(env, "VISIBLE", zero, true);
+            char after[32] = {};
+            if (attribute(env, "ACTIVE", after, false) && after[0] == '0')
+                ++disabled;
+            else
+                ++failed;
+        }
+        // Refresh REAPER only once after the batch, not once per parameter.
+        if (changed)
+        {
+            if (auto adjust = getApi<void (*)(bool)>("TrackList_AdjustWindows")) adjust(false);
+            if (auto update = getApi<void (*)()>("UpdateArrange")) update();
+        }
+        return true;
+    }
 private:
     template <class T> T getApi(const char* name) const
     {
@@ -163,6 +221,11 @@ int LSampler24AudioProcessor::getReaperEnvelopeActive(juce::AudioProcessorParame
 bool LSampler24AudioProcessor::toggleReaperEnvelopeActive(juce::AudioProcessorParameter* p)
 {
     return reaperHostExtension != nullptr && reaperHostExtension->toggle(*this, p);
+}
+bool LSampler24AudioProcessor::deactivateAllReaperEnvelopes(int& disabled, int& failed)
+{
+    disabled = failed = 0;
+    return reaperHostExtension != nullptr && reaperHostExtension->deactivateAll(*this, disabled, failed);
 }
 
 

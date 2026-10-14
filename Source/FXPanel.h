@@ -132,6 +132,7 @@ public:
     // FX has no separate audition engine or mode state.
     std::function<void(juce::Component&)> onToggleSlotPreview;
     std::function<bool()> onPreviewSpace;
+    std::function<void(juce::Component&)> onDisableAllAutomations;
     void enter() {
         // The editor may have been destroyed when REAPER closed its FX window.
         // Cursor state belongs to the live processor instance, not this panel.
@@ -295,6 +296,15 @@ private:
         const auto code=k.getKeyCode();
         const auto shortcut=juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
         const bool alt=mods.isAltDown()&&!mods.isCtrlDown()&&!mods.isCommandDown()&&!mods.isShiftDown();
+        if (mods.isAltDown() && mods.isShiftDown() && !mods.isCtrlDown()
+            && !mods.isCommandDown() &&
+            (shortcut == 'a' || juce::CharacterFunctions::toLowerCase(k.getTextCharacter()) == 'a'))
+        {
+            if (onDisableAllAutomations)
+                onDisableAllAutomations(valueFocused ? static_cast<juce::Component&>(value)
+                                                      : static_cast<juce::Component&>(grid));
+            return true;
+        }
         if(mods.isCtrlDown() && mods.isShiftDown() && !mods.isAltDown() && shortcut=='a') {
             auto* parameter=processor.getFXHostParameter(cursor);
             if(parameter != nullptr) {

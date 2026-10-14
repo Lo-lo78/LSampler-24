@@ -22,6 +22,9 @@ SliceEditor::SliceEditor(LSampler24AudioProcessor& p,int s,bool sequencer):proce
     setWantsKeyboardFocus(true);setFocusContainerType(FocusContainerType::keyboardFocusContainer);
     setOpaque(true);addChildComponent(number);number.setInputRestrictions(32,"-0123456789.");
     number.setTitle("Value");number.setMultiLine(false);
+    number.disableAllAutomations = [this] {
+        if (onDisableAllAutomations) onDisableAllAutomations(&number);
+    };
     number.finish=[this](bool accept) {
         const auto text=number.getText().trim();
         number.setVisible(false);numeric=false;valueMode=false;grabKeyboardFocus();
@@ -275,6 +278,15 @@ void SliceEditor::restore(bool forward) {
     item=std::min(item,std::max(0,count()-1));selected.reset();anchor=-1;auditionEdit();speak(forward?"Redo. ":"Undo. ");
 }
 bool SliceEditor::keyPressed(const juce::KeyPress& k) {
+    const auto shortcutMods = k.getModifiers();
+    if (shortcutMods.isAltDown() && shortcutMods.isShiftDown()
+        && !shortcutMods.isCtrlDown() && !shortcutMods.isCommandDown()
+        && (juce::CharacterFunctions::toLowerCase(juce::juce_wchar(k.getKeyCode())) == 'a'
+            || juce::CharacterFunctions::toLowerCase(k.getTextCharacter()) == 'a'))
+    {
+        if (onDisableAllAutomations) onDisableAllAutomations(this);
+        return true;
+    }
     if(k.getModifiers().isAltDown() && !k.getModifiers().isCtrlDown()
        && !k.getModifiers().isShiftDown() &&
        (juce::CharacterFunctions::toLowerCase(k.getTextCharacter())=='f'

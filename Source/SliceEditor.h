@@ -13,6 +13,7 @@ public:
     ~SliceEditor() override;
     std::function<void()> onClose;
     std::function<void()> onRequestFX;
+    std::function<void(juce::Component*)> onDisableAllAutomations;
     std::function<bool(juce::AudioProcessorParameter*, juce::Component*)> onToggleHostAutomationEnvelope;
     std::function<int(juce::AudioProcessorParameter*)> onHostAutomationEnvelopeState;
     void refreshAutomationIndicator();
@@ -34,7 +35,17 @@ private:
     class NumberEditor final : public juce::TextEditor {
     public:
         std::function<void(bool)> finish;
+        std::function<void()> disableAllAutomations;
         bool keyPressed(const juce::KeyPress& k) override {
+            const auto mods = k.getModifiers();
+            if (mods.isAltDown() && mods.isShiftDown() && !mods.isCtrlDown()
+                && !mods.isCommandDown()
+                && (juce::CharacterFunctions::toLowerCase(juce::juce_wchar(k.getKeyCode())) == 'a'
+                    || juce::CharacterFunctions::toLowerCase(k.getTextCharacter()) == 'a'))
+            {
+                if (disableAllAutomations) disableAllAutomations();
+                return true;
+            }
             if(k.getKeyCode()==juce::KeyPress::returnKey||k.getKeyCode()==juce::KeyPress::escapeKey) {
                 if(finish)finish(k.getKeyCode()==juce::KeyPress::returnKey);return true;
             }

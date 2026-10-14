@@ -69,6 +69,10 @@ public:
                             || (mods.isAltDown() && mods.isShiftDown() && !mods.isCtrlDown()
                                 && !mods.isCommandDown()
                                 && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
+                            || (mods.isAltDown() && mods.isShiftDown() && !mods.isCtrlDown()
+                                && !mods.isCommandDown()
+                                && (juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code)) == 'a'
+                                    || ch == 'a'))
                             || code==juce::KeyPress::F6Key || (mods.isAltDown() && (ch=='e' || ch=='k' || ch=='u' || ch=='f')) || (mods.isCtrlDown() && !mods.isAltDown()
                                 && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
                                     || code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
@@ -130,6 +134,10 @@ public:
         const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
         const bool dedicated = (mods.isCtrlDown() && mods.isShiftDown() && !mods.isAltDown()
                             && !mods.isCommandDown() && juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code)) == 'a')
+                            || (mods.isAltDown() && mods.isShiftDown() && !mods.isCtrlDown()
+                                && !mods.isCommandDown()
+                                && (juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code)) == 'a'
+                                    || ch == 'a'))
                             || code==juce::KeyPress::F6Key || (mods.isAltDown() && (ch=='e' || ch=='k' || ch=='u' || ch=='f')) || (mods.isCtrlDown() && !mods.isAltDown()
                                 && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
                                     || code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
@@ -360,6 +368,7 @@ private:
     // Execute the DAW's own envelope show/hide/toggle menu action directly.
     // Never assume the envelope state when a host does not expose a safe action.
     bool toggleHostAutomationEnvelope(juce::AudioProcessorParameter*, juce::Component* anchor);
+    void deactivateAllHostAutomations(juce::Component* announcementTarget);
     // -1: unsupported/unknown; 0: no envelope visible; 1: host confirms active.
     int getHostAutomationEnvelopeState(juce::AudioProcessorParameter*) const;
     void syncSelectedAutomationIndicator(bool forceQuery = false);

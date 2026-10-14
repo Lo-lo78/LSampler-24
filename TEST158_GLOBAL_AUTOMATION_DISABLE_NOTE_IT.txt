@@ -1,0 +1,14 @@
+LSampler-24 TEST158 - Alt+Shift+A: disattiva automazioni attive (solo istanza REAPER)
+
+Alt+Shift+A da Griglia, Value, FX, Slice Editor, Sample Set e Slots:
+- Se non e` attiva alcuna corsia: «Nessuna automazione attiva».
+- Se sono attive N corsie: «Disattivata 1 automazione» / «Disattivate N automazioni».
+- Se il comando fallisce in parte, comunica anche il numero degli errori.
+- Se REAPER non permette di identificare con sicurezza questa istanza, non modifica nulla.
+
+Agisce su tutte le automazioni ACTIVE dei parametri VST3 appartenenti a questa
+sola istanza LSampler-24 (tutti gli Slot, loop, Sample Set, Bank Macro ed FX).
+I punti registrati restano intatti. Mai creare/eliminare corsie. Dopo la
+modifica aggiorna gli indicatori NVDA; una sola notifica di risultato.
+Ctrl+Shift+A rimane il toggle della singola automazione.
+Nessuna modifica DSP e nessuna compilazione eseguita.

@@ -256,6 +256,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     fxPanel.onClose=[this] { closeFX(); };
     fxPanel.onToggleSlotPreview=[this](juce::Component& target) { toggleSlotPreview(target); };
     fxPanel.onPreviewSpace=[this] { return toggleSlotPreviewIfEnabled(); };
+    fxPanel.onDisableAllAutomations=[this](juce::Component& target) { deactivateAllHostAutomations(&target); };
     // Show keyboard equivalents directly on the mouse buttons so sighted users
     // discover the accessible workflow while exploring the interface.
     loadSample.setButtonText("Load Sample");
@@ -2023,6 +2024,33 @@ bool LSampler24AudioProcessorEditor::toggleHostAutomationEnvelope(juce::AudioPro
     return true;
 }
 
+void LSampler24AudioProcessorEditor::deactivateAllHostAutomations(juce::Component* target)
+{
+    int disabled = 0, failed = 0;
+    const bool queried = processor.deactivateAllReaperEnvelopes(disabled, failed);
+    // Refresh all visible NVDA automation labels after the batch.
+    if (queried)
+    {
+        syncSelectedAutomationIndicator(true);
+        syncSampleSetAutomationIndicator(true);
+        if (sliceEditor != nullptr) sliceEditor->refreshAutomationIndicator();
+    }
+    juce::String message;
+    if (!queried)
+        message = "Impossibile verificare le automazioni di questa istanza in REAPER";
+    else if (disabled == 0 && failed == 0)
+        message = "Nessuna automazione attiva";
+    else
+    {
+        message = disabled == 0 ? "Nessuna automazione disattivata"
+                 : disabled == 1 ? "Disattivata 1 automazione"
+                                 : "Disattivate " + juce::String(disabled) + " automazioni";
+        if (failed > 0)
+            message += ". Impossibile disattivarne " + juce::String(failed);
+    }
+    lsampler::announceToActiveScreenReader(target != nullptr ? *target : static_cast<juce::Component&>(status), message);
+}
+
 bool LSampler24AudioProcessorEditor::keyPressed(const juce::KeyPress& key)
 {
     return handleKeyPress(key, juce::Component::getCurrentlyFocusedComponent());
@@ -2037,6 +2065,18 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 {
     if (fileUiBusy || processor.isFileTaskRunning())
         return key.getKeyCode() != juce::KeyPress::escapeKey;
+
+    // TEST158: Global automation kill, before modal editors, FX routing, and
+    // Alt shortcuts. Recognize both physical key code and typed character.
+    const auto shortcutMods = key.getModifiers();
+    if (shortcutMods.isAltDown() && shortcutMods.isShiftDown()
+        && !shortcutMods.isCtrlDown() && !shortcutMods.isCommandDown()
+        && (juce::CharacterFunctions::toLowerCase(juce::juce_wchar(key.getKeyCode())) == 'a'
+            || juce::CharacterFunctions::toLowerCase(key.getTextCharacter()) == 'a'))
+    {
+        deactivateAllHostAutomations(source);
+        return true;
+    }
 
     // A dedicated FX Grid is reachable from every ordinary sampler page.
     // Do not intercept typing in the modal file-name and rename dialogs.
@@ -6883,6 +6923,11 @@ void LSampler24AudioProcessorEditor::openSliceEditor(bool sequencer)
         (juce::AudioProcessorParameter* parameter) -> int
     {
         return safeThis != nullptr ? safeThis->getHostAutomationEnvelopeState(parameter) : -1;
+    };
+    sliceEditor->onDisableAllAutomations = [safeThis=juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+        (juce::Component* target)
+    {
+        if (safeThis != nullptr) safeThis->deactivateAllHostAutomations(target);
     };
     sliceEditor->onToggleHostAutomationEnvelope = [safeThis=juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
         (juce::AudioProcessorParameter* parameter, juce::Component* target)

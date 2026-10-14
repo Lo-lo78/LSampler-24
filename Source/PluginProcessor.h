@@ -42,6 +42,9 @@ public:
     bool hasReaperEnvelopeApi() const noexcept;
     int getReaperEnvelopeActive(juce::AudioProcessorParameter*) const; // -1 unknown
     bool toggleReaperEnvelopeActive(juce::AudioProcessorParameter*);
+    // Disable every ACTIVE envelope belonging to this FX instance only.
+    // Counts are verified against REAPER. Never creates or deletes envelopes.
+    bool deactivateAllReaperEnvelopes(int& disabled, int& failed);
 
     const juce::String getName() const override { return JucePlugin_Name; }
     bool acceptsMidi() const override { return true; }
