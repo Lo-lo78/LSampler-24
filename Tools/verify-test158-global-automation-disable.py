@@ -29,9 +29,9 @@ assert 'deactivateAllReaperEnvelopes(int& disabled, int& failed);' in head
 # routing bug with Alt+Shift+arrows.
 keyboard = editor[editor.index('bool LSampler24AudioProcessorEditor::handleKeyPress'):]
 assert keyboard.index('deactivateAllHostAutomations(source);') < keyboard.index('if (fxOpen) return fxPanel.keyPressed(key);')
-assert '"Nessuna automazione attiva"' in editor
-assert '"Disattivata 1 automazione"' in editor
-assert '"Disattivate " + juce::String(disabled) + " automazioni"' in editor
+assert '"No active automations"' in editor
+assert '"Disabled 1 automation"' in editor
+assert '"Disabled " + juce::String(disabled) + " automations"' in editor
 assert ui.count('|| (mods.isAltDown() && mods.isShiftDown() && !mods.isCtrlDown()') >= 1
 assert ui.count("juce::juce_wchar(code)) == 'a'") >= 4  # Ctrl+Shift+A and Alt+Shift+A, Grid and Value
 # Children handle keys themselves; they must invoke the parent callback.

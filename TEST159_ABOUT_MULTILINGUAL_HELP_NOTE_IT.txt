@@ -1,0 +1,27 @@
+LSampler-24 TEST159 - About, clipboard e Help multilingua (14 ottobre 2026)
+
+Base: TEST158. Nessuna compilazione locale, nessuna modifica del DSP.
+
+About:
+- Version: 0.99.20
+- Release date: 14 October 2026
+- Ctrl+C copia negli appunti il testo selezionato nel pannello About di sola lettura.
+- Ctrl+A seleziona tutto il testo About, come in LJuno-116 TEST85.
+- Selezione con Shift+Frecce, Esc e Alt+C invariati.
+
+Automazioni:
+- Alt+Shift+A annuncia in inglese: "No active automations", "Disabled 1 automation", "Disabled N automations".
+- Tradotti anche errori, fallimenti parziali e casi senza automazioni disattivate.
+- Nessuna modifica al comportamento REAPER o al conteggio.
+
+Help:
+- Aggiornate 8 lingue: English, Italiano, Español, Português, Français, Русский, 中文, 日本語.
+- Nuove sezioni che documentano TEST144–158: Alt+F e gli effetti, sends
+  Slot e Bank, Delay Sync, gate reverb, Reset Bank, release dei loop infiniti,
+  zero crossing PCM, Alt+Shift+Su/Giù, Shift+Frecce, Alt+Shift+A, About Ctrl+C.
+- Allineata la versione e la data, eliminate sezioni About di altre lingue
+  duplicate per errore sotto la guida spagnola e rimosse voci miste IT/EN.
+- Il numero 6629 era il manifest storico, non il totale aggiornato: la guida
+  ora parla correttamente di migliaia di parametri con estensioni aggiunte.
+
+Verifiche solo statiche: Tools/verify-test159-help-about.py.

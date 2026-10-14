@@ -13,8 +13,8 @@ namespace
 {
 constexpr std::array<int, 5> stepWidths { 1, 5, 10, 15, 20 };
 constexpr int valuePageStep = 40;
-constexpr auto lsamplerVersion = "0.99.11";
-constexpr auto lsamplerReleaseDate = "7 October 2026";
+constexpr auto lsamplerVersion = "0.99.20";
+constexpr auto lsamplerReleaseDate = "14 October 2026";
 constexpr auto lsamplerProjectUrl = "https://github.com/Lo-lo78/LSampler-24";
 constexpr auto lsamplerContactEmail = "vmanolo301@gmail.com";
 
@@ -1813,6 +1813,21 @@ bool LSampler24AudioProcessorEditor::navigateAboutText(const juce::KeyPress& key
     }
     if (keyCode == juce::KeyPress::pageUpKey) { aboutInfo.pageUp(selecting); return true; }
     if (keyCode == juce::KeyPress::pageDownKey) { aboutInfo.pageDown(selecting); return true; }
+    // Same behaviour as LJuno-116: the About field is read-only but its
+    // current selection can be copied. The parent modal key handler otherwise
+    // consumes Ctrl+C before juce::TextEditor receives it.
+    const auto lowerKeyCode = juce::CharacterFunctions::toLowerCase(
+        static_cast<juce::juce_wchar>(keyCode));
+    if (byWordOrDocument && !modifiers.isAltDown() && lowerKeyCode == 'a')
+    {
+        aboutInfo.selectAll();
+        return true;
+    }
+    if (byWordOrDocument && !modifiers.isAltDown() && lowerKeyCode == 'c')
+    {
+        aboutInfo.copyToClipboard();
+        return true;
+    }
     return false;
 }
 
@@ -2037,16 +2052,16 @@ void LSampler24AudioProcessorEditor::deactivateAllHostAutomations(juce::Componen
     }
     juce::String message;
     if (!queried)
-        message = "Impossibile verificare le automazioni di questa istanza in REAPER";
+        message = "Unable to check automation for this REAPER plug-in instance";
     else if (disabled == 0 && failed == 0)
-        message = "Nessuna automazione attiva";
+        message = "No active automations";
     else
     {
-        message = disabled == 0 ? "Nessuna automazione disattivata"
-                 : disabled == 1 ? "Disattivata 1 automazione"
-                                 : "Disattivate " + juce::String(disabled) + " automazioni";
+        message = disabled == 0 ? "No automations disabled"
+                 : disabled == 1 ? "Disabled 1 automation"
+                                 : "Disabled " + juce::String(disabled) + " automations";
         if (failed > 0)
-            message += ". Impossibile disattivarne " + juce::String(failed);
+            message += ". Failed to disable " + juce::String(failed) + " automation" + (failed == 1 ? "" : "s");
     }
     lsampler::announceToActiveScreenReader(target != nullptr ? *target : static_cast<juce::Component&>(status), message);
 }
