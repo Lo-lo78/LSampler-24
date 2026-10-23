@@ -65,7 +65,8 @@ assert 10**(min(24,max(-120,100*3))/20) == 10**(24/20)
 # Grid has no zero-initialized phantom last item; each added control is in the Loops page.
 grid=re.search(r'inline constexpr std::array<GridEntry, (\d+)> grid \{\{(.*?)\}\};',p,re.S)
 assert grid and int(grid.group(1))==len(re.findall(r'^\{',grid.group(2),re.M))
-assert int(grid.group(1))==167
+# TEST160 appends 14 accessible LFO items; all original 167 still exist.
+assert int(grid.group(1))==181
 # Record all actual host IDs in the exact order from TEST129 plus appended new fields.
 legacy_manifest=json.loads((root/'VST3_AUTOMATION_MANIFEST.json').read_text())
 legacy_ids=[d['id'] for d in legacy_manifest]
@@ -73,9 +74,13 @@ assert len(legacy_ids)==6629 and len(set(legacy_ids))==6629
 # Do not depend on external files at CI time: recover macro order from current
 # Grid and reinsert the retired legacy macro exactly before Drive.
 exclude=set('low high root velocity_low velocity_high choke_trigger choke_target choke_mode normalize_on normalize_target ram_downsample ram_fade_in ram_fade_out ram_reverse dc_remove'.split())
+# Keep the TEST110 bank-macro order frozen; TEST160 macro lanes are appended
+# later and must not retroactively change any TEST130 VST3 index.
+new_lfo_keys={f'lfo{lfo}_{name}' for lfo in (1,2) for name in
+              ('one_shot_percent','phase','env_rate','square_pwm','upper_squash','lower_squash','cross_rate')}
 macros=[]
 for key,category in re.findall(r'^\{int\(P::(\w+)\),\s*-1,\s*Action::none,\s*"([^"]+)"\}',p,re.M):
-    if category!='Sample Window' and key not in exclude and key not in macros:macros.append(key)
+    if category!='Sample Window' and key not in exclude and key not in new_lfo_keys and key not in macros:macros.append(key)
 macros.insert(macros.index('drive_type'),'loop_crossfade')
 assert len(macros)==116 and macros.index('loop_crossfade')+1==macros.index('drive_type')
 macro_ids=['bankmacro_'+key for key in macros]

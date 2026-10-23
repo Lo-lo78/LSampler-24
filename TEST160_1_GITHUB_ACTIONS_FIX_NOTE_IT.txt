@@ -1,0 +1,24 @@
+LSampler-24 TEST160.1 - correzione blocco GitHub Actions (23 ottobre 2026)
+
+Errore nel log Actions ricevuto:
+  FAIL: frozen TEST59 reference or shared dependency changed: Source/Parameters.h
+
+La fase "Verify frozen TEST59 reference" terminava prima della compilazione.
+
+Interventi:
+- Aggiornato Tools/verify-test59-reference.py al fingerprint SHA256 della
+  TEST160 per Source/Parameters.h, senza cambiare il manifest TEST59 originale.
+- Aggiunti controlli espliciti sui 143 ID e descrittori originali, confrontati
+  con gli hash ricavati dal sorgente TEST159; verificata la presenza esatta
+  dei 14 nuovi controlli LFO in coda (157 in totale).
+- Adeguati i test statici storici TEST110, TEST130 e TEST143, che contenevano
+  conteggi o frammenti DSP anteriori alle aggiunte della TEST160. L'ordine
+  originale delle automazioni VST3 resta protetto da tali verifiche.
+- Non modificato alcun file C++ audio o GUI rispetto alla TEST160 inviata.
+
+Verifiche eseguite senza compilare:
+- python Tools/verify-test59-reference.py : PASS
+- 22 verifiche statiche Tools/verify-*.py : PASS
+
+NON sono stati eseguiti CMake, MSBuild, compilazione locale o test audio.
+L'effettiva build e le prove audio vengono eseguite da GitHub Actions.

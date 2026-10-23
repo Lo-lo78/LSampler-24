@@ -45,9 +45,12 @@ for order in itertools.permutations(('write1','write2','load','exchange')):
     assert (drained & word) == 0
 print('PASS: two-producer/consumer flag interleavings retain every flag.')
 voice = (root / 'Source/SamplerVoice.cpp').read_text()
-assert 'l.phase+=phaseIncrement;' in voice
-assert 'lfoTickPrepared(v,0,s.lfo[0],lfo1Step)' in voice
-assert 'lfoTickPrepared(v,1,s.lfo[1],lfo2Step)' in voice
+# TEST160 adds partial one-shot and rate modulation while retaining the
+# prepared, sample-invariant LFO increment optimisation.
+assert 'l.phase=std::min(s.oneShotPercent,l.phase+phaseIncrement);' in voice
+assert 'l.phase=wrap(l.phase+phaseIncrement,1.0);' in voice
+assert 'lfoTickPrepared(v,0,s.lfo[0],lfo1Step,ampEnvelope,crossFor1)' in voice
+assert 'lfoTickPrepared(v,1,s.lfo[1],lfo2Step,ampEnvelope,crossFor2)' in voice
 assert 's.lfo[0].rate*(s.lfo[0].sync?bpm:1)' in voice
 assert 's.lfo[1].rate*(s.lfo[1].sync?bpm:1)' in voice
 ci = (root / 'Tests/FilterParityTests.cpp').read_text()

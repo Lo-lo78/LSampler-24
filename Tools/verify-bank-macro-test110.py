@@ -9,7 +9,14 @@ assert len(old_ids) == 6629 and len(set(old_ids)) == 6629
 text = (root / 'Source/Parameters.h').read_text()
 entries = re.findall(r'^\{int\(P::(\w+)\),\s*-1,\s*Action::none,\s*"([^"]+)"\}', text, re.M)
 excluded = set('low high root velocity_low velocity_high choke_trigger choke_target choke_mode normalize_on normalize_target ram_downsample ram_fade_in ram_fade_out ram_reverse dc_remove'.split())
-macro_keys = {p for p, cat in entries if cat != 'Sample Window' and p not in excluded}
+# Freeze the original TEST110 macro ABI: the TEST160 LFO additions have
+# separate, appended automation lanes, not positions inside this old batch.
+new_lfo_keys = {f'lfo{lfo}_{name}' for lfo in (1, 2) for name in
+                ('one_shot_percent', 'phase', 'env_rate', 'square_pwm',
+                 'upper_squash', 'lower_squash', 'cross_rate')}
+assert len(new_lfo_keys) == 14
+macro_keys = {p for p, cat in entries if cat != 'Sample Window'
+              and p not in excluded and p not in new_lfo_keys}
 # TEST130 hides the legacy Loop Crossfade in the Grid, but retains its old
 # Bank Macro automation ID at its original position before Drive.
 macro_keys.add('loop_crossfade')
