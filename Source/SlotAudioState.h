@@ -11,6 +11,7 @@ struct EnvelopeSettings {
 };
 struct LfoSettings {
     bool active = false, sync = false, trigger = false, oneShot = false;
+    bool polyphonic = true; // TEST161: preserve per-note LFO behavior by default
     int wave = 0;
     double rate = 0, delay = 0, smoothing = 1;
     // TEST160: Juno-style waveform shape, phase, partial one-shot and rate modulation.

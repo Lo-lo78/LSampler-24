@@ -31,7 +31,8 @@ double GlobalVoicePool::Envelope::tick(const EnvelopeSettings& e) noexcept {
 }
 void GlobalVoicePool::prepare(double rate) {
     allNotesOff();hostSampleRate=rate>0?rate:44100;ageCounter=noteCounter=0;
-    freePhase={};bend={};wheel={};pedal={};diagnostics={};roundRobinCounters={};
+    freePhase={};monoLfo={};bend={};wheel={};pedal={};diagnostics={};roundRobinCounters={};
+    for(int slot=0;slot<slotCount;++slot)monoLfoRandom[size_t(slot)]=0x48e102cdu^uint32_t((slot+1)*2654435761u);
     for(auto& row:lastRandomChoice)row.fill(-1);
     for(auto& groups:shuffleBags)for(auto& bag:groups)bag=ShuffleBag{};
     shuffleTurns={};
@@ -250,6 +251,7 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
     const auto& g=s.playback[size_t(sampleIndex)];
     if(!g.sample||g.length<1||g.sample->peak<1e-12)return;
     if(!preview)held[size_t(channel)][size_t(note)]={++noteCounter,velocity};
+    retriggerMonoLfos(slot,s);
     const bool mono=p[P::polyphony]==0;
     // Optional per-slot voice economy/retrigger mode.  A new Note On for the
     // same MIDI note replaces any older voice of that note in this slot, even
@@ -375,6 +377,18 @@ double GlobalVoicePool::oscillator(Voice& v,double phase,int wave,bool isLfo) no
         default:return random(v);
     }
 }
+void GlobalVoicePool::retriggerMonoLfos(int slot,const SlotAudioState& s) noexcept {
+    for(int i=0;i<2;++i) {
+        const auto& settings=s.lfo[size_t(i)];
+        if(settings.polyphonic)continue;
+        auto& state=monoLfo[size_t(slot)][size_t(i)];
+        if(settings.trigger || (settings.oneShot && settings.oneShotPercent>0)) {
+            state={};
+            state.hold=0;
+        }
+    }
+}
+
 double GlobalVoicePool::lfoTick(Voice& v,int index,const LfoSettings& s,double wheelValue,
                                 double envelopeSource,double crossSource) noexcept {
     (void)wheelValue;
@@ -383,7 +397,11 @@ double GlobalVoicePool::lfoTick(Voice& v,int index,const LfoSettings& s,double w
 double GlobalVoicePool::lfoTickPrepared(Voice& v,int index,const LfoSettings& s,double phaseIncrement,
                                         double envelopeSource,double crossSource) noexcept {
     ++diagnostics.lfo;
-    auto& l=v.lfo[size_t(index)];++l.age;
+    return lfoTickState(v.lfo[size_t(index)],v.randomState,s,phaseIncrement,envelopeSource,crossSource);
+}
+double GlobalVoicePool::lfoTickState(Lfo& l,uint32_t& randomState,const LfoSettings& s,double phaseIncrement,
+                                    double envelopeSource,double crossSource) noexcept {
+    ++l.age;
     // In LJuno Env Rate is an envelope-to-LFO-frequency modulation, not an
     // LFO destination. LSampler uses its per-voice amplifier ADSR as source.
     // Cross Rate uses the *previous* sample's raw opposite LFO core so that
@@ -400,11 +418,15 @@ double GlobalVoicePool::lfoTickPrepared(Voice& v,int index,const LfoSettings& s,
     // matches the pre-TEST160 behaviour (one random value per LFO cycle).
     if(s.wave==5 && (!oneShot || l.phase<s.oneShotPercent)) {
         if(std::floor(previous+s.phaseOffset)!=std::floor(previous+phaseIncrement+s.phaseOffset))
-            l.hold=random(v);
+            l.hold=([&]() noexcept { uint32_t x=randomState; x^=x<<13; x^=x>>17; x^=x<<5; randomState=x; return double(x)*(2.0/4294967296.0)-1; }());
     }
     const double raw=s.wave==5?l.hold
         :s.wave==4?(effectivePhase<s.squarePwm?1.0:-1.0)
-        :oscillator(v,effectivePhase,s.wave,true);
+        :(s.wave==0?std::sin(2*pi*effectivePhase)
+        :s.wave==1?4*std::abs(effectivePhase-.5)-1
+        :s.wave==2?2*effectivePhase-1
+        :s.wave==3?1-2*effectivePhase
+        :effectivePhase<.5?1.0:-1.0);
     double shaped=raw;
     // The original delay and smoothing are retained (including their exact
     // neutral-setting behaviour). Squash is AFTER smoothing, as in LJuno.
@@ -835,14 +857,23 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         }
         double l1=0,l2=0;
         if constexpr(!Simple) {
-            const double crossFor1=v.lfo[1].output, crossFor2=v.lfo[0].output;
+            const auto slot=static_cast<size_t>(v.slotIndex);
+            // Shared LFO cores must come from *this frame*, not the final
+            // state after the whole block was prerendered for other voices.
+            const double crossFor1=s.lfo[1].polyphonic?v.lfo[1].output
+                :monoLfoCoreSamples[slot][1][size_t(frame-start)];
+            const double crossFor2=s.lfo[0].polyphonic?v.lfo[0].output
+                :monoLfoCoreSamples[slot][0][size_t(frame-start)];
             const double ampEnvelope=v.amp.value;
-            if constexpr(Optimised) {
-                if(lfo1Running)l1=lfoTickPrepared(v,0,s.lfo[0],lfo1Step,ampEnvelope,crossFor1);
-                if(lfo2Running)l2=lfoTickPrepared(v,1,s.lfo[1],lfo2Step,ampEnvelope,crossFor2);
-            } else {
-                if(lfo1Running)l1=lfoTick(v,0,s.lfo[0],wheelValue,ampEnvelope,crossFor1);
-                if(lfo2Running)l2=lfoTick(v,1,s.lfo[1],wheelValue,ampEnvelope,crossFor2);
+            if(lfo1Running) {
+                if(!s.lfo[0].polyphonic)l1=monoLfoSamples[slot][0][size_t(frame-start)];
+                else if constexpr(Optimised)l1=lfoTickPrepared(v,0,s.lfo[0],lfo1Step,ampEnvelope,crossFor1);
+                else l1=lfoTick(v,0,s.lfo[0],wheelValue,ampEnvelope,crossFor1);
+            }
+            if(lfo2Running) {
+                if(!s.lfo[1].polyphonic)l2=monoLfoSamples[slot][1][size_t(frame-start)];
+                else if constexpr(Optimised)l2=lfoTickPrepared(v,1,s.lfo[1],lfo2Step,ampEnvelope,crossFor2);
+                else l2=lfoTick(v,1,s.lfo[1],wheelValue,ampEnvelope,crossFor2);
             }
         }
         const LoopAudioState* loop=(BasicRead||!v.slice.active||usesAutoSliceLoops(v))
@@ -1144,6 +1175,52 @@ void GlobalVoicePool::renderReferenceForTesting(juce::AudioBuffer<float>& output
 template<bool Optimised>
 void GlobalVoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,int count) {
     if(!states||count<=0||activeVoiceCount()==0)return;
+    if(count>monoLfoChunk) {
+        // No allocation in the audio callback, including oversized host blocks.
+        for(int n=0;n<count;n+=monoLfoChunk)
+            renderInternal<Optimised>(output,start+n,std::min(monoLfoChunk,count-n));
+        return;
+    }
+    for(int slot=0;slot<slotCount;++slot)if(activePerSlot[size_t(slot)]>0) {
+        const auto& ss=(*states)[size_t(slot)];
+        if(ss.lfo[0].polyphonic && ss.lfo[1].polyphonic)continue;
+        // A common oscillator per slot remains locked for all its voices.
+        // For Env Rate use the highest active amp envelope as the shared source.
+        double sharedEnvelope=0;
+        bool wheelActive=false;
+        for(const auto& v:voices)if(v.active&&v.slotIndex==slot) {
+            sharedEnvelope=std::max(sharedEnvelope,v.amp.value);
+            if(wheel[size_t(v.channel)]!=0)wheelActive=true;
+        }
+        const bool audible[2] {
+            ss.lfo[0].active || (wheelActive&&ss.lfo[0].wheel!=0),
+            ss.lfo[1].active || (wheelActive&&ss.lfo[1].wheel!=0)
+        };
+        const bool running[2] {
+            audible[0] || (audible[1]&&ss.lfo[1].crossRate!=0),
+            audible[1] || (audible[0]&&ss.lfo[0].crossRate!=0)
+        };
+        const double inc[2] {
+            ss.lfo[0].rate*(ss.lfo[0].sync?bpm:1),
+            ss.lfo[1].rate*(ss.lfo[1].sync?bpm:1)
+        };
+        for(int frame=0;frame<count;++frame) {
+            // Read previous cores before ticking either LFO, symmetric cross feedback.
+            const double cross0=monoLfo[size_t(slot)][1].output;
+            const double cross1=monoLfo[size_t(slot)][0].output;
+            monoLfoCoreSamples[size_t(slot)][0][size_t(frame)]=cross1;
+            monoLfoCoreSamples[size_t(slot)][1][size_t(frame)]=cross0;
+            for(int i=0;i<2;++i) {
+                double value=0;
+                if(running[i]) {
+                    ++diagnostics.lfo;
+                    value=lfoTickState(monoLfo[size_t(slot)][size_t(i)],
+                        monoLfoRandom[size_t(slot)],ss.lfo[size_t(i)],inc[i],sharedEnvelope,i?cross1:cross0);
+                }
+                monoLfoSamples[size_t(slot)][size_t(i)][size_t(frame)]=value;
+            }
+        }
+    }
     std::array<std::array<int8_t,SlotAudioState::sampleSetSize>,slotCount> filterEligibility {};
     for(auto& v:voices) {
         if(!v.active)continue;

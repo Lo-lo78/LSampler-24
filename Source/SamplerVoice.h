@@ -80,6 +80,8 @@ private:
     double oscillator(Voice&,double phase,int wave,bool lfo=false) noexcept;
     double lfoTick(Voice&,int index,const lsampler::LfoSettings&,double wheel,
                    double envelopeSource,double crossSource) noexcept;
+    double lfoTickState(Lfo&,uint32_t& randomState,const lsampler::LfoSettings&,double phaseIncrement,
+                        double envelopeSource,double crossSource) noexcept;
     double lfoTickPrepared(Voice&,int index,const lsampler::LfoSettings&,double phaseIncrement,
                            double envelopeSource,double crossSource) noexcept;
     double read(const Voice&,const lsampler::SlotAudioState&,double position,int channel) const noexcept;
@@ -101,6 +103,14 @@ private:
     std::array<bool,16> pedal {};
     std::array<double,16> bend {},wheel {};
     std::array<std::array<double,2>,slotCount> freePhase {};
+    // TEST161: independent common LFOs for each of the 24 slots. Scratch is
+    // fixed-capacity; rendering splits unusually large blocks, never allocates.
+    static constexpr int monoLfoChunk = 512;
+    std::array<std::array<Lfo,2>,slotCount> monoLfo {};
+    std::array<uint32_t,slotCount> monoLfoRandom {};
+    std::array<std::array<std::array<double,monoLfoChunk>,2>,slotCount> monoLfoSamples {};
+    std::array<std::array<std::array<double,monoLfoChunk>,2>,slotCount> monoLfoCoreSamples {};
+    void retriggerMonoLfos(int slot,const lsampler::SlotAudioState&) noexcept;
     std::array<int,slotCount> activePerSlot {};
     std::array<std::array<uint32_t, lsampler::SlotAudioState::sampleSetSize>, slotCount> roundRobinCounters {};
     std::array<std::array<int, lsampler::SlotAudioState::sampleSetSize>, slotCount> lastRandomChoice {};

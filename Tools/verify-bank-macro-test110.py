@@ -13,8 +13,8 @@ excluded = set('low high root velocity_low velocity_high choke_trigger choke_tar
 # separate, appended automation lanes, not positions inside this old batch.
 new_lfo_keys = {f'lfo{lfo}_{name}' for lfo in (1, 2) for name in
                 ('one_shot_percent', 'phase', 'env_rate', 'square_pwm',
-                 'upper_squash', 'lower_squash', 'cross_rate')}
-assert len(new_lfo_keys) == 14
+                 'upper_squash', 'lower_squash', 'cross_rate', 'voice_mode')}
+assert len(new_lfo_keys) == 16
 macro_keys = {p for p, cat in entries if cat != 'Sample Window'
               and p not in excluded and p not in new_lfo_keys}
 # TEST130 hides the legacy Loop Crossfade in the Grid, but retains its old

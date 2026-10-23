@@ -1,0 +1,12 @@
+LSampler-24 — TEST161: LFO Mono / Poly indipendenti
+
+I due selettori "LFO 1 Voice Mode" e "LFO 2 Voice Mode" si trovano nelle rispettive pagine LFO accessibili.
+
+Mono: per ciascuno slot del campionatore esiste un singolo LFO condiviso da tutte le note di quello slot. Su Trigger una nuova nota riavvia il LFO comune e influenza tutte le note ancora attive nello stesso slot. La modulazione resta indipendente dagli altri 23 slot.
+Poly (default): comportamento originale del campionatore, ogni voce con il proprio LFO e la propria fase. Una nuova nota non riavvia gli LFO polifonici delle note gia' in riproduzione.
+
+I due LFO possono avere impostazioni differenti, ad esempio LFO 1 Mono e LFO 2 Poly. Free/Trigger e One Shot restano opzioni indipendenti dalla modalita' Mono/Poly. La Cross Rate funziona anche fra modalita' miste; quando un LFO comune riceve modulazione da un LFO polifonico, impiega il proprio oscillatore comune di riferimento invece di scegliere arbitrariamente una voce.
+
+Compatibilita': le prime 157 definizioni di parametri TEST160.1 non sono state sostituite. I due nuovi parametri sono aggiunti in coda, valori predefiniti Poly. Per preservare gli indici VST3 esistenti, tutte le automazioni slot e bank macro TEST160 vengono registrate prima dei nuovi selettori TEST161. I verificatori statici storici sono aggiornati per il nuovo numero di parametri; la firma di integrita' della TEST59 e' aggiornata senza modificare il renderer congelato.
+
+Test eseguiti: confronto descrittori, generatori e verifiche statiche di integrita' TEST59, TEST130 e Bank Macro. Una verifica storica lunga non e' stata completata. NON e' stata eseguita compilazione locale. Compilare tramite GitHub Actions e provare il DSP in REAPER.

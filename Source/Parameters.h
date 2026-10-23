@@ -168,12 +168,15 @@ enum class P {
     lfo2_upper_squash,
     lfo2_lower_squash,
     lfo2_cross_rate,
+    // TEST161: append only; VST3 automation IDs for all prior controls are stable.
+    lfo1_voice_mode,
+    lfo2_voice_mode,
     count
 };
 // Append the new indices only. The first nine VST3 IDs/indices are frozen.
 enum class L { start, end, repeats, fade_in, fade_out, pitch_down, lp_down, hp_down, one_shot,
                repeat_pan, pitch_time, level, crossfade, downsample, pan, repeat_level, direction, count };
-inline constexpr int legacyParameterCount = 143, parameterCount = 157, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
+inline constexpr int legacyParameterCount = 143, parameterCount = 159, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
 static_assert(int(L::repeat_pan)==legacyLoopParameterCount && int(L::pitch_time)==10 && int(L::level)==11
               && int(L::crossfade)==12 && int(L::downsample)==13 && int(L::pan)==14
               && int(L::repeat_level)==15 && int(L::direction)==16 && int(L::count)==loopParameterCount);
@@ -338,7 +341,9 @@ inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"lfo2_square_pwm", "LFO 2 Square PWM", "LFO 2", Kind::continuous, 0.5, 0.05, 0.95, 0.001, 0.05, "", 3, ""},
 {"lfo2_upper_squash", "LFO 2 Upper Squash", "LFO 2", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
 {"lfo2_lower_squash", "LFO 2 Lower Squash", "LFO 2", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
-{"lfo2_cross_rate", "LFO 2 Cross Rate", "LFO 2", Kind::continuous, 0, -40, 40, 0.01, 0.1, "", 2, ""}
+{"lfo2_cross_rate", "LFO 2 Cross Rate", "LFO 2", Kind::continuous, 0, -40, 40, 0.01, 0.1, "", 2, ""},
+{"lfo1_voice_mode", "LFO 1 Voice Mode", "LFO 1", Kind::enumeration, 1, 0, 1, 1, 1, "", 0, "Mono|Poly"},
+{"lfo2_voice_mode", "LFO 2 Voice Mode", "LFO 2", Kind::enumeration, 1, 0, 1, 1, 1, "", 0, "Mono|Poly"}
 }};
 enum class GlobalP { master_output_gain, output_stage, bus_glue, bus_soft_drive, output_ceiling, count };
 inline constexpr int globalParameterCount = 5;
@@ -372,7 +377,7 @@ inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 }};
 enum class Action { none, sampleZero, loopZero };
 struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; int global = -1; };
-inline constexpr std::array<GridEntry, 181> grid {{
+inline constexpr std::array<GridEntry, 183> grid {{
 {int(P::input_gain), -1, Action::none, "Slot"},
 {int(P::polyphony), -1, Action::none, "Slot"},
 {int(P::slot_polyphony), -1, Action::none, "Slot"},
@@ -457,6 +462,7 @@ inline constexpr std::array<GridEntry, 181> grid {{
 {int(P::hp_vel_amount), -1, Action::none, "High pass filter"},
 {int(P::lfo1_rate), -1, Action::none, "LFO 1"},
 {int(P::lfo1_mode), -1, Action::none, "LFO 1"},
+{int(P::lfo1_voice_mode), -1, Action::none, "LFO 1"},
 {int(P::lfo1_bpm_sync), -1, Action::none, "LFO 1"},
 {int(P::lfo1_one_shot), -1, Action::none, "LFO 1"},
 {int(P::lfo1_wave), -1, Action::none, "LFO 1"},
@@ -477,6 +483,7 @@ inline constexpr std::array<GridEntry, 181> grid {{
 {int(P::lfo1_sample_depth), -1, Action::none, "LFO 1"},
 {int(P::lfo2_rate), -1, Action::none, "LFO 2"},
 {int(P::lfo2_mode), -1, Action::none, "LFO 2"},
+{int(P::lfo2_voice_mode), -1, Action::none, "LFO 2"},
 {int(P::lfo2_bpm_sync), -1, Action::none, "LFO 2"},
 {int(P::lfo2_one_shot), -1, Action::none, "LFO 2"},
 {int(P::lfo2_wave), -1, Action::none, "LFO 2"},

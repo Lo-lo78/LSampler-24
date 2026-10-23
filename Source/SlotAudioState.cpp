@@ -189,6 +189,7 @@ SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sampl
         l.upperSquash=v(i?P::lfo2_upper_squash:P::lfo1_upper_squash);
         l.lowerSquash=v(i?P::lfo2_lower_squash:P::lfo1_lower_squash);
         l.crossRate=v(i?P::lfo2_cross_rate:P::lfo1_cross_rate);
+        l.polyphonic=v(i?P::lfo2_voice_mode:P::lfo1_voice_mode)!=0;
         l.active=l.volume!=0||l.pan!=0||l.lp!=0||l.hp!=0||l.pitch!=0||l.move!=0;
     }
     s.drive=v(P::drive_type)>0&&v(P::drive_amount)>0;

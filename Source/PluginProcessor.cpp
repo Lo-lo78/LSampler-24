@@ -3620,18 +3620,37 @@ void LSampler24AudioProcessor::createHostParameters()
                 "slot" + juce::String(slot + 1).paddedLeft('0', 2) + "_" + suffixes[send],
                 "Slot " + juce::String(slot + 1) + " - " + labels[send],
                 sendDescriptor, slotFXSendRevisions[size_t(slot)]);
-    // TEST160: append all 24 x 14 new slot LFO controls and new Bank Macro
-    // lanes AFTER TEST149 sends; no old REAPER automation indices move.
+    // TEST160: the 24 x 14 extended LFO parameters and 14 Macro IDs are a
+    // frozen VST3 batch. Their positions must never shift in REAPER projects.
+    constexpr int test160Last = int(P::lfo2_cross_rate) + 1;
     for (int slot=0;slot<slotCount;++slot) {
         auto& h=hostSlots[size_t(slot)];auto& revision=hostGenerations[size_t(slot)];
         const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
         const juce::String name="Slot "+juce::String(slot+1)+" - ";
-        for(int i=legacyParameterCount;i<parameterCount;++i) {
+        for(int i=legacyParameterCount;i<test160Last;++i) {
             const auto& d=parameters[size_t(i)];
             h.values[size_t(i)]=add(id+d.key,name+juce::String(d.name),d,revision);
         }
     }
-    for(int i=legacyParameterCount;i<parameterCount;++i) {
+    for(int i=legacyParameterCount;i<test160Last;++i) {
+        const auto& d=parameters[size_t(i)];
+        hostBankMacros[size_t(i)] = add("bankmacro_"+juce::String(d.key),
+            "Bank Macro - "+juce::String(d.name),
+            bankMacroDeltaDescriptor(i),bankMacroHostGeneration);
+    }
+    // TEST161: only after ALL TEST160 IDs have been registered can Mono/Poly
+    // controls be appended. VST3 automation for 143 legacy + 14 LFO controls
+    // remains byte-for-byte addressable by the previous index.
+    for(int slot=0;slot<slotCount;++slot) {
+        auto& h=hostSlots[size_t(slot)];auto& revision=hostGenerations[size_t(slot)];
+        const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
+        const juce::String name="Slot "+juce::String(slot+1)+" - ";
+        for(int i=test160Last;i<parameterCount;++i) {
+            const auto& d=parameters[size_t(i)];
+            h.values[size_t(i)]=add(id+d.key,name+juce::String(d.name),d,revision);
+        }
+    }
+    for(int i=test160Last;i<parameterCount;++i) {
         const auto& d=parameters[size_t(i)];
         hostBankMacros[size_t(i)] = add("bankmacro_"+juce::String(d.key),
             "Bank Macro - "+juce::String(d.name),
