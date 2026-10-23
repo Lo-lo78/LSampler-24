@@ -78,8 +78,10 @@ private:
     void retarget(Voice&,int note,double velocity,const lsampler::SlotAudioState&,bool retrigger);
     double random(Voice&) noexcept;
     double oscillator(Voice&,double phase,int wave,bool lfo=false) noexcept;
-    double lfoTick(Voice&,int index,const lsampler::LfoSettings&,double wheel) noexcept;
-    double lfoTickPrepared(Voice&,int index,const lsampler::LfoSettings&,double phaseIncrement) noexcept;
+    double lfoTick(Voice&,int index,const lsampler::LfoSettings&,double wheel,
+                   double envelopeSource,double crossSource) noexcept;
+    double lfoTickPrepared(Voice&,int index,const lsampler::LfoSettings&,double phaseIncrement,
+                           double envelopeSource,double crossSource) noexcept;
     double read(const Voice&,const lsampler::SlotAudioState&,double position,int channel) const noexcept;
     void processEffects(Voice&,const lsampler::SlotAudioState&,double& left,double& right);
     void applyMachine(Voice&,const lsampler::SlotAudioState&,double& left,double& right) noexcept;

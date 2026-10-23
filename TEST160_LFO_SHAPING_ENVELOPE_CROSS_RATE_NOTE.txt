@@ -1,0 +1,57 @@
+LSampler-24 / TEST160 - Complete LFO shaping and rate modulation
+================================================================
+Source base: TEST159 supplied by the user.
+Reference: LJuno-116 0.99.54 TEST92 supplied by the user.
+
+Seven additional controls are available independently in each of the two LFO pages:
+
+* LFO N One Shot Percent (0-100%, default 100). With One Shot enabled,
+  controls the fraction of the LFO cycle before it freezes. At 0 the LFO
+  repeats, just as in LJuno's one-shot zero-percent convention.
+* LFO N Phase (0-1, default 0). Phase offset of the waveform, independent of
+  the sample read head.
+* LFO N Env Rate (-10 to +10, default 0). The amplitude ADSR of the
+  respective sampler voice changes the LFO's FREQUENCY exponentially
+  (not its audio output or the ADSR times). The reference LJuno uses its
+  pitch envelope; this is adapted to LSampler's per-voice AMP ADSR.
+* LFO N Square PWM (.05-.95, default .5). Square duty cycle of the LFO.
+* LFO N Upper Squash (0-1, default 0). Attenuates positive LFO excursions
+  AFTER smoothing, without scaling negative excursions.
+* LFO N Lower Squash (0-1, default 0). Attenuates negative LFO excursions
+  AFTER smoothing, without scaling positive excursions.
+* LFO N Cross Rate (-40 to +40, default 0). The opposite LFO modulates
+  this LFO's FREQUENCY; each LFO can cross-modulate the other.
+
+All new parameters are functional in the DSP and exposed through the
+accessible grid, 24 slot VST3 automation groups, persistent slot/bank presets,
+project state and Bank Macros. Newly enabled LFO settings with zero audio
+modulation destination do not wake unnecessary DSP; a cross-modulation source
+runs when the opposite audible LFO needs it. The rate exponent and per-sample
+phase increment are bounded to prevent extreme/unstable parameter combinations.
+
+Compatibility notes:
+* Original parameter indices 0..142, keys, ranges and defaults are retained.
+* All 14 new catalog indices are 143..156.
+* Existing 24-slot parameter registration, Bank Macro, Loop FX and FX Send
+  registration orders are preserved. New 24 x 14 VST3 parameters and their
+  14 Bank Macro parameters are registered at the END, preserving previous
+  automation indices and IDs for existing REAPER projects.
+* Neutral defaults retain the prior output of all six LFO waveforms and
+  the original one-shot behaviour at 100%.
+* No unrelated sampler engines, GUI navigation, sample slicing or loops changed.
+
+Quality assurance:
+* Included added waveform/shape/phase/one-shot/ADSR/cross-rate assertions
+  in Tests/SamplerTests.cpp.
+* Only source-level consistency checks performed; no local build or tests
+  were executed. Compile and test via GitHub Actions on Windows.
+
+Suggested audition:
+1. Slot with an ordinary long waveform; LFO1 Wave Square, Volume Depth .8,
+   Frequency 4 Hz. Set Square PWM .1, then try Upper/Lower Squash.
+2. Switch to sine. Change Phase and One Shot Percent (with One Shot On).
+3. Set AMP ADSR Attack to 2 s; change LFO1 Env Rate to +3 or -3. The LFO
+   speeds up/slows down during attack without changing the sample's pitch
+   unless a pitch-depth destination is used.
+4. LFO1 Volume Depth .8, LFO2 Wave Sine, LFO1 Cross Rate +5, with LFO2
+   audio depths all zero. LFO2 should still alter LFO1's rate.

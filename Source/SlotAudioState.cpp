@@ -180,6 +180,15 @@ SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sampl
         l.delay=f(5)*sr;l.smoothing=1-std::min(.999,f(6));
         l.volume=f(7);l.pan=f(8);l.lp=s.lp?f(9):0;l.hp=s.hp?f(10):0;l.pitch=f(11);
         l.wheel=i?v(P::lfo2_mod_pitch_depth):0;l.move=i?v(P::lfo2_sample_depth):v(P::lfo1_sample_depth);
+        // Address the appended IDs explicitly: legacy LFO groups remain contiguous
+        // and all 143 original parameter positions must stay unchanged.
+        l.oneShotPercent=.01*v(i?P::lfo2_one_shot_percent:P::lfo1_one_shot_percent);
+        l.phaseOffset=v(i?P::lfo2_phase:P::lfo1_phase);
+        l.envRate=v(i?P::lfo2_env_rate:P::lfo1_env_rate);
+        l.squarePwm=v(i?P::lfo2_square_pwm:P::lfo1_square_pwm);
+        l.upperSquash=v(i?P::lfo2_upper_squash:P::lfo1_upper_squash);
+        l.lowerSquash=v(i?P::lfo2_lower_squash:P::lfo1_lower_squash);
+        l.crossRate=v(i?P::lfo2_cross_rate:P::lfo1_cross_rate);
         l.active=l.volume!=0||l.pan!=0||l.lp!=0||l.hp!=0||l.pitch!=0||l.move!=0;
     }
     s.drive=v(P::drive_type)>0&&v(P::drive_amount)>0;

@@ -232,7 +232,7 @@ void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudio
             const double localFrame = clamp(absoluteFrame - g.start, 0.0, double(g.length - 1));
             v.position=clamp(std::round(localFrame)+skip,0,double(g.length-1));
         }
-        for(int i=0;i<2;++i)if(s.lfo[size_t(i)].trigger||s.lfo[size_t(i)].oneShot)v.lfo[size_t(i)]={};
+        for(int i=0;i<2;++i)if(s.lfo[size_t(i)].trigger||(s.lfo[size_t(i)].oneShot&&s.lfo[size_t(i)].oneShotPercent>0))v.lfo[size_t(i)]={};
     }
     if(retrigger)v.slice.start(s.slice,-1,v.randomState);
     if(s.params[P::portamento]==0)v.effectiveNote=note;
@@ -307,7 +307,7 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
     v.position=clamp(std::round(localFrame)+skip,0,double(g.length-1));
     for(int i=0;i<2;++i) {
         const auto& l=s.lfo[size_t(i)];
-        if(!l.trigger&&!l.oneShot)v.lfo[size_t(i)].phase=freePhase[size_t(slot)][size_t(i)];
+        if(!l.trigger&&!(l.oneShot&&l.oneShotPercent>0))v.lfo[size_t(i)].phase=freePhase[size_t(slot)][size_t(i)];
         v.lfo[size_t(i)].hold=random(v);
     }
     updateVoice(v,s);
@@ -375,21 +375,42 @@ double GlobalVoicePool::oscillator(Voice& v,double phase,int wave,bool isLfo) no
         default:return random(v);
     }
 }
-double GlobalVoicePool::lfoTick(Voice& v,int index,const LfoSettings& s,double wheelValue) noexcept {
-    if(!s.active && (s.wheel==0||wheelValue==0))return 0;
-    return lfoTickPrepared(v,index,s,s.rate*(s.sync?bpm:1));
+double GlobalVoicePool::lfoTick(Voice& v,int index,const LfoSettings& s,double wheelValue,
+                                double envelopeSource,double crossSource) noexcept {
+    (void)wheelValue;
+    return lfoTickPrepared(v,index,s,s.rate*(s.sync?bpm:1),envelopeSource,crossSource);
 }
-double GlobalVoicePool::lfoTickPrepared(Voice& v,int index,const LfoSettings& s,double phaseIncrement) noexcept {
+double GlobalVoicePool::lfoTickPrepared(Voice& v,int index,const LfoSettings& s,double phaseIncrement,
+                                        double envelopeSource,double crossSource) noexcept {
     ++diagnostics.lfo;
     auto& l=v.lfo[size_t(index)];++l.age;
-    l.phase+=phaseIncrement;
-    if(s.oneShot)l.phase=std::min(1.0,l.phase);
-    else if(l.phase>=1){l.phase=wrap(l.phase,1);if(s.wave==5)l.hold=random(v);}
-    double raw=s.wave==5?l.hold:oscillator(v,l.phase,s.wave,true);
-    // Legacy Delay is a fade-in, not a postponed oscillator start.
-    if(s.delay>0 && double(l.age)<s.delay)raw*=double(l.age)/s.delay;
-    l.output+=(raw-l.output)*s.smoothing;
-    return l.output;
+    // In LJuno Env Rate is an envelope-to-LFO-frequency modulation, not an
+    // LFO destination. LSampler uses its per-voice amplifier ADSR as source.
+    // Cross Rate uses the *previous* sample's raw opposite LFO core so that
+    // feedback is symmetrical, deterministic and independent of evaluation order.
+    if(s.envRate!=0 || s.crossRate!=0)
+        phaseIncrement*=std::exp2(clamp(envelopeSource*s.envRate+crossSource*s.crossRate,-16.0,16.0));
+    phaseIncrement=clamp(phaseIncrement,0.0,.5); // bounded under extreme rate modulation
+    const double previous=l.phase;
+    const bool oneShot=s.oneShot && s.oneShotPercent>0;
+    if(oneShot)l.phase=std::min(s.oneShotPercent,l.phase+phaseIncrement);
+    else l.phase=wrap(l.phase+phaseIncrement,1.0);
+    const double effectivePhase=wrap(l.phase+s.phaseOffset,1.0);
+    // Sample and Hold renews at the shifted phase boundary; at phase 0 this
+    // matches the pre-TEST160 behaviour (one random value per LFO cycle).
+    if(s.wave==5 && (!oneShot || l.phase<s.oneShotPercent)) {
+        if(std::floor(previous+s.phaseOffset)!=std::floor(previous+phaseIncrement+s.phaseOffset))
+            l.hold=random(v);
+    }
+    const double raw=s.wave==5?l.hold
+        :s.wave==4?(effectivePhase<s.squarePwm?1.0:-1.0)
+        :oscillator(v,effectivePhase,s.wave,true);
+    double shaped=raw;
+    // The original delay and smoothing are retained (including their exact
+    // neutral-setting behaviour). Squash is AFTER smoothing, as in LJuno.
+    if(s.delay>0 && double(l.age)<s.delay)shaped*=double(l.age)/s.delay;
+    l.output+=(shaped-l.output)*s.smoothing;
+    return l.output*(l.output>=0?1-s.upperSquash:1-s.lowerSquash);
 }
 double GlobalVoicePool::read(const Voice& v,const SlotAudioState& s,double pos,int channel) const noexcept {
     const auto& g=s.playback[size_t(v.sampleIndex)];
@@ -730,8 +751,12 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
     // MIDI/tempo/state cannot change within this render span. Keep the same
     // multiplication and per-sample oscillator/envelope evaluation; only hoist
     // invariant eligibility and phase-step calculations out of the sample loop.
-    const bool lfo1Running=!Simple && (s.lfo[0].active || (s.lfo[0].wheel!=0 && wheelValue!=0));
-    const bool lfo2Running=!Simple && (s.lfo[1].active || (s.lfo[1].wheel!=0 && wheelValue!=0));
+    const bool lfo1Audible=s.lfo[0].active || (s.lfo[0].wheel!=0 && wheelValue!=0);
+    const bool lfo2Audible=s.lfo[1].active || (s.lfo[1].wheel!=0 && wheelValue!=0);
+    // Even an LFO without an audio destination must run if the other LFO
+    // uses it as a frequency modulation source.
+    const bool lfo1Running=!Simple && (lfo1Audible || (lfo2Audible && s.lfo[1].crossRate!=0));
+    const bool lfo2Running=!Simple && (lfo2Audible || (lfo1Audible && s.lfo[0].crossRate!=0));
     const double lfo1Step=lfo1Running?s.lfo[0].rate*(s.lfo[0].sync?bpm:1):0;
     const double lfo2Step=lfo2Running?s.lfo[1].rate*(s.lfo[1].sync?bpm:1):0;
     const double velocitySmoothing=std::min(1.0,1/(.002*hostSampleRate));
@@ -810,12 +835,14 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         }
         double l1=0,l2=0;
         if constexpr(!Simple) {
+            const double crossFor1=v.lfo[1].output, crossFor2=v.lfo[0].output;
+            const double ampEnvelope=v.amp.value;
             if constexpr(Optimised) {
-                if(lfo1Running)l1=lfoTickPrepared(v,0,s.lfo[0],lfo1Step);
-                if(lfo2Running)l2=lfoTickPrepared(v,1,s.lfo[1],lfo2Step);
+                if(lfo1Running)l1=lfoTickPrepared(v,0,s.lfo[0],lfo1Step,ampEnvelope,crossFor1);
+                if(lfo2Running)l2=lfoTickPrepared(v,1,s.lfo[1],lfo2Step,ampEnvelope,crossFor2);
             } else {
-                l1=lfoTick(v,0,s.lfo[0],wheelValue);
-                l2=lfoTick(v,1,s.lfo[1],wheelValue);
+                if(lfo1Running)l1=lfoTick(v,0,s.lfo[0],wheelValue,ampEnvelope,crossFor1);
+                if(lfo2Running)l2=lfoTick(v,1,s.lfo[1],wheelValue,ampEnvelope,crossFor2);
             }
         }
         const LoopAudioState* loop=(BasicRead||!v.slice.active||usesAutoSliceLoops(v))
@@ -1182,7 +1209,9 @@ void GlobalVoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,
             const auto& l=s.lfo[size_t(i)];
             bool wheelActive=false;
             if(l.wheel!=0)for(const auto& v:voices)if(v.active&&v.slotIndex==slot&&wheel[size_t(v.channel)]!=0){wheelActive=true;break;}
-            if(!l.trigger&&!l.oneShot&&(l.active||wheelActive))
+            const auto& other=s.lfo[size_t(1-i)];
+            if(!l.trigger&&!(l.oneShot&&l.oneShotPercent>0)
+                && (l.active||wheelActive||(other.crossRate!=0&&other.active)))
                 freePhase[size_t(slot)][size_t(i)]=wrap(freePhase[size_t(slot)][size_t(i)]+count*l.rate*(l.sync?bpm:1),1);
         }
     }

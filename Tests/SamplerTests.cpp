@@ -44,7 +44,7 @@ struct Rig {
 };
 void catalogTests() {
     SlotParameters p;require(p[P::root]==60&&p[P::low]==0&&p[P::high]==127,"Approved mapping defaults");
-    require(parameterCount==142&&loopCount==10,"Catalog size and loop count");
+    require(legacyParameterCount==143&&parameterCount==157&&loopCount==10,"Stable legacy parameter IDs and extended LFO catalog");
     for(int i=0;i<parameterCount;++i) {
         const auto& d=parameters[size_t(i)];require(d.initial>=d.minimum&&d.initial<=d.maximum,"Catalog default in range");
         for(int j=0;j<i;++j)require(std::strcmp(d.key,parameters[size_t(j)].key)!=0,"Unique persistent keys");
@@ -53,6 +53,50 @@ void catalogTests() {
     require(parameters[size_t(P::comp_release)].maximum==10000,"Lua compressor release range");
     require(parameters[size_t(P::gate_hold)].maximum==10000,"Lua gate hold range");
     std::cout<<"PASS catalog and precedence\n";
+}
+// TEST160: exercise the real per-sample DSP with the new LFO waveform controls.
+// The default shape is already covered by the earlier BPM/legacy parity tests.
+void extendedLfoTests() {
+    Rig r;
+    SlotParameters p;
+    p[P::lfo1_mode]=1;
+    p[P::lfo1_wave]=4;
+    p[P::lfo1_rate]=4;
+    p[P::lfo1_square_pwm]=.1;
+    p[P::lfo1_upper_squash]=.5;
+    p[P::lfo1_lower_squash]=.25;
+    p[P::lfo1_volume_depth]=.8;
+    r.set(0,p);r.on();r.render(512);
+    // Square is high for the first 10% of a cycle. Upper attenuation applies.
+    const double source10=r.sample.audio.getSample(0,10);
+    require(near(r.output.getSample(0,10),source10*1.4,2e-5),
+            "LFO Square PWM and Upper Squash affect audio");
+    r.render(2048); // 512+1500 samples: past the 10% high-pulse boundary
+    const int pos=1500;
+    const double sourceAt=r.sample.audio.getSample(0,512+pos);
+    require(near(r.output.getSample(0,pos),sourceAt*.4,2e-5),
+            "LFO Square PWM and Lower Squash affect audio");
+    r.pool.allNotesOff();p[P::lfo1_square_pwm]=.5;p[P::lfo1_upper_squash]=0;
+    p[P::lfo1_lower_squash]=0;p[P::lfo1_phase]=.75;
+    r.set(0,p);r.on();r.render(128);
+    require(near(r.output.getSample(0,64),r.sample.audio.getSample(0,64)*.2,2e-5),
+            "LFO Phase shifts waveform without moving sample playback");
+    r.pool.allNotesOff();p[P::lfo1_phase]=0;p[P::lfo1_one_shot]=1;
+    p[P::lfo1_one_shot_percent]=25;p[P::lfo1_square_pwm]=.5;
+    r.set(0,p);r.on();r.render(8192);
+    require(near(r.output.getSample(0,7000),r.sample.audio.getSample(0,7000)*1.8,2e-5),
+            "Partial One Shot stops at the specified percentage of an LFO cycle");
+    // Env Rate follows the slot ADSR; Cross Rate can read the other LFO even
+    // if the latter has no direct audio modulation destination.
+    p[P::lfo1_env_rate]=5;p[P::lfo1_cross_rate]=10;
+    const auto prepared=prepareSlotAudioState(p,&r.sample,48000,123);
+    require(prepared.lfo[0].envRate==5&&prepared.lfo[0].crossRate==10,
+            "Envelope and cross-modulation reach audio snapshot");
+    p[P::lfo2_env_rate]=-2;p[P::lfo2_cross_rate]=-4;
+    const auto prepared2=prepareSlotAudioState(p,&r.sample,48000,124);
+    require(prepared2.lfo[1].envRate==-2&&prepared2.lfo[1].crossRate==-4,
+            "Both LFOs have independent ADSR and cross rate controls");
+    std::cout<<"PASS extended LFO PWM, squash, phase, one shot and rate sources\n";
 }
 void cleanAndBypassTests() {
     Rig r;r.on();r.render(512);
@@ -370,6 +414,17 @@ void voiceOptimisationParityTests() {
     p=base;p[P::lp_on]=1;p[P::lfo1_lp_depth]=12;scenario(p,false,true,false,false);
     p=base;p[P::drive_type]=2;p[P::drive_amount]=20;scenario(p,false,true,false,false);
     p=base;p[P::lfo1_pan_depth]=.5;scenario(p,false,true,false,false);
+    // TEST160: optimised and reference engines must remain bit-identical with
+    // envelope-to-rate, mutual LFO rate modulation, PWM and asymmetric squash.
+    p=base;p[P::attack]=.015;p[P::decay]=.05;p[P::sustain]=.35;
+    p[P::lfo1_wave]=4;p[P::lfo1_square_pwm]=.17;p[P::lfo1_upper_squash]=.4;
+    p[P::lfo1_lower_squash]=.2;p[P::lfo1_phase]=.23;p[P::lfo1_volume_depth]=.8;
+    p[P::lfo1_env_rate]=2.5;p[P::lfo1_cross_rate]=2.0;
+    p[P::lfo2_wave]=1;p[P::lfo2_rate]=7.0;p[P::lfo2_env_rate]=-2.0;
+    scenario(p,false,true,false,false); // LFO2 drives LFO1 despite no audio depth
+    p[P::lfo2_pan_depth]=.2;p[P::lfo2_cross_rate]=-3.0;
+    p[P::lfo1_one_shot]=1;p[P::lfo1_one_shot_percent]=35;
+    scenario(p,false,true,false,false); // both LFOs have audible destinations
     scenario(base,false,true,true,false); // Slice never enters the simple path
     std::cout<<"PASS TEST59 specialised/general exact audio parity scenarios\n";
 }
@@ -468,7 +523,7 @@ int main() {
     try {
         juce::ScopedJuceInitialiser_GUI initialise;
         const auto folder=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("lsampler-regression","",false);folder.createDirectory();
-        voiceOptimisationParityTests();catalogTests();cleanAndBypassTests();voiceTests();pitchAndStereoTests();dspReferenceTests();loopAndEffectTests();
+        voiceOptimisationParityTests();catalogTests();extendedLfoTests();cleanAndBypassTests();voiceTests();pitchAndStereoTests();dspReferenceTests();loopAndEffectTests();
         persistenceAndProcessorTests(folder);bankInitialisationTests(folder);concurrentPublicationTest(folder);idleAndFileWorkerTests(folder);editorTests(folder);runSliceTests(folder);
         require(realtimeAllocations==0&&realtimeDeletes==0,"Zero allocations and frees across all guarded render/note-on/process calls");
         folder.deleteRecursively();

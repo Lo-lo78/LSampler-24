@@ -153,15 +153,32 @@ enum class P {
     fm_ratio,
     fm_wave,
     fm_feedback,
+    // TEST160: appended after all existing slot IDs, do not renumber legacy parameters.
+    lfo1_one_shot_percent,
+    lfo1_phase,
+    lfo1_env_rate,
+    lfo1_square_pwm,
+    lfo1_upper_squash,
+    lfo1_lower_squash,
+    lfo1_cross_rate,
+    lfo2_one_shot_percent,
+    lfo2_phase,
+    lfo2_env_rate,
+    lfo2_square_pwm,
+    lfo2_upper_squash,
+    lfo2_lower_squash,
+    lfo2_cross_rate,
     count
 };
 // Append the new indices only. The first nine VST3 IDs/indices are frozen.
 enum class L { start, end, repeats, fade_in, fade_out, pitch_down, lp_down, hp_down, one_shot,
                repeat_pan, pitch_time, level, crossfade, downsample, pan, repeat_level, direction, count };
-inline constexpr int parameterCount = 143, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
+inline constexpr int legacyParameterCount = 143, parameterCount = 157, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
 static_assert(int(L::repeat_pan)==legacyLoopParameterCount && int(L::pitch_time)==10 && int(L::level)==11
               && int(L::crossfade)==12 && int(L::downsample)==13 && int(L::pan)==14
               && int(L::repeat_level)==15 && int(L::direction)==16 && int(L::count)==loopParameterCount);
+static_assert(int(P::lfo1_one_shot_percent)==legacyParameterCount && int(P::count)==parameterCount,
+              "Legacy parameter IDs must remain unchanged");
 inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"input_gain", "Level", "Slot", Kind::continuous, 0.0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""},
 {"polyphony", "Voice Mode", "Slot", Kind::enumeration, 1.0, 0.0, 1.0, 1.0, 1.0, "", 0, "Mono|Poly"},
@@ -306,7 +323,22 @@ inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"fm_amount", "FM Amount", "Ring and degrade", Kind::continuous, 0.0, 0.0, 100.0, 0.1, 1.0, "%", 1, ""},
 {"fm_ratio", "FM Ratio", "Ring and degrade", Kind::continuous, 1.0, 0.125, 64.0, 0.125, 1.0, "", 3, ""},
 {"fm_wave", "FM Wave", "Ring and degrade", Kind::enumeration, 0.0, 0.0, 5.0, 1.0, 1.0, "", 0, "Sine|Triangle|Saw Up|Saw Down|Square|Noise"},
-{"fm_feedback", "FM Feedback", "Ring and degrade", Kind::continuous, 0.0, 0.0, 100.0, 0.1, 1.0, "%", 1, ""}
+{"fm_feedback", "FM Feedback", "Ring and degrade", Kind::continuous, 0.0, 0.0, 100.0, 0.1, 1.0, "%", 1, ""},
+// TEST160: neutral defaults preserve the exact legacy LFO sound.
+{"lfo1_one_shot_percent", "LFO 1 One Shot Percent", "LFO 1", Kind::continuous, 100, 0, 100, 0.01, 1, "%", 2, ""},
+{"lfo1_phase", "LFO 1 Phase", "LFO 1", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
+{"lfo1_env_rate", "LFO 1 Env Rate", "LFO 1", Kind::continuous, 0, -10, 10, 0.01, 0.1, "", 2, ""},
+{"lfo1_square_pwm", "LFO 1 Square PWM", "LFO 1", Kind::continuous, 0.5, 0.05, 0.95, 0.001, 0.05, "", 3, ""},
+{"lfo1_upper_squash", "LFO 1 Upper Squash", "LFO 1", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
+{"lfo1_lower_squash", "LFO 1 Lower Squash", "LFO 1", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
+{"lfo1_cross_rate", "LFO 1 Cross Rate", "LFO 1", Kind::continuous, 0, -40, 40, 0.01, 0.1, "", 2, ""},
+{"lfo2_one_shot_percent", "LFO 2 One Shot Percent", "LFO 2", Kind::continuous, 100, 0, 100, 0.01, 1, "%", 2, ""},
+{"lfo2_phase", "LFO 2 Phase", "LFO 2", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
+{"lfo2_env_rate", "LFO 2 Env Rate", "LFO 2", Kind::continuous, 0, -10, 10, 0.01, 0.1, "", 2, ""},
+{"lfo2_square_pwm", "LFO 2 Square PWM", "LFO 2", Kind::continuous, 0.5, 0.05, 0.95, 0.001, 0.05, "", 3, ""},
+{"lfo2_upper_squash", "LFO 2 Upper Squash", "LFO 2", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
+{"lfo2_lower_squash", "LFO 2 Lower Squash", "LFO 2", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
+{"lfo2_cross_rate", "LFO 2 Cross Rate", "LFO 2", Kind::continuous, 0, -40, 40, 0.01, 0.1, "", 2, ""}
 }};
 enum class GlobalP { master_output_gain, output_stage, bus_glue, bus_soft_drive, output_ceiling, count };
 inline constexpr int globalParameterCount = 5;
@@ -340,7 +372,7 @@ inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 }};
 enum class Action { none, sampleZero, loopZero };
 struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; int global = -1; };
-inline constexpr std::array<GridEntry, 167> grid {{
+inline constexpr std::array<GridEntry, 181> grid {{
 {int(P::input_gain), -1, Action::none, "Slot"},
 {int(P::polyphony), -1, Action::none, "Slot"},
 {int(P::slot_polyphony), -1, Action::none, "Slot"},
@@ -430,6 +462,13 @@ inline constexpr std::array<GridEntry, 167> grid {{
 {int(P::lfo1_wave), -1, Action::none, "LFO 1"},
 {int(P::lfo1_delay), -1, Action::none, "LFO 1"},
 {int(P::lfo1_smoothing), -1, Action::none, "LFO 1"},
+{int(P::lfo1_one_shot_percent), -1, Action::none, "LFO 1"},
+{int(P::lfo1_phase), -1, Action::none, "LFO 1"},
+{int(P::lfo1_env_rate), -1, Action::none, "LFO 1"},
+{int(P::lfo1_square_pwm), -1, Action::none, "LFO 1"},
+{int(P::lfo1_upper_squash), -1, Action::none, "LFO 1"},
+{int(P::lfo1_lower_squash), -1, Action::none, "LFO 1"},
+{int(P::lfo1_cross_rate), -1, Action::none, "LFO 1"},
 {int(P::lfo1_volume_depth), -1, Action::none, "LFO 1"},
 {int(P::lfo1_pan_depth), -1, Action::none, "LFO 1"},
 {int(P::lfo1_lp_depth), -1, Action::none, "LFO 1"},
@@ -443,6 +482,13 @@ inline constexpr std::array<GridEntry, 167> grid {{
 {int(P::lfo2_wave), -1, Action::none, "LFO 2"},
 {int(P::lfo2_delay), -1, Action::none, "LFO 2"},
 {int(P::lfo2_smoothing), -1, Action::none, "LFO 2"},
+{int(P::lfo2_one_shot_percent), -1, Action::none, "LFO 2"},
+{int(P::lfo2_phase), -1, Action::none, "LFO 2"},
+{int(P::lfo2_env_rate), -1, Action::none, "LFO 2"},
+{int(P::lfo2_square_pwm), -1, Action::none, "LFO 2"},
+{int(P::lfo2_upper_squash), -1, Action::none, "LFO 2"},
+{int(P::lfo2_lower_squash), -1, Action::none, "LFO 2"},
+{int(P::lfo2_cross_rate), -1, Action::none, "LFO 2"},
 {int(P::lfo2_volume_depth), -1, Action::none, "LFO 2"},
 {int(P::lfo2_pan_depth), -1, Action::none, "LFO 2"},
 {int(P::lfo2_lp_depth), -1, Action::none, "LFO 2"},

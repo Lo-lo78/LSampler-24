@@ -3514,7 +3514,7 @@ void LSampler24AudioProcessor::createHostParameters()
         auto& h=hostSlots[size_t(slot)];auto& revision=hostGenerations[size_t(slot)];
         const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
         const juce::String name="Slot "+juce::String(slot+1)+" - ";
-        for(int i=0;i<parameterCount;++i) if(hostAutomatable(static_cast<P>(i))) {
+        for(int i=0;i<legacyParameterCount;++i) if(hostAutomatable(static_cast<P>(i))) {
             const auto& d=parameters[size_t(i)];juce::String title=d.name;
             if(i==int(P::input_gain)) title="Volume";
             if(i==int(P::lp_cutoff)) title="Filter Cutoff";
@@ -3567,6 +3567,7 @@ void LSampler24AudioProcessor::createHostParameters()
         }
         if (!bankMacroEligible(entry)) continue;
         const int index = entry.parameter;
+        if (index >= legacyParameterCount) continue; // TEST160 appended separately
         if (added[size_t(index)]) continue;
         added[size_t(index)] = true;
         const auto& descriptor = parameters[size_t(index)];
@@ -3619,6 +3620,23 @@ void LSampler24AudioProcessor::createHostParameters()
                 "slot" + juce::String(slot + 1).paddedLeft('0', 2) + "_" + suffixes[send],
                 "Slot " + juce::String(slot + 1) + " - " + labels[send],
                 sendDescriptor, slotFXSendRevisions[size_t(slot)]);
+    // TEST160: append all 24 x 14 new slot LFO controls and new Bank Macro
+    // lanes AFTER TEST149 sends; no old REAPER automation indices move.
+    for (int slot=0;slot<slotCount;++slot) {
+        auto& h=hostSlots[size_t(slot)];auto& revision=hostGenerations[size_t(slot)];
+        const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
+        const juce::String name="Slot "+juce::String(slot+1)+" - ";
+        for(int i=legacyParameterCount;i<parameterCount;++i) {
+            const auto& d=parameters[size_t(i)];
+            h.values[size_t(i)]=add(id+d.key,name+juce::String(d.name),d,revision);
+        }
+    }
+    for(int i=legacyParameterCount;i<parameterCount;++i) {
+        const auto& d=parameters[size_t(i)];
+        hostBankMacros[size_t(i)] = add("bankmacro_"+juce::String(d.key),
+            "Bank Macro - "+juce::String(d.name),
+            bankMacroDeltaDescriptor(i),bankMacroHostGeneration);
+    }
     hostParametersReady=true;
 }
 
