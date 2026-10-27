@@ -1,0 +1,12 @@
+LSampler-24 0.99.21 TEST162 — Guida e About aggiornati al 27 ottobre 2026
+
+Base: TEST161_LFO_MONO_POLY_SOURCE, senza modifiche al DSP o alle automazioni.
+
+- About Alt+A: Version 0.99.21; Release date: 27 October 2026.
+- Restano selezione, Ctrl+A, Ctrl+C, Esc e Alt+C, collegamenti Project/Contact.
+- Help Alt+H: aggiornate tutte le otto lingue originali (EN/IT/ES/PT/FR/RU/ZH/JA).
+- Documentati i sette nuovi controlli di ciascun LFO introdotti dalla TEST160 e Mono/Poly indipendente per Slot introdotto dalla TEST161.
+- Conservate le istruzioni storiche 0.99.20 e le funzioni preesistenti.
+- CMake VERSION allineata alla versione pubblica 0.99.21, per i metadati VST3.
+- Aggiornati i test statici dell'Help e aggiunto il controllo TEST162.
+- Non eseguita compilazione MSVC/VST3 locale: usare GitHub Actions, verificare poi About e Help con NVDA.

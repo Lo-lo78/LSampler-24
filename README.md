@@ -1,5 +1,10 @@
 # LSampler-24
 
+**Versione pubblica 0.99.21 — 27 October 2026 (TEST162)**
+
+La guida accessibile (Alt+H) è disponibile in otto lingue e documenta gli LFO 1/2 aggiornati delle TEST160/161: One Shot Percent, Phase, Env Rate, Square PWM, Upper/Lower Squash, Cross Rate e Voice Mode Mono/Poly indipendente per Slot. L’About (Alt+A) mostra versione e data aggiornate; il testo è selezionabile con Ctrl+A e copiabile con Ctrl+C. Non sono stati modificati il motore DSP o i controlli rispetto alla TEST161.
+
+
 Accessible native JUCE VST3 sampler with 24 additive slots, shared decoded samples and a global 96-voice pool.
 
 The current migration adds the non-Slice per-slot F2 sampler controls from LBPMCaptureSample while keeping the existing LSampler-24 slot, bank, project and keyboard workflow. Slice is reserved for a later dedicated editor.
