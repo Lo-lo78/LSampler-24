@@ -1,0 +1,19 @@
+LSampler-24 0.99.23 TEST164 — 4 novembre 2026
+
+- Ricerca incrementale dei nomi pronunciati in Grid: Slot/Global, Bank Macro,
+  Slice Edit (F1/F2), FX Grid, Sample Set F2.
+- Le lettere consecutive entro 1,2 secondi compongono un prefisso. Digitare
+  di nuovo la stessa lettera iniziale fa scorrere i parametri omonimi.
+- Shift+carattere cerca all'indietro. I numeri mantengono il codice della
+  tastiera: Shift+1 significa cercare indietro il numero 1, non il simbolo !.
+- Frecce, cambio di pagina/focus o una pausa azzerano il prefisso.
+- 0 mantiene il collegamento storico al parametro Zero Crossing.
+- Si cercano i nomi accessibili (per esempio Main Playback Mode e MIDI Channel)
+  e non i nomi dei parametri VST3. NVDA annuncia il nuovo parametro.
+- Intatti DSP, automazioni, ID VST3, impostazioni MIDI, preset, Library,
+  Sample Set e API del campionatore. Nessun nuovo parametro.
+- Guida HTML aggiornata in 8 lingue; About 0.99.23; artefatto GitHub TEST164.
+
+TEST: Tools/verify-test164-incremental-search.py eseguito in GitHub Actions,
+più gate audio TEST62 preesistente. La compilazione Windows e la prova reale
+in REAPER/NVDA vanno confermate dal workflow e dall'utilizzatore.

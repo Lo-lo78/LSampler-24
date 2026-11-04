@@ -4,6 +4,7 @@
 #include "PluginProcessor.h"
 #include "SliceEditor.h"
 #include "RackGui.h"
+#include "ParameterSearchKey.h"
 #include "FXPanel.h"
 #include <array>
 #include <functional>
@@ -77,7 +78,7 @@ public:
                                 && (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey
                                     || code == juce::KeyPress::upKey || code == juce::KeyPress::downKey))
                             || (mods.isAltDown() && !mods.isCtrlDown() && ch == 'l');
-        if (dedicated && shortcut && shortcut(key, this))
+        if ((dedicated || parameterSearchCharacter(key) != 0) && shortcut && shortcut(key, this))
             return true;
         return juce::ComboBox::keyPressed(key);
     }
@@ -706,6 +707,9 @@ private:
     int globalGridIndex = 0;
     std::array<double, lsampler::globalParameterCount> globalSnapshot {};
     int selectedParameter = 0;
+    lsampler::IncrementalParameterSearch mainParameterSearch;
+    lsampler::IncrementalParameterSearch bankMacroParameterSearch;
+    lsampler::IncrementalParameterSearch sampleSetParameterSearch;
     int stepWidthIndex = 0;
     int selectedLoop = 0;
 

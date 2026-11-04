@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(LSampler24 VERSION 0.99.22 LANGUAGES C CXX)
+project(LSampler24 VERSION 0.99.24 LANGUAGES C CXX)
 
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -112,4 +112,14 @@ if(LSAMPLER_BUILD_FILTER_TESTS)
         juce::juce_recommended_warning_flags)
     add_test(NAME filter-parity COMMAND LSampler24FilterTests "${CMAKE_BINARY_DIR}/filter-reports")
     set_tests_properties(filter-parity PROPERTIES TIMEOUT 600)
+
+    # TEST165: run the actual LReaParams-style keyboard search algorithm on CI,
+    # independent of the plugin editor/REAPER runtime.
+    add_executable(LSampler24SearchTests Tests/IncrementalParameterSearchTests.cpp)
+    target_compile_features(LSampler24SearchTests PRIVATE cxx_std_17)
+    if(WIN32)
+        target_compile_definitions(LSampler24SearchTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+        target_link_libraries(LSampler24SearchTests PRIVATE user32)
+    endif()
+    add_test(NAME incremental-search COMMAND LSampler24SearchTests)
 endif()

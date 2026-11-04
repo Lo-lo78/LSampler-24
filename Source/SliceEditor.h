@@ -2,6 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "PluginProcessor.h"
 #include "RackGui.h"
+#include "ParameterSearchKey.h"
 #include <bitset>
 #include <deque>
 
@@ -61,6 +62,7 @@ private:
     int stepWidthIndex=0;
     bool numeric=false;
     bool valueMode=false;
+    lsampler::IncrementalParameterSearch parameterSearch;
     bool manualSpacePreviewPlaying=false; // toggled only by manual Space
     int lastPreviewItem=-1;
     std::bitset<128> selected;

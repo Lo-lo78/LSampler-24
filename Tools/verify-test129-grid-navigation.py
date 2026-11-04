@@ -18,7 +18,7 @@ assert cpp.count('displayedGridParameterName(') == 5  # declaration, two labels,
 assert 'const auto name=isSlotBankSend(next) ? slotBankSendName(next)' in cpp
 assert ': displayedGridParameterName(lsampler::grid[size_t(next)]);' in cpp
 # TEST148: Alt+K also contains 3 bank-only FX sends, resolved by bankEntryName.
-assert 'const auto name = bankEntryName(bankMacroEntries[size_t(cursor)]);' in cpp
+assert 'return std::wstring(bankEntryName(bankMacroEntries[size_t(cursor)]).toWideCharPointer());' in cpp
 assert 'return displayedGridParameterName(lsampler::grid[size_t(index)]);' in cpp
 assert 'descriptor(lsampler::grid[size_t(next)]).name' not in cpp
 

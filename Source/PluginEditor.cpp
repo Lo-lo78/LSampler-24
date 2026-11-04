@@ -13,7 +13,7 @@ namespace
 {
 constexpr std::array<int, 5> stepWidths { 1, 5, 10, 15, 20 };
 constexpr int valuePageStep = 40;
-constexpr auto lsamplerVersion = "0.99.22";
+constexpr auto lsamplerVersion = "0.99.24";
 constexpr auto lsamplerReleaseDate = "4 November 2026";
 constexpr auto lsamplerProjectUrl = "https://github.com/Lo-lo78/LSampler-24";
 constexpr auto lsamplerContactEmail = "vmanolo301@gmail.com";
@@ -294,6 +294,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
 
     const auto aboutText = juce::String("LSampler-24\nVersion: ") + lsamplerVersion
         + "\nRelease date: " + lsamplerReleaseDate
+        + "\nNew: LReaParams-style incremental search: word prefixes, one-second timeout, Shift reverse including digits."
         + "\nProject: " + lsamplerProjectUrl
         + "\nContact: " + lsamplerContactEmail;
     aboutInfo.setTitle("About LSampler-24");
@@ -2164,6 +2165,13 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     const auto mods = key.getModifiers();
     const auto code = key.getKeyCode();
     const auto ch = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
+    // Non-text keys (including arrows, Enter and shortcuts), changing focus,
+    // or leaving the parameter surface end a prefix search immediately.
+    if (source != &parameterSelector || parameterSearchCharacter(key) == 0)
+    {
+        mainParameterSearch.reset();
+        bankMacroParameterSearch.reset();
+    }
 
     if (propertiesOpen)
     {
@@ -2737,6 +2745,8 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
 
     if (sampleSetActive)
     {
+        if (!sampleSetGridFocus || sampleSetValueFocus || parameterSearchCharacter(key) == 0)
+            sampleSetParameterSearch.reset();
         // Space is Preview On/Off on every Sample Set page, including Value.
         // The enabled state outlives the audio voice and changes only on Space.
         if (code == juce::KeyPress::spaceKey && !mods.isCtrlDown() && !mods.isAltDown()
@@ -2903,6 +2913,22 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 }
             }
         }
+        if (sampleSetGridFocus && !sampleSetValueFocus && sampleSetPage == 1
+            && !mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown())
+        {
+            const auto typed=parameterSearchCharacter(key);
+            if (typed!=0)
+            {
+                const int found=sampleSetParameterSearch.next(static_cast<wchar_t>(typed),sampleSetField,2,
+                    mods.isShiftDown()?-1:1,juce::Time::getMillisecondCounter(),
+                    [](int index) {return index==0 ? std::wstring(L"Velocity Low") : std::wstring(L"Velocity High");});
+                if(found>=0 && found!=sampleSetField)
+                {
+                    sampleSetField=found;
+                    refreshSampleSetCell(true);
+                }
+            }
+        }
         return true; // Sample Set is modal: never leak shortcuts to REAPER.
     }
 
@@ -3038,21 +3064,16 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 }
                 else
                 {
-                    const auto typed = key.getTextCharacter();
-                    const auto initial = juce::CharacterFunctions::toLowerCase(typed);
-                    if (typed >= 33 && typed != 127)
-                    {
-                        const int direction = mods.isShiftDown() ? -1 : 1;
-                        for (int distance = 1; distance <= int(bankMacroEntries.size()); ++distance)
-                        {
-                            const int cursor = (bankMacroCursor + int(bankMacroEntries.size()) +
-                                                direction * distance % int(bankMacroEntries.size())) % int(bankMacroEntries.size());
-                            const auto name = bankEntryName(bankMacroEntries[size_t(cursor)]);
-                            if (name.isNotEmpty() && juce::CharacterFunctions::toLowerCase(name[0]) == initial)
-                            { target = cursor; break; }
-                        }
-                    }
-                    else return true;
+                    const auto typed = parameterSearchCharacter(key);
+                    if (typed == 0) return true;
+                    const int found = bankMacroParameterSearch.next(
+                        static_cast<wchar_t>(typed), bankMacroCursor, int(bankMacroEntries.size()),
+                        mods.isShiftDown() ? -1 : 1, juce::Time::getMillisecondCounter(),
+                        [this](int cursor) {
+                            return std::wstring(bankEntryName(bankMacroEntries[size_t(cursor)]).toWideCharPointer());
+                        });
+                    if (found < 0) return true;
+                    target = found;
                 }
                 if (target >= 0 && target < int(bankMacroEntries.size()))
                 {
@@ -3632,30 +3653,28 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 moveParameterPage(code == juce::KeyPress::leftKey ? -1 : 1, false);
                 return true;
             }
-            // Only actual printable characters trigger type-ahead. Function and
-            // navigation keys may have ASCII-valued virtual key codes; using
-            // getKeyCode() here mistakenly searched for P/R/S/T/V/0.
+            // TEST164: incremental prefix search across the ENTIRE Grid, using
+            // the same visible/accessibility name as NVDA, not the VST3 key.
+            // Shift reverses direction; Shift+digit retains digit identity.
             if (!mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown()) {
                 const auto initial = parameterSearchCharacter(key);
                 if (initial != 0) {
                     const int normalGridSize = static_cast<int>(lsampler::grid.size()) - lsampler::globalParameterCount;
                     const int first = globalOpen ? normalGridSize : 0;
                     const int count = globalOpen ? lsampler::globalParameterCount : normalGridSize + slotBankSendCount;
-                    const int local = selectedParameter - first;
-                    const int direction = mods.isShiftDown() ? -1 : 1;
-                    for (int distance = 1; distance <= count; ++distance) {
-                        int relative = (local + direction * distance) % count;
-                        if (relative < 0) relative += count;
-                        const int next = first + relative;
-                        const auto name=isSlotBankSend(next) ? slotBankSendName(next)
-                            : displayedGridParameterName(lsampler::grid[size_t(next)]);
-                        if (name.isNotEmpty()
-                            && (juce::CharacterFunctions::toLowerCase(name[0]) == initial
-                                || (initial == '0' && name.equalsIgnoreCase("Zero Crossing")))) {
-                            selectParameter(next, true);
-                            break;
-                        }
-                    }
+                    const int found = mainParameterSearch.next(
+                        static_cast<wchar_t>(initial), selectedParameter - first, count,
+                        mods.isShiftDown() ? -1 : 1, juce::Time::getMillisecondCounter(),
+                        [this, first](int relative) {
+                            const int next = first + relative;
+                            const auto name=isSlotBankSend(next) ? slotBankSendName(next)
+                                : displayedGridParameterName(lsampler::grid[size_t(next)]);
+                            // Historical Zero Crossing shortcut: 0 is an alias,
+                            // not a parameter index or a destructive action.
+                            return name.equalsIgnoreCase("Zero Crossing") ? std::wstring(L"0 Zero Crossing")
+                                : std::wstring(name.toWideCharPointer());
+                        });
+                    if (found >= 0) selectParameter(first + found, true);
                     return true;
                 }
             }

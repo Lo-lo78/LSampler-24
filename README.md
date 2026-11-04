@@ -1,6 +1,14 @@
 # LSampler-24
 
-**Versione di prova 0.99.22 — 4 November 2026 (TEST163)**
+**Versione di prova 0.99.23 — 4 November 2026 (TEST164)**
+
+## TEST164 — Ricerca incrementale dei parametri da tastiera
+
+In Grid basta scrivere più lettere consecutive per restringere la ricerca per prefisso del nome accessibile, ad esempio `m` poi `i` per trovare **MIDI Channel** (se esiste una corrispondenza). Un singolo tasto ripetuto scorre le corrispondenze in ordine, **Shift+lettera** cerca all'indietro. **Shift+numero** cerca all'indietro utilizzando il numero reale e non il simbolo prodotto dalla tastiera (`Shift+1` cerca `1`, non `!`). Il tasto `0` mantiene la scorciatoia per **Zero Crossing**. Le ricerche sono cicliche nell'ambito della vista corrente; una pausa di 1,2 secondi, una freccia, un cambio di pagina o di focus iniziano una nuova sequenza. La ricerca si applica a Grid Slot/Global, Bank Macro, Slice Edit, FX e alle due voci della pagina Sample Set F2; non modifica il Value editor né i browser. La selezione continua a usare i nomi pronunciati da NVDA. Nessun cambiamento a DSP, ID VST3, automazioni o formati dei preset.
+
+GitHub Actions verifica la ricerca incrementale e i test precedenti e mantiene l'esistente gate di parità audio TEST62, prima di pubblicare `LSampler-24-Windows-VST3-TEST164`.
+
+
 
 ## TEST163 — Canale MIDI indipendente per Slot
 

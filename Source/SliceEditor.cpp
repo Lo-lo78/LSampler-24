@@ -252,7 +252,7 @@ void SliceEditor::setPage(Page next) {
         setDescription({});
         return;
     }
-    page=next;item=std::min(item,std::max(0,count()-1));
+    page=next;parameterSearch.reset();item=std::min(item,std::max(0,count()-1));
     speak(page==Page::boundaries?"Boundaries. ":page==Page::globals?"Global Slice Settings. ":"Slice Sequencer. ");
 }
 void SliceEditor::copy() {
@@ -278,6 +278,9 @@ void SliceEditor::restore(bool forward) {
     item=std::min(item,std::max(0,count()-1));selected.reset();anchor=-1;auditionEdit();speak(forward?"Redo. ":"Undo. ");
 }
 bool SliceEditor::keyPressed(const juce::KeyPress& k) {
+    // Do not glue characters together across Value mode or arrow navigation.
+    if (numeric || valueMode || parameterSearchCharacter(k) == 0)
+        parameterSearch.reset();
     const auto shortcutMods = k.getModifiers();
     if (shortcutMods.isAltDown() && shortcutMods.isShiftDown()
         && !shortcutMods.isCtrlDown() && !shortcutMods.isCommandDown()
@@ -358,31 +361,23 @@ bool SliceEditor::keyPressed(const juce::KeyPress& k) {
         if(code==juce::KeyPress::F2Key){setPage(Page::steps);return true;}
         if(code==juce::KeyPress::F3Key){setPage(Page::boundaries);return true;}
     }
-    // Parameter type-ahead on the parameter pages. Plain character cycles
-    // forward; Shift+character cycles backward. Global names use "Slice" only
-    // as context, so search the meaningful parameter name after that prefix.
+    // TEST164: global/step parameters share the incremental Grid search.
+    // Global "Slice " is only contextual and remains excluded from matching.
     if(!mods.isCtrlDown()&&!mods.isAltDown()&&!mods.isCommandDown()
        && (page==Page::globals||page==Page::steps)) {
-        // Use the actual typed character, not the virtual key code.  Arrow,
-        // Home/End and Page keys have numeric key codes that can fall inside
-        // the printable ASCII range, which previously caused type-ahead to
-        // swallow normal exploratory navigation on pages 2 and 3.
         const auto initial=parameterSearchCharacter(k);
         if(initial!=0) {
-            const bool backwards=mods.isShiftDown();
-            const int direction=backwards?-1:1;
             const int total=page==Page::globals?int(sliceGlobals.size()):int(sliceProperties.size());
             int& cursor=page==Page::globals?global:property;
-            for(int distance=1;distance<=total;++distance) {
-                int next=(cursor+direction*distance)%total;
-                if(next<0)next+=total;
-                juce::String name=page==Page::globals?juce::String(sliceGlobals[size_t(next)].name)
-                                                     :juce::String(sliceProperties[size_t(next)].name);
-                if(page==Page::globals&&name.startsWithIgnoreCase("Slice "))name=name.substring(6);
-                if(name.isNotEmpty()&&juce::CharacterFunctions::toLowerCase(name[0])==initial) {
-                    cursor=next;speak();break;
-                }
-            }
+            const int found=parameterSearch.next(static_cast<wchar_t>(initial),cursor,total,
+                mods.isShiftDown()?-1:1,juce::Time::getMillisecondCounter(),
+                [this](int index) {
+                    juce::String name=page==Page::globals?juce::String(sliceGlobals[size_t(index)].name)
+                                                         :juce::String(sliceProperties[size_t(index)].name);
+                    if(page==Page::globals&&name.startsWithIgnoreCase("Slice "))name=name.substring(6);
+                    return std::wstring(name.toWideCharPointer());
+                });
+            if(found>=0) {cursor=found;speak();}
             return true;
         }
     }

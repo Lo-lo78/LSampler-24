@@ -1,6 +1,7 @@
 #pragma once
 #include "PluginProcessor.h"
 #include "ScreenReaderAnnouncer.h"
+#include "ParameterSearchKey.h"
 #include <array>
 #include <algorithm>
 #include <cmath>
@@ -291,7 +292,10 @@ private:
                 handler->notifyAccessibilityEvent(juce::AccessibilityEvent::valueChanged);
         } else announceGrid(textFor(cursor));
     }
+    lsampler::IncrementalParameterSearch parameterSearch;
     bool handle(const juce::KeyPress& k,bool valueFocused) {
+        if (valueFocused || parameterSearchCharacter(k) == 0)
+            parameterSearch.reset();
         const auto mods=k.getModifiers();
         const auto code=k.getKeyCode();
         const auto shortcut=juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code));
@@ -398,6 +402,18 @@ private:
                 if(code==juce::KeyPress::pageDownKey) {choosePosition(std::min(groupEnd(displayPosition(cursor)),displayPosition(cursor)+8));return true;}
                 if(code==juce::KeyPress::homeKey) {choosePosition(groupBegin(displayPosition(cursor)));return true;}
                 if(code==juce::KeyPress::endKey) {choosePosition(groupEnd(displayPosition(cursor)));return true;}
+            }
+        }
+        if (!valueFocused && !mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown())
+        {
+            const auto typed=parameterSearchCharacter(k);
+            if (typed!=0)
+            {
+                const int found=parameterSearch.next(static_cast<wchar_t>(typed),displayPosition(cursor),visibleCount,
+                    mods.isShiftDown()?-1:1,juce::Time::getMillisecondCounter(),
+                    [](int pos) {return std::wstring(juce::String(lsampler::fx::parameters[size_t(displayOrder[size_t(pos)])].name).toWideCharPointer());});
+                if(found>=0) choosePosition(found);
+                return true;
             }
         }
         return false;

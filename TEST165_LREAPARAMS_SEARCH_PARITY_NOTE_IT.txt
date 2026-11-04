@@ -1,0 +1,12 @@
+LSampler-24 0.99.24 TEST165 — 4 novembre 2026
+Confronto reale con il codice LReaParams 0.0.63, include/lrp/TypeAhead.h e InputRouter.cpp.
+- Buffer incrementale di 1000 ms, non 1200 ms.
+- Priorità all'inizio dell'etichetta e supporto all'inizio delle parole interne.
+- Stesso criterio di ricerca reversibile con Maiusc, inclusi i numeri fisici.
+- Unicode wide chars; nessun troncamento a char 8-bit.
+- Mantenuto 0 come alias Zero Crossing, che ora risponde anche alla Z.
+- Stessa gestione dei mancati prefissi, del ciclo per iniziale e del wrap.
+- Gli auto-repeat nativi di Windows non sono identificabili dal solo evento JUCE KeyPress;
+  il motore espone il parametro repeated ma in questa VST3 non usa un hook Win32.
+- Questa correzione non cambia ID automazioni, preset, DSP, midi routing o sample set.
+- Verifiche statiche con test di regressione, tests C++ indipendenti e GitHub Actions.
