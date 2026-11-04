@@ -1527,8 +1527,15 @@ void LSampler24AudioProcessor::setSlotParameter(int index,double value,int loop)
         const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
         auto& p=slots[size_t(currentSlot.load())].parameters;
         p.set(e,juce::jlimit(0,9,loop),value);
+        // TEST166: never let the edited Sample Window handle cross the other.
+        // Keep the opposite value unchanged (no automatic dragging). This is
+        // applied before publishing the host parameters and preparing playback.
+        if(e.parameter == int(P::sample_start))
+            p[P::sample_start]=std::min(p[P::sample_start],p[P::sample_end]);
+        else if(e.parameter == int(P::sample_end))
+            p[P::sample_end]=std::max(p[P::sample_start],p[P::sample_end]);
         if (e.parameter == int(P::sample_start) || e.parameter == int(P::sample_end))
-            p[P::sample_play_start] = juce::jlimit(p[P::sample_start], std::max(p[P::sample_start], p[P::sample_end]), p[P::sample_play_start]);
+            p[P::sample_play_start] = juce::jlimit(p[P::sample_start],p[P::sample_end], p[P::sample_play_start]);
         if (e.parameter == int(P::sample_start) || e.parameter == int(P::sample_end)
             || e.parameter == int(P::start_threshold) || e.parameter == int(P::end_threshold))
             updateThresholdWindow(currentSlot.load());

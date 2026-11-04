@@ -13,7 +13,7 @@ namespace
 {
 constexpr std::array<int, 5> stepWidths { 1, 5, 10, 15, 20 };
 constexpr int valuePageStep = 40;
-constexpr auto lsamplerVersion = "0.99.24";
+constexpr auto lsamplerVersion = "0.99.25";
 constexpr auto lsamplerReleaseDate = "4 November 2026";
 constexpr auto lsamplerProjectUrl = "https://github.com/Lo-lo78/LSampler-24";
 constexpr auto lsamplerContactEmail = "vmanolo301@gmail.com";
@@ -406,6 +406,9 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     {
         if (!parameterPage || updatingParameterUi) return;
         setSelectedParameterValue(parameterValue.getValue());
+        // Show the effective capped value, including after typing a number
+        // beyond the opposite Sample Window boundary.
+        parameterValue.setValue(getSelectedParameterValue(),juce::dontSendNotification);
         refreshParameterGrid();
         announceSelectedValue();
     };
@@ -1189,8 +1192,17 @@ void LSampler24AudioProcessorEditor::configureValueForSelectedParameter() {
     }
     const auto& d=descriptor(selectedEntry());
     const double offsetLimit = d.maximum - d.minimum;
-    parameterValue.setRange(bankMacroOpen && !bankMacroUniform ? -offsetLimit : (selectedRateIsSynced()?.125:d.minimum),
-        bankMacroOpen && !bankMacroUniform ? offsetLimit : d.maximum,
+    double minimum=bankMacroOpen && !bankMacroUniform ? -offsetLimit : (selectedRateIsSynced()?.125:d.minimum);
+    double maximum=bankMacroOpen && !bankMacroUniform ? offsetLimit : d.maximum;
+    // TEST166: the editable thumb stops precisely at the other boundary;
+    // slider keyboard input and numeric text input share these limits.
+    if(!bankMacroOpen && selectedEntry().loop < 0) {
+        if(selectedEntry().parameter==int(P::sample_start))
+            maximum=std::min(maximum,processor.getSampleWindowEnd());
+        else if(selectedEntry().parameter==int(P::sample_end))
+            minimum=std::max(minimum,processor.getSampleWindowStart());
+    }
+    parameterValue.setRange(minimum,maximum,
         d.kind==Kind::integer||d.kind==Kind::enumeration||d.kind==Kind::note||d.kind==Kind::action?1.0:0.0);
     parameterValue.textFromValueFunction=[this](double v){
         if (bankMacroOpen && !bankMacroUniform)

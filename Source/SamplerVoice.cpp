@@ -31,6 +31,7 @@ double GlobalVoicePool::Envelope::tick(const EnvelopeSettings& e) noexcept {
 }
 void GlobalVoicePool::prepare(double rate) {
     allNotesOff();hostSampleRate=rate>0?rate:44100;ageCounter=noteCounter=0;
+    transitionSamples=std::max(16,int(std::round(hostSampleRate*.003))); // 3 ms equal-phase crossfade
     freePhase={};monoLfo={};bend={};wheel={};pedal={};diagnostics={};roundRobinCounters={};
     for(int slot=0;slot<slotCount;++slot)monoLfoRandom[size_t(slot)]=0x48e102cdu^uint32_t((slot+1)*2654435761u);
     for(auto& row:lastRandomChoice)row.fill(-1);
@@ -49,27 +50,63 @@ void GlobalVoicePool::setStates(const std::array<SlotAudioState,slotCount>* next
         if(v.sample!=g.sample || g.length<1)stop(v);
         else if(v.revision!=s.revision) {changed[size_t(v.slotIndex)]=true;updateVoice(v,s);}
     }
+    // A retired voice still owns its sample until its short fade is complete.
+    for(auto& v:retiringVoices)if(v.active) {
+        const auto& s=(*states)[size_t(v.slotIndex)];
+        const auto& g=s.playback[size_t(juce::jlimit(0,SlotAudioState::sampleSetSize-1,v.sampleIndex))];
+        if(v.sample!=g.sample || g.length<1)stop(v);
+        else if(v.revision!=s.revision)updateVoice(v,s);
+    }
     // A live mode/cap edit must also constrain already sounding voices.
     // Preserve the newest voices, using the same oldest-first stealing policy.
     for(int slot=0;slot<slotCount;++slot)if(changed[size_t(slot)]) {
         const auto& p=(*states)[size_t(slot)].params;
         const int cap=(p[P::polyphony]==0||p[P::retrigger_smooth]>0)?1:int(p[P::slot_polyphony]);
-        while(cap>0 && activePerSlot[size_t(slot)]>cap)stop(chooseVoice(slot,cap));
+        while(cap>0 && activePerSlot[size_t(slot)]>cap) {
+            auto& old=chooseVoice(slot,cap);
+            retireVoice(old);
+            stop(old);
+        }
     }
 }
 void GlobalVoicePool::stop(Voice& v) noexcept {
     if(v.active) {
-        --activePerSlot[size_t(v.slotIndex)];
-        --activeTotal; if (v.preview) --previewTotal;
+        if(v.retiring) --activeRetiringVoices;
+        else {
+            --activePerSlot[size_t(v.slotIndex)];
+            --activeTotal; if(v.preview) --previewTotal;
+        }
         v.active=false;
         v.sample->voiceReferences.fetch_sub(1,std::memory_order_release);
         v.sample=nullptr;
     }
 }
+// Retain the actual old read-head, envelopes, filters and routing for 3 ms.
+// This is an independent audio tail, not a new polyphony voice: it neither
+// consumes the slot cap nor changes note-off, key tracking or voice counts.
+// Copies and reference changes are allocation-free on the realtime thread.
+bool GlobalVoicePool::retireVoice(const Voice& previous) noexcept {
+    if(!previous.active || previous.retiring || !previous.sample || previous.amp.phase==0)return false;
+    Voice* target=nullptr;
+    for(auto& tail:retiringVoices)if(!tail.active){target=&tail;break;}
+    if(!target) {
+        // Bounded overload: discard only the tail closest to silent.
+        target=&retiringVoices.front();
+        for(auto& tail:retiringVoices)if(tail.fadeOutLeft<target->fadeOutLeft)target=&tail;
+        stop(*target);
+    }
+    *target=previous;
+    target->retiring=true;
+    target->fadeOutLeft=transitionSamples;
+    target->mirrorSign = previous.mirrorSign;
+    target->sample->voiceReferences.fetch_add(1,std::memory_order_relaxed);
+    ++activeRetiringVoices;
+    return true;
+}
 void GlobalVoicePool::release(Voice& v) noexcept {v.amp.release();v.lpEnvelope.release();v.hpEnvelope.release();v.keyDown=false;v.sustained=false;v.loopsReleased=true;}
-void GlobalVoicePool::allNotesOff() {for(auto& v:voices)stop(v);held={};pedal={};}
-void GlobalVoicePool::stopSlotVoices(int slot) {for(auto& v:voices)if(v.active&&v.slotIndex==slot)stop(v);}
-void GlobalVoicePool::stopPreviewVoices(int slot) {for(auto& v:voices)if(v.active&&v.preview&&(slot<0||v.slotIndex==slot))stop(v);}
+void GlobalVoicePool::allNotesOff() {for(auto& v:voices)stop(v);for(auto& v:retiringVoices)stop(v);held={};pedal={};}
+void GlobalVoicePool::stopSlotVoices(int slot) {for(auto& v:voices)if(v.active&&v.slotIndex==slot)stop(v);for(auto& v:retiringVoices)if(v.active&&v.slotIndex==slot)stop(v);}
+void GlobalVoicePool::stopPreviewVoices(int slot) {for(auto& v:voices)if(v.active&&v.preview&&(slot<0||v.slotIndex==slot))stop(v);for(auto& v:retiringVoices)if(v.active&&v.preview&&(slot<0||v.slotIndex==slot))stop(v);}
 bool GlobalVoicePool::hasPreviewVoices(int slot) const noexcept {if(previewTotal==0)return false;for(const auto& v:voices)if(v.active&&v.preview&&(slot<0||v.slotIndex==slot))return true;return false;}
 int GlobalVoicePool::activeVoiceCount() const noexcept {return activeTotal;}
 int GlobalVoicePool::activeVoiceCount(int slot) const noexcept {return activePerSlot[size_t(slot)];}
@@ -218,6 +255,14 @@ void GlobalVoicePool::updateVoice(Voice& v,const SlotAudioState& s) noexcept {
     v.slice.configured=false;
 }
 void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudioState& s,bool retrigger) {
+    // A genuine mono legato keeps the source phase. Smooth only the pitch
+    // increment for 1 ms when Portamento is Off to avoid an instantaneous
+    // slope jump in a periodic waveform. Retrigger/normal notes are unchanged.
+    if(!retrigger && note!=v.note && s.params[P::portamento]==0) {
+        v.legatoFromIncrement=v.increment;
+        v.legatoPitchSlewTotal=std::max(8,int(std::round(hostSampleRate*.001)));
+        v.legatoPitchSlewLeft=v.legatoPitchSlewTotal;
+    } else if(retrigger) v.legatoPitchSlewLeft=0;
     v.note=note;v.velocity=velocity;v.keyDown=true;v.sustained=false;
     if(retrigger) {
         v.amp={};v.lpEnvelope={};v.hpEnvelope={};v.loopsReleased=false;v.repeat=0;v.skipStage=-1;v.loopClock=0;
@@ -256,10 +301,13 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
     // Optional per-slot voice economy/retrigger mode.  A new Note On for the
     // same MIDI note replaces any older voice of that note in this slot, even
     // when sustain is holding it. Other notes and other slots are untouched.
+    bool hasReplacedVoice=false;
     if(!mono && !preview && !sliceMidiPad && p[P::same_note_replace]!=0)
         for(auto& existing:voices)
-            if(existing.active && !existing.preview && existing.slotIndex==slot && existing.note==note)
+            if(existing.active && !existing.preview && existing.slotIndex==slot && existing.note==note) {
+                hasReplacedVoice |= retireVoice(existing);
                 stop(existing);
+            }
     const auto switchSample = [&](Voice& existing) noexcept
     {
         if (existing.sample == g.sample && existing.sampleIndex == sampleIndex) return;
@@ -268,25 +316,34 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
         existing.sampleIndex = sampleIndex;
         existing.sample->voiceReferences.fetch_add(1, std::memory_order_relaxed);
         existing.slice = {};
+        existing.position=clamp(existing.position,0.0,double(std::max(1,g.length)-1));
         existing.stage = -1; existing.repeat = 0; existing.skipStage = -1;
         existing.pitchCached = existing.followCached = existing.lpModCached = existing.hpModCached = 1e30;
     };
     if(!mono&&!preview&&!sliceMidiPad&&p[P::retrigger_smooth]>0)
         for(auto& existing:voices)if(existing.active&&!existing.preview&&existing.slotIndex==slot) {
+            if(retireVoice(existing))existing.fadeInLeft=transitionSamples;
             switchSample(existing);
             existing.channel=channel;retarget(existing,note,velocity,s,true);return;
         }
     if(mono&&!preview&&!sliceMidiPad)for(auto& v:voices)if(v.active&&!v.preview&&v.slotIndex==slot) {
         const bool connected=v.keyDown||v.sustained;
         const bool retrigger=p[P::retrigger_smooth]>0||!(connected&&p[P::legato]!=0);
-        if(retrigger) switchSample(v);
+        if(retrigger) {
+            if(retireVoice(v))v.fadeInLeft=transitionSamples;
+            switchSample(v);
+        }
         v.channel=channel;retarget(v,note,velocity,s,retrigger);return;
     }
-    auto& v=chooseVoice(slot,mono?1:int(p[P::slot_polyphony]));stop(v);v=Voice{};
+    auto& v=chooseVoice(slot,mono?1:int(p[P::slot_polyphony]));
+    const bool wasStolen=retireVoice(v);
+    stop(v);v=Voice{};
+    if(wasStolen || hasReplacedVoice)v.fadeInLeft=transitionSamples;
     v.active=true;v.preview=preview;v.slotIndex=slot;v.note=note;v.channel=channel;v.velocity=velocity;v.sampleIndex=sampleIndex;
     v.sample=g.sample;v.sample->voiceReferences.fetch_add(1,std::memory_order_relaxed);++activePerSlot[size_t(slot)];
     ++activeTotal; if (preview) ++previewTotal;
     v.age=++ageCounter;v.randomState=uint32_t(v.age*747796405u+uint64_t(note)*2891336453u+1);
+    v.mirrorSign=(p[P::polyphony]!=0&&((&v-voices.data())%2)!=0)?-1.0:1.0;
     v.effectiveNote=note;v.velocityGain=velocityGain(velocity,p[P::vel_volume_depth]);v.velocitySmooth=v.velocityGain;
     if(!mono&&p[P::poly_drift]>0) {
         const double h=std::sin(double(&v-voices.data()+1)*12.9898+(note+1)*78.233+(slot+1)*37.719)*43758.5453;
@@ -330,7 +387,13 @@ void GlobalVoicePool::noteOff(int note,int channel) {
                 const auto& h=held[size_t(ch)][size_t(n)];const auto vel=std::round(h.velocity*127);
                 if(h.order>order&&n>=p[P::low]&&n<=p[P::high]&&vel>=p[P::velocity_low]&&vel<=p[P::velocity_high]){order=h.order;last=n;lastChannel=ch;}
             }
-            if(last>=0){v.channel=lastChannel;retarget(v,last,held[size_t(lastChannel)][size_t(last)].velocity,s,p[P::legato]==0);continue;}
+            if(last>=0){
+                const bool retrigger=p[P::legato]==0;
+                if(retrigger && retireVoice(v))v.fadeInLeft=transitionSamples;
+                v.channel=lastChannel;
+                retarget(v,last,held[size_t(lastChannel)][size_t(last)].velocity,s,retrigger);
+                continue;
+            }
         }
         v.keyDown=false;
         // Main Playback Mode = One Shot controls only the read-head looping
@@ -350,6 +413,7 @@ void GlobalVoicePool::controller(int ch,int number,int value) {
     if(number==120||number==123) {
         held[size_t(ch)]={};pedal[size_t(ch)]=false;
         for(auto& v:voices)if(v.active&&!v.preview&&v.channel==ch){if(number==120)stop(v);else release(v);}
+        if(number==120)for(auto& v:retiringVoices)if(v.active&&!v.preview&&v.channel==ch)stop(v);
     }
     if(number==121) {
         bend[size_t(ch)]=wheel[size_t(ch)]=0;pedal[size_t(ch)]=false;
@@ -900,7 +964,16 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         }
         const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+v.drift
             +v.amp.value*p[P::pitch_env]+l1*s.lfo[0].pitch+l2*(s.lfo[1].pitch+wheelValue*s.lfo[1].wheel)+repeatPitch;
-        if(pitch!=v.pitchCached) {v.increment=std::pow(2.0,pitch/12)*g.sourceRatio;v.pitchCached=pitch;}
+        if(pitch!=v.pitchCached || v.legatoPitchSlewLeft>0) {
+            const double target=std::pow(2.0,pitch/12)*g.sourceRatio;
+            if(v.legatoPitchSlewLeft>0) {
+                const double t=1.0-double(v.legatoPitchSlewLeft)/v.legatoPitchSlewTotal;
+                const double f=t*t*(3.0-2.0*t);
+                v.increment=v.legatoFromIncrement+(target-v.legatoFromIncrement)*f;
+                if(--v.legatoPitchSlewLeft==0)v.increment=target;
+            } else v.increment=target;
+            v.pitchCached=pitch;
+        }
         if(!BasicRead&&(s.ring||s.fm)&&effective!=v.followCached) {
             const double follow=std::pow(2.0,(effective-69)/12);
             if(s.ring)v.ringIncrement=clamp(p[P::ring_freq]*(p[P::ring_mode]==2?follow:1),.1,20000)/hostSampleRate;
@@ -1150,6 +1223,21 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         }
         left*=gain*panL;right*=gain*panR;
         if(!BasicRead&&s.machine)applyMachine(v,s,left,right);
+        // TEST166: no gain change for ordinary playback or true (unretriggered)
+        // legato. Only a replaced/retargeted voice overlaps its old waveform.
+        // Smoothstep gives continuous gain and slope at both fade boundaries.
+        if(v.fadeInLeft>0) {
+            const double t=1.0-double(v.fadeInLeft)/transitionSamples;
+            const double f=t*t*(3.0-2.0*t);
+            left*=f;right*=f;
+            --v.fadeInLeft;
+        }
+        if(v.retiring) {
+            const double t=double(v.fadeOutLeft)/transitionSamples;
+            const double f=t*t*(3.0-2.0*t);
+            left*=f;right*=f;
+            --v.fadeOutLeft;
+        }
         if (sendToFX)
             for (int send = 0; send < 3; ++send)
                 if (sends[size_t(send)] > 0.0f && fxSendBuses[size_t(send)])
@@ -1167,6 +1255,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             if(outR)* (outR+frame)+=float(right);
         }
         if(!BasicRead&&v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);
+        if(v.retiring && v.fadeOutLeft<=0)stop(v);
     }
 }
 
@@ -1179,14 +1268,16 @@ void GlobalVoicePool::renderReferenceForTesting(juce::AudioBuffer<float>& output
 
 template<bool Optimised>
 void GlobalVoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,int count) {
-    if(!states||count<=0||activeVoiceCount()==0)return;
+    if(!states||count<=0||(activeVoiceCount()==0 && activeRetiringVoices==0))return;
     if(count>monoLfoChunk) {
         // No allocation in the audio callback, including oversized host blocks.
         for(int n=0;n<count;n+=monoLfoChunk)
             renderInternal<Optimised>(output,start+n,std::min(monoLfoChunk,count-n));
         return;
     }
-    for(int slot=0;slot<slotCount;++slot)if(activePerSlot[size_t(slot)]>0) {
+    std::array<bool,slotCount> tailSlots {};
+    if(activeRetiringVoices>0)for(const auto& v:retiringVoices)if(v.active)tailSlots[size_t(v.slotIndex)]=true;
+    for(int slot=0;slot<slotCount;++slot)if(activePerSlot[size_t(slot)]>0 || tailSlots[size_t(slot)]) {
         const auto& ss=(*states)[size_t(slot)];
         if(ss.lfo[0].polyphonic && ss.lfo[1].polyphonic)continue;
         // A common oscillator per slot remains locked for all its voices.
@@ -1194,6 +1285,10 @@ void GlobalVoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,
         double sharedEnvelope=0;
         bool wheelActive=false;
         for(const auto& v:voices)if(v.active&&v.slotIndex==slot) {
+            sharedEnvelope=std::max(sharedEnvelope,v.amp.value);
+            if(wheel[size_t(v.channel)]!=0)wheelActive=true;
+        }
+        for(const auto& v:retiringVoices)if(v.active&&v.slotIndex==slot) {
             sharedEnvelope=std::max(sharedEnvelope,v.amp.value);
             if(wheel[size_t(v.channel)]!=0)wheelActive=true;
         }
@@ -1227,14 +1322,15 @@ void GlobalVoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,
         }
     }
     std::array<std::array<int8_t,SlotAudioState::sampleSetSize>,slotCount> filterEligibility {};
-    for(auto& v:voices) {
-        if(!v.active)continue;
+    auto renderOne=[&](Voice& v) {
+        if(!v.active)return;
         const auto& s=(*states)[size_t(v.slotIndex)];const auto& p=s.params;
         const auto& g=s.playback[size_t(v.sampleIndex)];
         const int channel=outputRoutes[size_t(int(p[P::output_route]))];
         float* outL=channel>=0 && channel<output.getNumChannels()?output.getWritePointer(channel):nullptr;
         float* outR=channel>=0 && channel+1<output.getNumChannels()?output.getWritePointer(channel+1):nullptr;
-        const double mirror=p[P::polyphony]!=0&&((&v-voices.data())%2)!=0?-1:1;
+        const double mirror=v.retiring ? v.mirrorSign
+            : (p[P::polyphony]!=0 && ((&v-voices.data())%2)!=0 ? -1.0 : 1.0);
         const double wheelValue=wheel[size_t(v.channel)];
         const bool lfoRunning=s.lfo[0].active || s.lfo[1].active
             || (wheelValue!=0 && (s.lfo[0].wheel!=0 || s.lfo[1].wheel!=0));
@@ -1249,7 +1345,7 @@ void GlobalVoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,
             if(s.simpleVoicePath && sampleSimple && !v.slice.active && !lfoRunning) {
                 ++diagnostics.simpleSpans;
                 renderVoice<true,true>(v,s,output,start,count,outL,outR,mirror);
-                continue;
+                return;
             }
             if(!v.slice.active) {
                 auto& eligible=filterEligibility[size_t(v.slotIndex)][size_t(v.sampleIndex)];
@@ -1276,16 +1372,18 @@ void GlobalVoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,
                         case 2:renderVoice<false,true,2>(v,s,output,start,count,outL,outR,mirror);break;
                         default:renderVoice<false,true,3>(v,s,output,start,count,outL,outR,mirror);break;
                     }
-                    continue;
+                    return;
                 }
             }
         }
         ++diagnostics.generalSpans;
         renderVoice<false,Optimised>(v,s,output,start,count,outL,outR,mirror);
-    }
+    };
+    for(auto& v:voices)renderOne(v);
+    if(activeRetiringVoices>0)for(auto& v:retiringVoices)renderOne(v);
     // Free-running phase is slot-shared and advanced analytically once per render span.
     // Idle slots and ineffective LFOs do not do waveform or phase work.
-    for(int slot=0;slot<slotCount;++slot)if(activePerSlot[size_t(slot)]>0) {
+    for(int slot=0;slot<slotCount;++slot)if(activePerSlot[size_t(slot)]>0 || tailSlots[size_t(slot)]) {
         const auto& s=(*states)[size_t(slot)];
         for(int i=0;i<2;++i) {
             const auto& l=s.lfo[size_t(i)];

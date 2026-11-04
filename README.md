@@ -1,5 +1,15 @@
 # LSampler-24
 
+**Versione di prova 0.99.25 — 4 novembre 2026 (TEST166)**
+
+## TEST166 — Raccordo anti-click e limiti incrociati Sample Start / End
+
+- In Mono, No Retrigger Smooth e Poly con sostituzione delle voci: la voce uscente viene mantenuta per un crossfade smoothstep di **3 ms** attraverso il normale motore audio, senza consumare una voce musicale o cambiare gli ID VST3. La voce nuova entra con fade complementare. Le code sono preallocate, senza memoria dinamica nel callback audio. Gli attacchi senza sostituzione e il Main Loop rimangono invariati.
+- Con **Legato** attivo e senza retrigger, in assenza di portamento, solo il cambio d'intonazione usa un brevissimo raccordo di **1 ms** sul passo di lettura, senza riavviare il campione o l'ADSR. Il portamento configurato dall'utente resta invariato.
+- Nella pagina **Sample Window**, **Sample End** non può scendere sotto **Sample Start**; **Sample Start** non può superare **Sample End**. Funziona con frecce, editor Value e immissione numerica, con valore di ritorno coerente per NVDA. Il campione PCM non viene tagliato o riscritto.
+- Nessun nuovo parametro, modifica a Bank/Slot preset o cambiamento al formato del progetto. TEST166 aggiunge regressioni nel gate nativo di GitHub Actions e conserva tutti i controlli TEST59/TEST62 e TEST163–165.
+
+
 **Versione di prova 0.99.24 — 4 November 2026 (TEST165, correzione Windows)**
 
 ## TEST165 — Ricerca in stile LReaParams e correzione compilazione Windows

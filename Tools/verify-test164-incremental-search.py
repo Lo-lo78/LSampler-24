@@ -31,12 +31,12 @@ assert 'displayedGridParameterName(lsampler::grid[size_t(next)])' in editor
 assert 'std::wstring(bankEntryName(bankMacroEntries[size_t(cursor)]).toWideCharPointer())' in editor
 assert 'parameterSearch.reset();' in slice_cpp and 'parameterSearch.reset();' in fx
 assert 'mainParameterSearch.reset();' in editor and 'bankMacroParameterSearch.reset();' in editor
-assert 'constexpr auto lsamplerVersion = "0.99.24";' in editor
+assert 'constexpr auto lsamplerVersion = "0.99.25";' in editor
 assert 'LReaParams-style incremental search:' in editor
-assert 'project(LSampler24 VERSION 0.99.24 LANGUAGES C CXX)' in (root/'CMakeLists.txt').read_text()
-assert 'LSampler-24-Windows-VST3-TEST165.zip' in workflow
-assert 'name: LSampler-24-Windows-VST3-TEST165' in workflow
-assert 'BUILD_TEST165.txt' in workflow
+assert 'project(LSampler24 VERSION 0.99.25 LANGUAGES C CXX)' in (root/'CMakeLists.txt').read_text()
+assert 'LSampler-24-Windows-VST3-TEST166.zip' in workflow
+assert 'name: LSampler-24-Windows-VST3-TEST166' in workflow
+assert 'BUILD_TEST166.txt' in workflow
 assert 'python Tools/verify-test164-incremental-search.py' in workflow
 assert 'python Tools/verify-test163-midi-routing.py' in workflow
 assert 'FILTER_TEST62_REPORT.txt' in workflow

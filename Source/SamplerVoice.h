@@ -45,7 +45,9 @@ private:
     struct Filter { double band[2]{},low[2]{}; };
     struct Voice {
         lsampler::SlicePlayback slice;
-        bool active=false,preview=false,keyDown=true,sustained=false,loopsReleased=false;
+        bool active=false,preview=false,keyDown=true,sustained=false,loopsReleased=false,retiring=false;
+        int fadeInLeft=0,fadeOutLeft=0,legatoPitchSlewLeft=0,legatoPitchSlewTotal=0;
+        double mirrorSign=1.0,legatoFromIncrement=1.0;
         bool autoSliceHasLoops=false; // cached once per automatic source-slice event
         int slotIndex=-1,note=-1,channel=0,stage=-1,repeat=0,skipStage=-1,sampleIndex=0,loopPitchTimeRepeat=-1;
         int repeatLevelIndexCached=-1, repeatLevelStageCached=-1;
@@ -71,6 +73,7 @@ private:
         juce::AudioBuffer<float>&,int start,int count,float* outL,float* outR,double mirror);
     struct HeldNote { uint64_t order=0; float velocity=0; };
     void stop(Voice&) noexcept;
+    bool retireVoice(const Voice&) noexcept; // TEST166: de-click tail without taking a musical voice
     void release(Voice&) noexcept;
     Voice& chooseVoice(int slot,int cap);
     int chooseSampleIndex(int slot,const lsampler::SlotAudioState&,int velocity,bool preview) noexcept;
@@ -99,6 +102,8 @@ private:
     void advanceLoops(Voice&,const lsampler::SlotAudioState&,double increment) noexcept;
     void selectStage(Voice&,const lsampler::SlotAudioState&) noexcept;
     std::array<Voice,voiceCount> voices {};
+    std::array<Voice,voiceCount> retiringVoices {}; // fixed-capacity, no audio-thread allocations
+    int activeRetiringVoices=0, transitionSamples=144;
     std::array<std::array<HeldNote,128>,16> held {};
     std::array<bool,16> pedal {};
     std::array<double,16> bend {},wheel {};

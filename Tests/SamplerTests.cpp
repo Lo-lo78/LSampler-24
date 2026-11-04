@@ -207,6 +207,19 @@ void persistenceAndProcessorTests(const juce::File& folder) {
     auto original=SamplePool::instance().load(wav,error);require(bool(original),"Shared sample loaded");
     midi.addEvent(juce::MidiMessage::noteOn(1,60,juce::uint8(127)),64);process(p,audio,midi);
     require(audio.getMagnitude(0,0,64)==0&&audio.getMagnitude(0,64,192)>0,"Sample accurate MIDI offset");
+    // TEST166: the edited boundary stops against the opposite handle.
+    p.setSlotParameter(index(P::sample_start),20);
+    p.setSlotParameter(index(P::sample_end),15);
+    require(near(p.getSampleWindowEnd(),20),"TEST166 End cannot cross Start");
+    p.setSlotParameter(index(P::sample_start),75);
+    require(near(p.getSampleWindowStart(),20),"TEST166 Start cannot cross End");
+    p.setSlotParameter(index(P::sample_end),90);
+    p.setSlotParameter(index(P::sample_start),75);
+    require(near(p.getSampleWindowStart(),75)&&near(p.getSampleWindowEnd(),90),
+        "TEST166 both boundary handles work within their ranges");
+    p.setSlotParameter(index(P::sample_start),0);
+    p.setSlotParameter(index(P::sample_end),100);
+    std::cout<<"PASS TEST166 Sample Window crossed-boundary clamping\n";
     p.copyCurrentSlot();p.setCurrentSlot(1);require(p.pasteCurrentSlot(),"Paste full slot");
     midi.addEvent(juce::MidiMessage::allSoundOff(1),0);midi.addEvent(juce::MidiMessage::noteOn(1,60,juce::uint8(127)),0);process(p,audio,midi);
     require(p.getActiveVoiceCount()==2,"Overlapping slots layer");
@@ -547,6 +560,8 @@ void idleAndFileWorkerTests(const juce::File& folder) {
 
 void editorTests(const juce::File& folder) {
     LSampler24AudioProcessor p(folder.getChildFile("library"));
+    p.setSlotParameter(index(P::sample_start),25);
+    p.setSlotParameter(index(P::sample_end),70);
     auto editor=std::make_unique<LSampler24AudioProcessorEditor>(p);
     LSamplerParameterComboBox* gridControl=nullptr;LSamplerValueSlider* value=nullptr;LSamplerSlotCell* slot=nullptr;
     for(auto* c:editor->getChildren()) {
@@ -559,6 +574,10 @@ void editorTests(const juce::File& folder) {
     require(!editor->keyPressed(key(juce::KeyPress::spaceKey),slot),"Slots Space belongs to host transport");
     require(editor->keyPressed(key(juce::KeyPress::returnKey),slot),"Enter parameters");
     require(gridControl->getNumItems()==int(grid.size()),"All descriptors populate grid");
+    gridControl->setSelectedItemIndex(index(P::sample_start));
+    require(near(value->getMaximum(),70),"TEST166 Start slider maximum follows Sample End");
+    gridControl->setSelectedItemIndex(index(P::sample_end));
+    require(near(value->getMinimum(),25),"TEST166 End slider minimum follows Sample Start");
     require(editor->keyPressed(key(juce::KeyPress::spaceKey),gridControl),"Parameter Space owns preview");
     require(editor->keyPressed(key(juce::KeyPress::endKey,juce::ModifierKeys::ctrlModifier),gridControl),"Ctrl End is consumed");
     require(gridControl->getSelectedItemIndex()==int(grid.size())-1,"Ctrl End reaches last parameter");

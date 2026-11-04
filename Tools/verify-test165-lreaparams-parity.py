@@ -29,10 +29,10 @@ assert 'L"0 Zero Crossing"' in editor
 assert 'std::wstring(bankEntryName(' in editor and 'std::wstring(L"Velocity Low")' in editor
 assert 'std::wstring(juce::String(' in fx
 assert 'parameterSearch.next(' in slice
-assert 'constexpr auto lsamplerVersion = "0.99.24"' in editor
-assert 'LSampler-24-Windows-VST3-TEST165' in workflow
+assert 'constexpr auto lsamplerVersion = "0.99.25"' in editor
+assert 'LSampler-24-Windows-VST3-TEST166' in workflow
 assert 'verify-test165-lreaparams-parity.py' in workflow
-assert 'project(LSampler24 VERSION 0.99.24 ' in (r/'CMakeLists.txt').read_text()
+assert 'project(LSampler24 VERSION 0.99.25 ' in (r/'CMakeLists.txt').read_text()
 assert 'add_test(NAME incremental-search COMMAND LSampler24SearchTests)' in (r/'CMakeLists.txt').read_text()
 assert 'LSampler24SearchTests' in (r/'Tools/build-windows.ps1').read_text()
 for lang in ('en','it','es','pt','fr','ru','zh','ja'):

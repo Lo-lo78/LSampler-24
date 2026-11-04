@@ -5,7 +5,7 @@ import re
 root = Path(__file__).resolve().parent.parent
 source = (root / 'Source/PluginEditor.cpp').read_text(encoding='utf-8')
 help_page = (root / 'Help/LSampler24Help.html').read_text(encoding='utf-8')
-assert 'constexpr auto lsamplerVersion = "0.99.24";' in source
+assert 'constexpr auto lsamplerVersion = "0.99.25";' in source
 assert 'constexpr auto lsamplerReleaseDate = "4 November 2026";' in source
 assert 'aboutInfo.setTitle("About LSampler-24")' in source
 assert 'aboutInfo.copyToClipboard();' in source

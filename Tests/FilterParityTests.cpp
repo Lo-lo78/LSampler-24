@@ -119,7 +119,10 @@ template<class Pool> void midiEvents(Pool& pool,int block,bool second) {
         if(block==4)for(int ch=0;ch<4;++ch)pool.controller(ch,1,96);
         if(block==7)for(int ch=0;ch<4;++ch)pool.controller(ch,1,0);
         if(block==9)pool.setTempo(97);
-        if(block==20)pool.noteOn(1,71,.42f,0);
+        // TEST166 transitions intentionally depart from the frozen TEST59 DSP.
+        // This gate compares unchanged playback paths, so begin the next note
+        // only after silence; real overlap is checked by test166DeclickTransitions.
+        if(block==20){pool.allNotesOff();pool.noteOn(1,71,.42f,0);}
         if(block==27)pool.controller(0,120,0);
         if(block==31)pool.allNotesOff();
         if(block==32)pool.noteOn(0,61,.91f,0,true);
@@ -184,6 +187,53 @@ void stateEvents(Scene& scene,const Case& c,int block) {
         scene.publish(c);
     }
 }
+// TEST166: prove sample-accurate continuity where the old engine restarted a
+// read-head/envelope or replaced a sounding poly voice. This is deliberately
+// separate from TEST59 bitwise parity (which tests unchanged musical events).
+void test166DeclickTransitions() {
+    Case c;c.filters=0;c.voices=0;
+    Scene scene(c);
+    constexpr double twoPi=6.2831853071795864769;
+    for(int ch=0;ch<scene.samples[0].audio.getNumChannels();++ch)
+        for(int i=0;i<scene.samples[0].audio.getNumSamples();++i)
+            scene.samples[0].audio.setSample(ch,i,float(.7*std::sin(twoPi*220*i/44100.0)));
+    scene.samples[0].peak=.7;
+    auto& p=scene.params[0];
+    p[P::input_gain]=0;p[P::pan]=0;p[P::attack]=0;p[P::release]=.4;
+    p[P::global_one_shot]=0;p[P::lfo1_mode]=0;p[P::lfo2_mode]=0;
+    juce::AudioBuffer<float> out(2,1024);
+    const auto trial=[&](const char* name,int mode,int retrigger,int sameNote) {
+        p[P::polyphony]=mode;p[P::legato]=retrigger?0:1;
+        p[P::same_note_replace]=sameNote?1:0;
+        p[P::slot_polyphony]=1;scene.publish(c);
+        auto pool=std::make_unique<GlobalVoicePool>();
+        pool->prepare(48000);pool->setStates(scene.states.get());
+        {
+            Guard guard;
+            pool->noteOn(0,60,1.0f,0);
+            out.clear();pool->render(out,0,512);
+        }
+        const float previous=out.getSample(0,511);
+        check(std::abs(previous)>.08f,std::string(name)+": fixture must be away from zero crossing");
+        {
+            Guard guard;
+            pool->noteOn(0,sameNote?60:67,.4f,0);
+            out.clear();pool->render(out,0,1);
+        }
+        check(std::abs(out.getSample(0,0)-previous)<.05f,
+            std::string(name)+": discontinuity at MIDI note transition");
+        check(pool->activeVoiceCount(0)==1,std::string(name)+": musical polyphony unchanged");
+        { Guard guard;out.clear();pool->render(out,0,512);pool->allNotesOff(); }
+        check(scene.samples[0].voiceReferences.load()==0,
+            std::string(name)+": tail sample references released");
+    };
+    trial("mono retrigger",0,1,0);
+    trial("mono genuine legato",0,0,0);
+    trial("poly same-note replace",1,0,1);
+    trial("poly cap steal",1,0,0);
+    std::cout<<"PASS TEST166: retrigger/legato/poly replacement continuous, voice cap and tail lifetime\n";
+}
+
 struct Metrics {uint64_t samples=0,specialised=0,general=0,plain=0;};
 Metrics compare(const Case& c,std::ofstream& report) {
     Scene scene(c);
@@ -269,6 +319,7 @@ int main(int argc,char** argv) {
     try {
         check(report.good()&&csv.good(),"Cannot create report files");
         runFlagCacheTests(report);
+        test166DeclickTransitions();
         benchmarkFlagCache(report);
         report<<"LSampler TEST62 vs frozen TEST59: Sample Set candidate, single-sample parity gate\n"
               <<"Exact sample comparison, all 50 channels; no error tolerance.\n"
@@ -297,9 +348,11 @@ int main(int argc,char** argv) {
             // from hard grain wraps to overlapped crossfades. Those two cases must
             // no longer be bit-identical to frozen TEST59; all other features stay
             // under the exact-float parity gate.
-            if(feature==8||feature==9) {
-                report<<"SKIP intentional Stretch parity case feature="<<feature
-                      <<" | TEST72 smooth overlap replaces TEST59 hard grain wrap\n";
+            if(feature==8||feature==9||feature==13) {
+                report<<"SKIP intentional DSP parity case feature="<<feature
+                      <<(feature==13
+                          ? " | TEST166 retrigger voice replacement now crossfades instead of cutting\n"
+                          : " | TEST72 smooth overlap replaces TEST59 hard grain wrap\n");
                 continue;
             }
             Case c;c.filters=3;c.voices=16;c.feature=feature;c.blockSize=128;
