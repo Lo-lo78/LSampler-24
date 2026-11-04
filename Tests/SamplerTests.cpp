@@ -44,7 +44,13 @@ struct Rig {
 };
 void catalogTests() {
     SlotParameters p;require(p[P::root]==60&&p[P::low]==0&&p[P::high]==127,"Approved mapping defaults");
-    require(legacyParameterCount==143&&parameterCount==157&&loopCount==10,"Stable legacy parameter IDs and extended LFO catalog");
+    require(legacyParameterCount==143&&parameterCount==160&&loopCount==10,
+            "Stable legacy IDs and TEST163 MIDI Channel catalog");
+    require(p[P::midi_channel]==0 && p.acceptsMidiChannel(0) && p.acceptsMidiChannel(15),
+            "Omni default receives channels 1 to 16");
+    p[P::midi_channel]=5;
+    require(p.acceptsMidiChannel(4) && !p.acceptsMidiChannel(0) && !p.acceptsMidiChannel(7),
+            "Slot MIDI channel is a one-based selector");
     for(int i=0;i<parameterCount;++i) {
         const auto& d=parameters[size_t(i)];require(d.initial>=d.minimum&&d.initial<=d.maximum,"Catalog default in range");
         for(int j=0;j<i;++j)require(std::strcmp(d.key,parameters[size_t(j)].key)!=0,"Unique persistent keys");
@@ -241,6 +247,54 @@ void persistenceAndProcessorTests(const juce::File& folder) {
     require(p.getSlotParameter(index(P::lp_on))==0,"Missing values reset to catalog defaults");
     p.clearBank();process(p,audio,midi);require(p.getActiveVoiceCount()==0,"Clear bank stops all voices");
     std::cout<<"PASS processor offsets, mapping, layering, complete slot/bank/project persistence and v2 compatibility\n";
+}
+// TEST163: MIDI routing at the actual processor entry point, including
+// overlapping channels, ignored Note Off, and persistence through Slot presets.
+void midiChannelRoutingTests(const juce::File& folder) {
+    LSampler24AudioProcessor p(folder.getChildFile("midi-routing-library"));
+    p.prepareToPlay(48000, 256);
+    juce::String error;
+    const auto wav=folder.getChildFile("test.wav");
+    require(p.loadSample(wav,error),"TEST163 load first sample");
+    require(p.copyCurrentSlot(),"TEST163 copy first slot");
+    p.setCurrentSlot(1);
+    require(p.pasteCurrentSlot(),"TEST163 paste second slot");
+    p.setCurrentSlot(0);
+    p.setSlotParameter(index(P::midi_channel),5);
+    p.setCurrentSlot(1);
+    p.setSlotParameter(index(P::midi_channel),8);
+    require(p.getSlotParameter(index(P::midi_channel))==8,"TEST163 second slot channel eight");
+    juce::AudioBuffer<float> out(2,256);
+    juce::MidiBuffer midi;
+    const auto send=[&](juce::MidiMessage message) {
+        midi.clear();midi.addEvent(message,0);process(p,out,midi);
+    };
+    send(juce::MidiMessage::noteOn(1,60,juce::uint8(100)));
+    require(p.getActiveVoiceCount()==0,"TEST163 unrelated channel triggers no voices");
+    send(juce::MidiMessage::noteOn(5,60,juce::uint8(100)));
+    require(p.getActiveVoiceCount()==1,"TEST163 slot one responds to channel five");
+    send(juce::MidiMessage::noteOn(8,60,juce::uint8(100)));
+    require(p.getActiveVoiceCount()==2,"TEST163 slot two responds to channel eight");
+    send(juce::MidiMessage::allSoundOff(5));
+    require(p.getActiveVoiceCount()==1,"TEST163 all sound off isolates MIDI channels");
+    send(juce::MidiMessage::allSoundOff(8));
+    require(p.getActiveVoiceCount()==0,"TEST163 second channel turns off separately");
+    // Duplicated assignments deliberately layer two Slots on one channel.
+    p.setSlotParameter(index(P::midi_channel),5);
+    send(juce::MidiMessage::noteOn(5,60,juce::uint8(100)));
+    require(p.getActiveVoiceCount()==2,"TEST163 two slots may share channel five");
+    send(juce::MidiMessage::allSoundOff(5));
+    p.setCurrentSlot(1);
+    const auto preset=folder.getChildFile("TEST163_MIDI_Channel.lsampler-24-s");
+    require(p.saveSlotPreset(preset,error),"TEST163 save MIDI channel in slot preset");
+    p.clearCurrentSlot();
+    require(p.loadSlotPreset(preset,error),"TEST163 restore slot preset");
+    require(p.getSlotParameter(index(P::midi_channel))==5,"TEST163 MIDI channel persisted");
+    p.setSlotParameter(index(P::midi_channel),0);
+    send(juce::MidiMessage::noteOn(8,61,juce::uint8(100)));
+    require(p.getActiveVoiceCount()==1,"TEST163 Omni receives other channels");
+    send(juce::MidiMessage::allSoundOff(8));
+    std::cout<<"PASS TEST163 per-slot MIDI channel routing, layering, Omni and persistence\n";
 }
 // TEST150: Alt+Delete must reconstruct the defaults of a newly loaded bank,
 // not merely erase its samples while retaining the previous FX settings.
@@ -524,7 +578,7 @@ int main() {
         juce::ScopedJuceInitialiser_GUI initialise;
         const auto folder=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("lsampler-regression","",false);folder.createDirectory();
         voiceOptimisationParityTests();catalogTests();extendedLfoTests();cleanAndBypassTests();voiceTests();pitchAndStereoTests();dspReferenceTests();loopAndEffectTests();
-        persistenceAndProcessorTests(folder);bankInitialisationTests(folder);concurrentPublicationTest(folder);idleAndFileWorkerTests(folder);editorTests(folder);runSliceTests(folder);
+        persistenceAndProcessorTests(folder);midiChannelRoutingTests(folder);bankInitialisationTests(folder);concurrentPublicationTest(folder);idleAndFileWorkerTests(folder);editorTests(folder);runSliceTests(folder);
         require(realtimeAllocations==0&&realtimeDeletes==0,"Zero allocations and frees across all guarded render/note-on/process calls");
         folder.deleteRecursively();
         std::cout<<"PASS "<<checks<<" checks; zero guarded realtime allocations/deletions\n";return 0;

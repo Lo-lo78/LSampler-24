@@ -324,6 +324,9 @@ void GlobalVoicePool::noteOff(int note,int channel) {
         if(p[P::polyphony]==0&&!v.slice.pad) {
             int last=-1,lastChannel=0;uint64_t order=0;
             for(int ch=0;ch<16;++ch)for(int n=0;n<128;++n) {
+                // Do not let Mono legato retarget a channel-specific Slot
+                // to a note held on an unrelated MIDI channel.
+                if (!p.acceptsMidiChannel(ch)) continue;
                 const auto& h=held[size_t(ch)][size_t(n)];const auto vel=std::round(h.velocity*127);
                 if(h.order>order&&n>=p[P::low]&&n<=p[P::high]&&vel>=p[P::velocity_low]&&vel<=p[P::velocity_high]){order=h.order;last=n;lastChannel=ch;}
             }
@@ -354,11 +357,13 @@ void GlobalVoicePool::controller(int ch,int number,int value) {
     }
 }
 void GlobalVoicePool::pitchBend(int ch,int value) noexcept {if(ch>=0&&ch<16)bend[size_t(ch)]=clamp(value/8192.0,-1,1);}
-void GlobalVoicePool::choke(int note) {
-    if(!states)return;
+void GlobalVoicePool::choke(int note,int channel) {
+    if(!states||channel<0||channel>=16)return;
     for(const auto& s:*states)if(std::any_of(s.sampleSet.begin(),s.sampleSet.end(),[](auto* sample){return sample!=nullptr;})
+        &&s.params.acceptsMidiChannel(channel)
         &&s.params[P::choke_trigger]==note&&s.params[P::choke_target]>=0)
-        for(auto& v:voices)if(v.active&&!v.preview&&v.note==int(s.params[P::choke_target])) {
+        for(auto& v:voices)if(v.active&&!v.preview&&v.channel==channel
+                              &&v.note==int(s.params[P::choke_target])) {
             if(s.params[P::choke_mode]==0)stop(v);else release(v);
         }
 }

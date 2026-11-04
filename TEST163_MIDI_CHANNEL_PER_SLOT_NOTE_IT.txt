@@ -1,0 +1,17 @@
+LSampler-24 0.99.22 TEST163 — 4 novembre 2026
+
+MIDI Channel per ognuno dei 24 Slot.
+- Slot Grid: categoria Slot, dopo Slot Polyphony. Omni (predefinito), 1..16.
+- Esempio: Slot 1 = 5, Slot 2 = 8, indipendenti; canali uguali = layering.
+- Valido per Slice MIDI Map e Note On normali, rispettando Key e Velocity Zones.
+- Note Off, sustain/CC, pitch bend e choke mantengono l'isolamento per canale.
+- Modalità Mono: nessun legato verso tasti premuti su un canale MIDI non assegnato.
+- Preview resta accessibile indipendentemente dal filtro del MIDI in ingresso.
+- Salvataggio: preset Slot, Bank e progetto REAPER; vecchi preset = Omni.
+- Parametro VST3 autonomo per Slot, ID aggiunti dopo la TEST161 senza rinumerazioni.
+- Nessun nuovo motore DSP, nessuna polifonia aggiunta: cambia il filtro degli eventi MIDI.
+
+Note di verifica: la suite di regressione del processore include test dei canali
+1, 5, 8, layering, Omni, All Sound Off e ripristino del preset. GitHub Actions
+compila il VST3 Windows con la parita' audio storica TEST62 (prima eseguire
+la verifica statica TEST163). Installare e provare in REAPER/NVDA/OSARA.

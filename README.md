@@ -1,6 +1,13 @@
 # LSampler-24
 
-**Versione pubblica 0.99.21 — 27 October 2026 (TEST162)**
+**Versione di prova 0.99.22 — 4 November 2026 (TEST163)**
+
+## TEST163 — Canale MIDI indipendente per Slot
+
+La pagina **Slot** presenta **MIDI Channel** dopo **Slot Polyphony**: **Omni** (default) o **1–16**. I 24 slot possono ricevere ciascuno un canale diverso o condividere lo stesso canale per ottenere layer. Il filtro MIDI vale per tastiera normale e Slice MIDI Map; tutte le zone di nota/velocity esistenti sono rispettate. Note Off, CC sustain e pitch bend usano il canale MIDI originale, senza nuovi motori audio. I preset precedenti senza `midi_channel` mantengono il default Omni. Il valore è serializzato nei preset Slot/Bank e nei progetti e pubblicato come parametro VST3 autonomo per ciascuno slot. I 24 nuovi ID sono APPESI DOPO tutti i parametri TEST161, preservando gli indici precedenti. MIDI Channel non è un Bank Macro.
+
+Il workflow GitHub Actions rimane sul test di parità audio TEST62 e verifica anche l'invarianza della TEST59 e la coerenza TEST163. I nuovi test funzionali di routing sono disponibili nella suite opzionale `LSAMPLER_BUILD_TESTS`.
+
 
 La guida accessibile (Alt+H) è disponibile in otto lingue e documenta gli LFO 1/2 aggiornati delle TEST160/161: One Shot Percent, Phase, Env Rate, Square PWM, Upper/Lower Squash, Cross Rate e Voice Mode Mono/Poly indipendente per Slot. L’About (Alt+A) mostra versione e data aggiornate; il testo è selezionabile con Ctrl+A e copiabile con Ctrl+C. Non sono stati modificati il motore DSP o i controlli rispetto alla TEST161.
 

@@ -20,7 +20,7 @@ mutable_candidate_dependencies = {
 # Approve only the exact extended candidate header; do NOT loosen protection
 # of the frozen renderer or other shared DSP dependencies.
 approved_candidate_hashes = {
-    'Source/Parameters.h': 'eb1985d287fe53ed9a3c5335dfb5c9b5762cf6e310f9ced66ed079f608bd9b14',
+    'Source/Parameters.h': 'abb32d7408a38fd4e07b053324b9ac36f0c5cf812d50c0a4c68c68342636e6bb',
 }
 
 # The 143 parameter IDs and descriptors that existed before TEST160 must be
@@ -42,8 +42,8 @@ def legacy_catalog_entries(source):
 try:
     source = (root / 'Source/Parameters.h').read_text(encoding='utf-8').replace('\r\n', '\n')
     enum_names, descriptors = legacy_catalog_entries(source)
-    if len(enum_names) != 159 or len(descriptors) != 159:
-        errors.append('TEST161 parameter count (expected 143 legacy + 16 added)')
+    if len(enum_names) != 160 or len(descriptors) != 160:
+        errors.append('TEST163 parameter count (expected 143 legacy + 17 added)')
     if hashlib.sha256('\n'.join(enum_names[:143]).encode('utf-8')).hexdigest() != legacy_enum_sha256:
         errors.append('TEST160 changed original 143 enum IDs or their order')
     if hashlib.sha256('\n'.join(descriptors[:143]).encode('utf-8')).hexdigest() != legacy_descriptors_sha256:

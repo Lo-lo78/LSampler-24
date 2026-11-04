@@ -898,7 +898,7 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         const int command = d[0] & 0xf0, channel = d[0] & 0x0f;
         if (event.numBytes >= 3 && command == 0x90 && d[2] != 0) {
             const int note = d[1] & 127, velocity = d[2] & 127;
-            voicePool.choke(note);
+            voicePool.choke(note, channel);
 
             // Match the final LBPMCaptureSample.jsfx Slice MIDI Map priority.
             // First search all mapped slots for an assigned, unmuted step.
@@ -907,7 +907,8 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             int mappedSlot = -1, mappedStep = -1;
             for (int i = 0; i < slotCount && mappedSlot < 0; ++i) {
                 const auto& s = audio[size_t(i)];
-                if(!s.sampleSet[0] || s.slice.state[SliceG::midiMap]==0) continue;
+                if(!s.sampleSet[0] || s.slice.state[SliceG::midiMap]==0 ||
+                   !s.params.acceptsMidiChannel(channel)) continue;
                 for(int step=0; step<s.slice.count; ++step) {
                     const auto& programmed=s.slice.state.steps[size_t(step)];
                     if(programmed[SliceP::midiNote]==note && programmed[SliceP::mute]==0) {
@@ -922,7 +923,8 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
                 // their key/velocity zones. Mapped slots are excluded here.
                 for (int i = 0; i < slotCount; ++i) {
                     const auto& s = audio[size_t(i)]; const auto& p = s.params;
-                    if(!slotHasAudio(s) || s.slice.state[SliceG::midiMap]!=0) continue;
+                    if(!slotHasAudio(s) || s.slice.state[SliceG::midiMap]!=0 ||
+                       !p.acceptsMidiChannel(channel)) continue;
                     if(velocity<p[P::velocity_low]||velocity>p[P::velocity_high])continue;
                     if(note>=p[P::low]&&note<=p[P::high])
                         voicePool.noteOn(i,note,float(velocity)/127.0f,channel);
@@ -3638,6 +3640,7 @@ void LSampler24AudioProcessor::createHostParameters()
             "Bank Macro - "+juce::String(d.name),
             bankMacroDeltaDescriptor(i),bankMacroHostGeneration);
     }
+    // TEST161 MIDI LFO Voice Mode remains a frozen batch (two parameters per slot).
     // TEST161: only after ALL TEST160 IDs have been registered can Mono/Poly
     // controls be appended. VST3 automation for 143 legacy + 14 LFO controls
     // remains byte-for-byte addressable by the previous index.
@@ -3645,16 +3648,27 @@ void LSampler24AudioProcessor::createHostParameters()
         auto& h=hostSlots[size_t(slot)];auto& revision=hostGenerations[size_t(slot)];
         const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
         const juce::String name="Slot "+juce::String(slot+1)+" - ";
-        for(int i=test160Last;i<parameterCount;++i) {
+        for(int i=test160Last;i<int(P::midi_channel);++i) {
             const auto& d=parameters[size_t(i)];
             h.values[size_t(i)]=add(id+d.key,name+juce::String(d.name),d,revision);
         }
     }
-    for(int i=test160Last;i<parameterCount;++i) {
+    for(int i=test160Last;i<int(P::midi_channel);++i) {
         const auto& d=parameters[size_t(i)];
         hostBankMacros[size_t(i)] = add("bankmacro_"+juce::String(d.key),
             "Bank Macro - "+juce::String(d.name),
             bankMacroDeltaDescriptor(i),bankMacroHostGeneration);
+    }
+    // TEST163: one new host-automatable MIDI Channel parameter per slot.
+    // Append strictly after both TEST161 batches; NEVER shift existing REAPER lanes.
+    // This structural assignment is intentionally not a Bank Macro.
+    for (int slot=0;slot<slotCount;++slot) {
+        auto& h=hostSlots[size_t(slot)];
+        const auto& d=parameters[size_t(P::midi_channel)];
+        const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
+        h.values[size_t(P::midi_channel)] = add(id+d.key,
+            "Slot "+juce::String(slot+1)+" - "+juce::String(d.name),
+            d, hostGenerations[size_t(slot)]);
     }
     hostParametersReady=true;
 }

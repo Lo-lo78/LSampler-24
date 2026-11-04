@@ -171,16 +171,19 @@ enum class P {
     // TEST161: append only; VST3 automation IDs for all prior controls are stable.
     lfo1_voice_mode,
     lfo2_voice_mode,
+    // TEST163: append only to preserve every TEST161 host ID and index.
+    midi_channel,
     count
 };
 // Append the new indices only. The first nine VST3 IDs/indices are frozen.
 enum class L { start, end, repeats, fade_in, fade_out, pitch_down, lp_down, hp_down, one_shot,
                repeat_pan, pitch_time, level, crossfade, downsample, pan, repeat_level, direction, count };
-inline constexpr int legacyParameterCount = 143, parameterCount = 159, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
+inline constexpr int legacyParameterCount = 143, parameterCount = 160, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
 static_assert(int(L::repeat_pan)==legacyLoopParameterCount && int(L::pitch_time)==10 && int(L::level)==11
               && int(L::crossfade)==12 && int(L::downsample)==13 && int(L::pan)==14
               && int(L::repeat_level)==15 && int(L::direction)==16 && int(L::count)==loopParameterCount);
-static_assert(int(P::lfo1_one_shot_percent)==legacyParameterCount && int(P::count)==parameterCount,
+static_assert(int(P::lfo1_one_shot_percent)==legacyParameterCount &&
+              int(P::midi_channel)==159 && int(P::count)==parameterCount,
               "Legacy parameter IDs must remain unchanged");
 inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"input_gain", "Level", "Slot", Kind::continuous, 0.0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""},
@@ -343,7 +346,9 @@ inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"lfo2_lower_squash", "LFO 2 Lower Squash", "LFO 2", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
 {"lfo2_cross_rate", "LFO 2 Cross Rate", "LFO 2", Kind::continuous, 0, -40, 40, 0.01, 0.1, "", 2, ""},
 {"lfo1_voice_mode", "LFO 1 Voice Mode", "LFO 1", Kind::enumeration, 1, 0, 1, 1, 1, "", 0, "Mono|Poly"},
-{"lfo2_voice_mode", "LFO 2 Voice Mode", "LFO 2", Kind::enumeration, 1, 0, 1, 1, 1, "", 0, "Mono|Poly"}
+{"lfo2_voice_mode", "LFO 2 Voice Mode", "LFO 2", Kind::enumeration, 1, 0, 1, 1, 1, "", 0, "Mono|Poly"},
+// 0 = all MIDI channels (legacy behaviour). 1..16 are explicit MIDI channels.
+{"midi_channel", "MIDI Channel", "Slot", Kind::enumeration, 0, 0, 16, 1, 1, "", 0, "Omni|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16"}
 }};
 enum class GlobalP { master_output_gain, output_stage, bus_glue, bus_soft_drive, output_ceiling, count };
 inline constexpr int globalParameterCount = 5;
@@ -377,10 +382,11 @@ inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 }};
 enum class Action { none, sampleZero, loopZero };
 struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; int global = -1; };
-inline constexpr std::array<GridEntry, 183> grid {{
+inline constexpr std::array<GridEntry, 184> grid {{
 {int(P::input_gain), -1, Action::none, "Slot"},
 {int(P::polyphony), -1, Action::none, "Slot"},
 {int(P::slot_polyphony), -1, Action::none, "Slot"},
+{int(P::midi_channel), -1, Action::none, "Slot"},
 {int(P::poly_drift), -1, Action::none, "Slot"},
 {int(P::portamento), -1, Action::none, "Slot"},
 {int(P::legato), -1, Action::none, "Slot"},
@@ -581,6 +587,12 @@ struct SlotParameters {
     SlotParameters() noexcept {
         for (size_t i=0;i<values.size();++i) values[i]=parameters[i].initial;
         for (auto& loop : loops) for (size_t i=0;i<loop.size();++i) loop[i]=loopParameters[i].initial;
+    }
+    // MIDI bytes carry zero-based channel numbers; the user-facing selector is 1..16.
+    bool acceptsMidiChannel(int zeroBasedChannel) const noexcept {
+        const int assigned = int(values[size_t(P::midi_channel)]);
+        return zeroBasedChannel >= 0 && zeroBasedChannel < 16 &&
+               (assigned == 0 || assigned == zeroBasedChannel + 1);
     }
     double operator[](P p) const noexcept { return values[size_t(p)]; }
     double& operator[](P p) noexcept { return values[size_t(p)]; }

@@ -328,3 +328,15 @@ Start Threshold, End Threshold (sample scans); End Preview Length (editing audit
 ## Later checks in REAPER
 
 Compile later through the user's GitHub Actions. Confirm count/names and Slot independence with simultaneous Volume/LP envelopes on different Slots; test Grid/Value touch/write and playback readback with NVDA, without speech flooding. Save/reopen a session and load old slot/bank/Sample Set presets. Test crossed Start/End at 0 and 100, Sample Play Start on new notes, ten loops, all enum/boolean labels, synced LFO rate, variation modes and per-sample velocity ranges. Test Slice division with custom boundaries and all sequencer modes, preserving steps. Compare sound with automation disabled and CPU under sparse/dense multi-Slot automation. Existing HP integrator reset behaviour is retained; evaluate rapid HP envelopes for transients.
+
+
+## TEST163 (0.99.22) — parametri MIDI Channel aggiunti
+
+Il manifest `VST3_AUTOMATION_MANIFEST.json` è la fotografia immutabile dei 6.629 ID originari e NON va rigenerato per le estensioni successive. In TEST163 i parametri della TEST160 (LFO estesi) e della TEST161 (LFO Voice Mode e relativi macro) conservano la sequenza precedente. Solo dopo di essi sono aggiunti 24 nuovi ID:
+
+- `slot01_midi_channel` — `Slot 1 - MIDI Channel`
+- `slot02_midi_channel` — `Slot 2 - MIDI Channel`
+- …
+- `slot24_midi_channel` — `Slot 24 - MIDI Channel`
+
+Range reale: `0..16`; `0 = Omni` (predefinito), `1..16 = canale MIDI assegnato`. Ogni parametro è indipendente, salvato nello Slot/Bank/progetto, automatizzabile dal VST3 e non appartiene ai Bank Macro. Si trova nella categoria Slot, dopo Slot Polyphony. I filtri MIDI non modificano i 96 voice slot globali né il numero di istanze DSP.

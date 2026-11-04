@@ -8,7 +8,7 @@ old_ids = [p['id'] for p in manifest]
 assert len(old_ids) == 6629 and len(set(old_ids)) == 6629
 text = (root / 'Source/Parameters.h').read_text()
 entries = re.findall(r'^\{int\(P::(\w+)\),\s*-1,\s*Action::none,\s*"([^"]+)"\}', text, re.M)
-excluded = set('low high root velocity_low velocity_high choke_trigger choke_target choke_mode normalize_on normalize_target ram_downsample ram_fade_in ram_fade_out ram_reverse dc_remove'.split())
+excluded = set('low high root velocity_low velocity_high midi_channel choke_trigger choke_target choke_mode normalize_on normalize_target ram_downsample ram_fade_in ram_fade_out ram_reverse dc_remove'.split())
 # Freeze the original TEST110 macro ABI: the TEST160 LFO additions have
 # separate, appended automation lanes, not positions inside this old batch.
 new_lfo_keys = {f'lfo{lfo}_{name}' for lfo in (1, 2) for name in

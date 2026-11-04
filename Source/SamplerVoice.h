@@ -18,7 +18,7 @@ public:
     void noteOff(int note,int channel=0);
     void controller(int channel,int number,int value);
     void pitchBend(int channel,int value) noexcept;
-    void choke(int note);
+    void choke(int note, int channel=0);
     void allNotesOff();
     void stopSlotVoices(int slotIndex);
     void stopPreviewVoices(int slotIndex=-1);
