@@ -118,7 +118,8 @@ if(LSAMPLER_BUILD_FILTER_TESTS)
     add_executable(LSampler24SearchTests Tests/IncrementalParameterSearchTests.cpp)
     target_compile_features(LSampler24SearchTests PRIVATE cxx_std_17)
     if(WIN32)
-        target_compile_definitions(LSampler24SearchTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+        # No NOMINMAX workaround on this target: test header isolation just as
+        # the actual VST3 compile must. The search header defines it itself.
         target_link_libraries(LSampler24SearchTests PRIVATE user32)
     endif()
     add_test(NAME incremental-search COMMAND LSampler24SearchTests)

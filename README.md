@@ -1,12 +1,21 @@
 # LSampler-24
 
-**Versione di prova 0.99.23 — 4 November 2026 (TEST164)**
+**Versione di prova 0.99.24 — 4 November 2026 (TEST165, correzione Windows)**
+
+## TEST165 — Ricerca in stile LReaParams e correzione compilazione Windows
+
+TEST165 riproduce la ricerca progressiva di LReaParams 0.0.63 (prefissi,
+parole interne, avanti/indietro con Shift, numeri e Unicode). Questa
+revisione corregge gli errori MSVC C2589 dovuti alle macro Win32 min/max
+importate da `IncrementalParameterSearch.h`, senza cambiare suono, salvataggi,
+automazioni, guida o About. Il test nativo non imposta più artificialmente
+`NOMINMAX`: verifica che l'header protegga da sé ogni unità C++ del plugin.
 
 ## TEST164 — Ricerca incrementale dei parametri da tastiera
 
 In Grid basta scrivere più lettere consecutive per restringere la ricerca per prefisso del nome accessibile, ad esempio `m` poi `i` per trovare **MIDI Channel** (se esiste una corrispondenza). Un singolo tasto ripetuto scorre le corrispondenze in ordine, **Shift+lettera** cerca all'indietro. **Shift+numero** cerca all'indietro utilizzando il numero reale e non il simbolo prodotto dalla tastiera (`Shift+1` cerca `1`, non `!`). Il tasto `0` mantiene la scorciatoia per **Zero Crossing**. Le ricerche sono cicliche nell'ambito della vista corrente; una pausa di 1,2 secondi, una freccia, un cambio di pagina o di focus iniziano una nuova sequenza. La ricerca si applica a Grid Slot/Global, Bank Macro, Slice Edit, FX e alle due voci della pagina Sample Set F2; non modifica il Value editor né i browser. La selezione continua a usare i nomi pronunciati da NVDA. Nessun cambiamento a DSP, ID VST3, automazioni o formati dei preset.
 
-GitHub Actions verifica la ricerca incrementale e i test precedenti e mantiene l'esistente gate di parità audio TEST62, prima di pubblicare `LSampler-24-Windows-VST3-TEST164`.
+GitHub Actions verifica la ricerca incrementale e i test precedenti e mantiene l'esistente gate di parità audio TEST62, prima di pubblicare `LSampler-24-Windows-VST3-TEST165`.
 
 
 

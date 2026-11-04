@@ -17,6 +17,11 @@ assert 'sameLetterCycle' in core and 'if (repeated ||' in core
 assert 'eventTime - lastTime_' in core
 assert 'buffer_.assign(1, c);' in core
 assert 'std::wstring' in core and 'CharLowerBuffW(&c, 1)' in core
+# A missing NOMINMAX in the VST3 target broke std::min/max and yielded MSVC C2589.
+assert '#ifndef NOMINMAX' in core and '#define NOMINMAX' in core
+assert '#ifdef min\n#undef min' in core and '#ifdef max\n#undef max' in core
+assert 'target_compile_definitions(LSampler24SearchTests PRIVATE NOMINMAX' not in (r/'CMakeLists.txt').read_text()
+assert 'must not leak Windows min/max macros' in (r/'Tests/IncrementalParameterSearchTests.cpp').read_text()
 assert "if (code >= '0' && code <= '9')" in key
 assert 'numberPad0' in key
 assert 'std::wstring(name.toWideCharPointer())' in editor

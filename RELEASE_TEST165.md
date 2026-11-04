@@ -7,3 +7,10 @@ Search navigation aligned with LReaParams 0.0.63. The parameter search window is
 Coverage: Slot/Global Grid, Bank Macro, Slice Editor parameter pages, FX, Sample Set F2. This update does not alter audio, MIDI routing, presets, VST3 parameter IDs or DSP. Multilingual accessible Help and About version bumped. Includes standalone C++ tests and GitHub Actions build gate. Windows build and REAPER/NVDA tests should still be confirmed before publishing.
 
 Note: key auto-repeat suppression requires raw key-repeat event metadata; the pure search core supports it, but JUCE KeyPress does not itself report a native repeat bit. Do not claim exact native-repeat parity without REAPER/NVDA verification.
+
+## Correzione compilazione Windows (4 novembre 2026)
+
+Ripristinata la compilazione MSVC della TEST165: l'header della ricerca
+incrementale non introduce più le macro `min`/`max` definite da Windows.
+La versione rimane 0.99.24 TEST165 e tutte le funzioni sono invariate.
+Il test C++ protegge anche da future ricomparse di questa regressione.

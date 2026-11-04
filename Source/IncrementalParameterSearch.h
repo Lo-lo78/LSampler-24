@@ -3,7 +3,21 @@
 #include <cwctype>
 #include <string>
 #ifdef _WIN32
+// Win32's min/max function-like macros break std::min/std::max in the JUCE
+// translation units that include this header.  Keep this header self-contained:
+// unlike the TEST165 console test, the VST3 target did not define NOMINMAX.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+// Also guard against a Windows header having been included earlier without
+// NOMINMAX.  Never leak these macros to callers of the search helper.
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
 #endif
 
 // Search behavior adapted from LReaParams 0.0.63 TypeAhead.h (TEST62.9.2).

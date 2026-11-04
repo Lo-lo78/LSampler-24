@@ -1,10 +1,15 @@
 #include "../Source/IncrementalParameterSearch.h"
+#if defined(min) || defined(max)
+#error "IncrementalParameterSearch.h must not leak Windows min/max macros"
+#endif
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <iostream>
 #include <string>
 #include <vector>
 int main() {
+    assert(std::min(2, 3) == 2 && std::max(2, 3) == 3);
     using lsampler::IncrementalParameterSearch;
     IncrementalParameterSearch s;
     std::vector<std::wstring> names{L"Attack",L"Decay",L"Filter Cutoff",L"Filter Resonance",L"Frequency",L"Gain",L"0 Zero Crossing", L"1 Mode", L"16 Detector Source"};

@@ -1,0 +1,17 @@
+LSampler-24 0.99.24 TEST165 — Fix build Windows, 4 novembre 2026
+
+Diagnosi dai log GitHub Actions del run 113346413237:
+La compilazione MSVC si interrompe con C2589 su std::min e std::max
+in FXPanel.h, HostSlicePreparation.h e PluginProcessor.cpp.
+La nuova inclusione di windows.h in Source/IncrementalParameterSearch.h
+introduce le macro Win32 min/max nella stessa translation unit.
+
+Correzione:
+- L'header stesso definisce NOMINMAX prima di includere windows.h.
+- Se min/max erano stati già definiti da un'altra inclusione, li rimuove.
+- Il test nativo non definisce più NOMINMAX dal CMake: deve rilevare
+  automaticamente qualsiasi macro trapelata dall'header.
+- Nessuna modifica al DSP, ai preset, agli ID VST3 o al routing MIDI.
+- Guida/About restano correttamente alla release 0.99.24 TEST165.
+
+La compilazione VST3 completa dovrà essere verificata su GitHub Actions.
