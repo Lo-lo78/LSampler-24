@@ -123,4 +123,15 @@ if(LSAMPLER_BUILD_FILTER_TESTS)
         target_link_libraries(LSampler24SearchTests PRIVATE user32)
     endif()
     add_test(NAME incremental-search COMMAND LSampler24SearchTests)
+
+    # TEST169: compile and exercise the real native SWS path clipboard parser.
+    juce_add_console_app(LSampler24ClipboardTests PRODUCT_NAME "LSampler Clipboard Path Tests")
+    target_sources(LSampler24ClipboardTests PRIVATE Tests/ReaperClipboardPathTests.cpp)
+    target_compile_features(LSampler24ClipboardTests PRIVATE cxx_std_20)
+    target_link_libraries(LSampler24ClipboardTests PRIVATE juce::juce_core
+        juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+    if(WIN32)
+        target_link_libraries(LSampler24ClipboardTests PRIVATE user32)
+    endif()
+    add_test(NAME clipboard-paths COMMAND LSampler24ClipboardTests)
 endif()

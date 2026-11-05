@@ -39,8 +39,8 @@ public:
     juce::VST3ClientExtensions* getVST3ClientExtensions() override;
 
     // REAPER-only host integration: true envelope ACTIVE state, not lane visibility.
-    // TEST168: read REAPER's native Windows media-item clipboard directly.
-    // Ctrl+C remains action 40057: no ReaScript, no change to shortcuts.
+    // TEST169: read SWS/BR copied media source paths (and experimental REAPER item chunks).
+    // SWS action _BR_TSOURCE_PATH_TO_CLIPBOARD requires no Lua and no new extension.
     // Only a genuine REAPER VST3 host activates this Windows-only path.
     struct ReaperCopiedItem
     {

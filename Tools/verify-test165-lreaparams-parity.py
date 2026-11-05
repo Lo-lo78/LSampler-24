@@ -30,7 +30,7 @@ assert 'std::wstring(bankEntryName(' in editor and 'std::wstring(L"Velocity Low"
 assert 'std::wstring(juce::String(' in fx
 assert 'parameterSearch.next(' in slice
 assert 'constexpr auto lsamplerVersion = "0.99.25"' in editor
-assert any(f'LSampler-24-Windows-VST3-{version}' in workflow for version in ('TEST166','TEST167','TEST168'))
+assert any(f'LSampler-24-Windows-VST3-{version}' in workflow for version in ('TEST166','TEST167','TEST168','TEST169'))
 assert 'verify-test165-lreaparams-parity.py' in workflow
 assert 'project(LSampler24 VERSION 0.99.25 ' in (r/'CMakeLists.txt').read_text()
 assert 'add_test(NAME incremental-search COMMAND LSampler24SearchTests)' in (r/'CMakeLists.txt').read_text()

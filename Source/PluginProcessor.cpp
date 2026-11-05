@@ -57,7 +57,7 @@ public:
     }
     bool available() const noexcept { return host != nullptr; }
 
-    // Native clipboard is inspected at Alt+V only. A separate state marker
+    // Clipboard/SWS source paths are inspected at Alt+V only. A separate state marker
     // remembers whether the internal slot clipboard was copied AFTER the last
     // Windows clipboard change; native Ctrl+C does not require interception.
     bool readCopiedItems(std::vector<LSampler24AudioProcessor::ReaperCopiedItem>& items,
@@ -78,14 +78,24 @@ public:
                 : "No compatible REAPER audio items in clipboard";
             return true;  // Never accidentally paste a stale internal slot.
         }
-        const int limit = juce::jmin(static_cast<int>(snapshot.items.size()),
-                                      LSampler24AudioProcessor::slotCount);
-        truncated = static_cast<int>(snapshot.items.size()) - limit + snapshot.skipped;
-        for (int i = 0; i < limit; ++i)
+        // Only supported audio extensions are sent to the background loader.
+        // In particular, SWS may include MIDI .mid source paths in a mix.
+        truncated = snapshot.skipped;
+        for (const auto& entry : snapshot.items)
         {
-            const auto& entry = snapshot.items[static_cast<size_t>(i)];
+            if (!SamplePool::instance().hasSupportedExtension(entry.file))
+            {
+                ++truncated;
+                continue;
+            }
+            if (static_cast<int>(items.size()) >= LSampler24AudioProcessor::slotCount)
+            {
+                ++truncated;
+                continue;
+            }
             items.push_back({ entry.file, entry.name, entry.startSeconds, entry.endSeconds });
         }
+        if (items.empty()) error = "Clipboard paths contain no supported audio files";
         return true;
        #else
         return false;

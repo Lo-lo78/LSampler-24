@@ -1,0 +1,24 @@
+LSampler-24 0.99.25 TEST169 — SWS/BR paths to slots (Windows x64 VST3)
+
+COME USARLO
+1. Seleziona uno o più item audio nella finestra principale di REAPER.
+2. Esegui l’azione SWS/BR: Copy take media source file path of selected items to clipboard.
+   Command ID: _BR_TSOURCE_PATH_TO_CLIPBOARD
+   Puoi assegnarle una scorciatoia a tua scelta; NON serve uno script Lua.
+3. Apri LSampler-24, posizionati sullo slot iniziale, premi Alt+V.
+4. Vengono caricati i file sorgente in sequenza, fino allo slot 24. Gli slot
+   occupati richiedono conferma; i file non validi vengono ignorati.
+
+IMPORTANTE
+- L'azione standard Ctrl+C (40057) copia gli ITEM; per ottenere percorsi
+  di file devi lanciare invece l’azione SWS/BR. Non sono equivalenti.
+- Un file per riga negli appunti; compatibile con un singolo percorso, con
+  nomi che contengono spazi, virgolette, lettere accentate e percorsi UNC.
+- Viene caricato l'intero file sorgente, non il segmento tagliato in REAPER.
+  FX, pitch, stretch, fade e volume applicati all'item non vengono resi.
+  Se vuoi il suono elaborato, prima renderizza/consolida l'item in WAV.
+- Alt+C, Alt+X e Alt+V per copiare slot restano disponibili; l’ultima
+  operazione di copia ha precedenza. Le altre DAW non cambiano.
+- Il salvataggio nella libreria usa le funzioni preesistenti dello strumento.
+- Nessuna modifica al motore DSP o agli altri comandi.
+- Test statici verificati; compilazione VST3 e test REAPER da completare.

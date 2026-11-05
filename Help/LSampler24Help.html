@@ -21,8 +21,9 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="en" lang="en">
 <h1>LSampler-24 0.99.25: accessible guide</h1>
+<h2>New in TEST169 — paste SWS audio source paths</h2><p>In REAPER on Windows, select audio items and run the existing action SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD). In LSampler-24 choose the starting Slot and press Alt+V. One complete source file per clipboard line is imported consecutively until Slot 24. No Lua required; existing slot copy/paste and other DAWs are unchanged. The original Ctrl+C copies REAPER items, NOT audio file paths. Trimmed items import as complete files: render first to include item FX, fades, pitch or stretch.</p>
 <h2>New in TEST168 — REAPER-only copy of audio items into Slots</h2>
-<p>Solo in REAPER su Windows, Ctrl+C resta l’azione originale 40057. Nella griglia Slot, Alt+V legge direttamente gli item audio dagli appunti REAPER, importandoli negli slot in sequenza fino al 24 e chiedendo conferma prima di sostituire slot occupati. Alt+C/Alt+X per gli slot restano disponibili; prevale la copia più recente. Nessuno script Lua né configurazione delle scorciatoie è richiesto. Nelle altre DAW Alt+V incolla solo lo slot. Sono supportati file audio semplici, tagli e offset: FX, stretch, pitch, loop ripetuti e fade vanno prima consolidati in REAPER. Verifica pratica del formato appunti ancora necessaria.</p>
+<p>Historical TEST168 note: the native REAPER Ctrl+C item-clipboard reader is experimental. For reliable imports, use the TEST169 SWS/BR source-file-path action above instead.</p>
 
 <h2>New in 0.99.25 — de-click transitions and Sample Window bounds</h2>
 <p>Mono retrigger and Poly voice replacement now overlap the outgoing and incoming audio for 3 ms, without using additional musical voices. With Legato On and Portamento Off, a one-millisecond pitch transition keeps the sample read-head moving without restarting its envelope. Ordinary note attacks and the Main Loop do not change. In Sample Window, Sample End cannot move below Sample Start, and Sample Start cannot move above Sample End. These limits work with keyboard arrows and typed Value input, including screen-reader feedback.</p>
@@ -93,8 +94,9 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="it" lang="it">
 <h1>LSampler-24 0.99.25: guida accessibile</h1>
+<h2>Novità TEST169 — incolla i percorsi dei file audio con SWS/BR</h2><p>In REAPER su Windows seleziona uno o più item audio ed esegui l’azione SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD). In LSampler-24 scegli lo slot iniziale e premi Alt+V. I file sorgente interi, uno per riga negli appunti, vengono caricati in sequenza fino allo slot 24. Nessun Lua. La copia interna degli slot e le altre DAW non cambiano. Ctrl+C originale copia gli item, NON i percorsi audio. Gli item tagliati importano il file intero; per incorporare FX, fade, pitch o stretch serve prima renderizzare.</p>
 <h2>Novità TEST168 — copia degli item REAPER direttamente negli Slot</h2>
-<p>En REAPER para Windows, Ctrl+C conserva la acción original 40057. Alt+V en la cuadrícula lee directamente los ítems de audio copiados desde el portapapeles de Windows y los inserta consecutivamente hasta la ranura 24, pidiendo confirmación antes de reemplazar. Alt+C y Alt+X siguen funcionando para las ranuras y prevalece la copia más reciente. No se necesita Lua ni configurar atajos. Otras DAW no cambian. Admite archivos de audio sencillos y recortes; renderice previamente FX, stretch, pitch y repeticiones. Pendiente de prueba real en REAPER.</p>
+<p>Nota storica TEST168: il lettore degli item copiati con Ctrl+C originale è sperimentale. Per importare con affidabilità utilizza l’azione SWS/BR della TEST169 descritta sopra.</p>
 
 <h2>Novità 0.99.25 — anti-click e limiti di Sample Start / End</h2>
 <p>Quando una voce Mono viene riavviata o una voce Poly viene sostituita, il motore esegue un raccordo audio di 3 ms tra la nota uscente e quella nuova, senza sottrarre voci musicali. Con Legato attivo e Portamento a zero, la lettura passa alla nuova intonazione in 1 ms senza riavviare campione e inviluppo. Gli attacchi normali e il Main Loop non cambiano. In Sample Window, Sample End si ferma su Sample Start e Sample Start si ferma su Sample End: il vincolo vale per frecce, comandi Value e numeri digitati, con feedback coerente per NVDA.</p>
@@ -171,8 +173,9 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="es" lang="es">
 <h1>LSampler-24 0.99.25: guía accesible</h1>
+<h2>Novedad TEST169 — pegar rutas de audio mediante SWS/BR</h2><p>En REAPER para Windows seleccione ítems de audio y ejecute SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD). En LSampler-24 seleccione la ranura inicial y pulse Alt+V. Se importan los archivos fuente completos, uno por línea, hasta la ranura 24. No se necesita Lua; las funciones de copiar ranuras y las demás DAW no cambian. Ctrl+C original copia ítems, no rutas. Para conservar efectos, recortes, fundidos, cambios de tono o estiramientos, renderice primero.</p>
 <h2>Novedad TEST168 — copiar ítems de REAPER a las ranuras</h2>
-<p>No REAPER em Windows, Ctrl+C mantém a ação original 40057. Na grelha de slots, Alt+V lê os itens de áudio copiados diretamente da área de transferência do Windows e importa-os em sequência até ao slot 24, com confirmação antes de substituir. Alt+C/Alt+X continuam a copiar slots; prevalece a última cópia. Não é necessário Lua nem configurar atalhos. Noutras DAWs, Alt+V mantém a colagem de slots. Suporta áudio simples em ficheiro e cortes; renderize FX, stretch, pitch e repetições primeiro. É necessário testar em REAPER.</p>
+<p>Nota histórica de TEST168: el lector de ítems de Ctrl+C sigue siendo experimental. Para importar archivos use la acción SWS/BR de TEST169 descrita arriba.</p>
 
 <h2>Nuevo en 0.99.25 — transiciones sin clics y límites de la ventana</h2>
 <p>Las voces sustituidas en Mono o Poly se funden durante 3 ms sin consumir voces musicales adicionales. Con Legato activado y Portamento desactivado, el cambio de tono se suaviza durante 1 ms sin reiniciar la muestra ni su envolvente. Los ataques normales y el Main Loop no cambian. Sample End no puede quedar por debajo de Sample Start y Sample Start no puede superar Sample End; se aplica a las flechas y a los valores introducidos con el teclado.</p>
@@ -212,8 +215,9 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="pt" lang="pt">
 <h1>LSampler-24 0.99.25: guia acessível</h1>
+<h2>Novidade TEST169 — colar caminhos de áudio com SWS/BR</h2><p>No REAPER para Windows, selecione os itens de áudio e execute SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD). No LSampler-24, selecione o slot inicial e pressione Alt+V. Importa os ficheiros originais completos, um por linha, até ao slot 24. Não requer Lua; a cópia de slots e as outras DAW não mudam. O Ctrl+C original copia itens, não caminhos. Para incluir efeitos, cortes, fades, pitch e stretch, renderize antes.</p>
 <h2>Novidade TEST168 — copiar itens do REAPER para Slots</h2>
-<p>Dans REAPER sous Windows, Ctrl+C conserve l’action originale 40057. Alt+V dans la grille lit directement les éléments audio copiés depuis le presse-papiers Windows et les importe successivement jusqu’au slot 24, avec confirmation avant remplacement. Alt+C/Alt+X copient toujours les slots; la copie la plus récente prévaut. Aucun script Lua ni réglage de raccourci. Les autres DAW restent inchangées. Fichiers audio simples et découpes uniquement; rendre FX, étirement, hauteur et boucles au préalable. Test en conditions réelles nécessaire.</p>
+<p>Nota histórica da TEST168: o leitor de itens copiados pelo Ctrl+C continua experimental. Para importar ficheiros utilize a ação SWS/BR da TEST169 acima.</p>
 
 <h2>Novo em 0.99.25 — transições sem cliques e limites da janela</h2>
 <p>A substituição de vozes em Mono ou Poly utiliza uma transição de 3 ms sem consumir novas vozes musicais. Com Legato ligado e Portamento desligado, a mudança de altura é suavizada em 1 ms, sem reiniciar a amostra ou o envelope. Os ataques normais e o Main Loop continuam iguais. Sample End não pode descer abaixo de Sample Start, e Sample Start não pode ultrapassar Sample End, tanto com as setas como por entrada numérica.</p>
@@ -248,8 +252,9 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="fr" lang="fr">
 <h1>LSampler-24 0.99.25 : guide accessible</h1>
+<h2>Nouveauté TEST169 — coller les chemins audio via SWS/BR</h2><p>Dans REAPER sous Windows, sélectionnez les items audio et lancez SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD). Dans LSampler-24, sélectionnez le premier emplacement et appuyez sur Alt+V. Les fichiers source complets, un par ligne, sont importés jusqu’au slot 24. Aucun script Lua requis; copie des slots et autres DAW inchangées. Ctrl+C original copie les items, pas les chemins. Effectuez un rendu préalable pour inclure coupes, effets, fondus, hauteur ou étirement.</p>
 <h2>Nouveauté TEST168 — copier les items REAPER dans les Slots</h2>
-<p>В REAPER под Windows Ctrl+C сохраняет штатную команду 40057. Alt+V в сетке слотов читает скопированные аудиоэлементы прямо из буфера Windows и импортирует их последовательно до слота 24 с подтверждением замены. Alt+C/Alt+X для слотов сохраняются; действует последняя операция копирования. Lua и переназначение клавиш не нужны. В других DAW вставка слота не меняется. Поддерживаются простые аудиофайлы и обрезка; эффекты, растяжение, тон и повторы сначала следует отрендерить. Нужна проверка в REAPER.</p>
+<p>Note historique TEST168 : le lecteur des items copiés avec Ctrl+C reste expérimental. Pour importer des fichiers, utilisez l’action SWS/BR de TEST169 ci-dessus.</p>
 
 <h2>Nouveau en 0.99.25 — transitions anti-clic et limites de la fenêtre</h2>
 <p>Le remplacement d’une voix Mono ou Poly effectue un fondu de 3 ms sans consommer de voix musicales supplémentaires. Avec Legato activé et Portamento désactivé, un raccord de hauteur de 1 ms conserve la lecture continue sans redémarrer l’enveloppe. Les attaques normales et le Main Loop ne changent pas. Sample End ne descend pas sous Sample Start et Sample Start ne dépasse pas Sample End, y compris avec les flèches et la saisie numérique.</p>
@@ -284,8 +289,9 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="ru" lang="ru">
 <h1>LSampler-24 0.99.25: доступное руководство</h1>
+<h2>TEST169 — вставка путей к аудиофайлам через SWS/BR</h2><p>В REAPER для Windows выделите аудиоэлементы и выполните SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD). В LSampler-24 выберите начальный слот и нажмите Alt+V. Полные исходные файлы (по одному пути в строке) загружаются последовательно до слота 24. Lua не нужен. Ctrl+C копирует элементы, а не пути к файлам. Для сохранения эффектов, обрезки, фейдов и изменения высоты или скорости сначала выполните рендеринг.</p>
 <h2>TEST168 — копирование аудиоэлементов REAPER в слоты</h2>
-<p>在 Windows 版 REAPER 中，Ctrl+C 继续使用原始操作 40057。插槽网格中的 Alt+V 直接读取 Windows 剪贴板中复制的音频 item，并依次导入至最多第 24 个 Slot，覆盖前先确认。Alt+C/Alt+X 仍复制 Slot，以最近一次复制为准。无需 Lua 或修改快捷键。其他 DAW 的 Slot 粘贴不变。支持简单文件音频及裁剪；FX、拉伸、变调和重复循环需要先渲染。仍须在 REAPER 上实际测试。</p>
+<p>Историческое примечание TEST168: чтение элементов из Ctrl+C остаётся экспериментальным. Для импорта используйте действие SWS/BR, описанное в TEST169 выше.</p>
 
 <h2>Новое в 0.99.25 — плавные переходы и ограничения границ</h2>
 <p>При замене голоса Mono или Poly выполняется трёхмиллисекундный переход без расходования дополнительных музыкальных голосов. При включённом Legato и отключённом Portamento высота меняется плавно за 1 мс без перезапуска огибающей или чтения сэмпла. Обычные атаки и Main Loop не изменены. Sample End не опускается ниже Sample Start, а Sample Start не превышает Sample End при работе стрелками и вводе чисел.</p>
@@ -320,8 +326,9 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="zh" lang="zh">
 <h1>LSampler-24 0.99.25：无障碍指南</h1>
+<h2>TEST169 — 使用 SWS/BR 粘贴音频源文件路径</h2><p>在 Windows 版 REAPER 中选择音频 item，运行 SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD)。在 LSampler-24 中选择起始 Slot，然后按 Alt+V。剪贴板中每行一个源文件路径，按顺序导入完整音频文件，最多到第 24 个 Slot。无需 Lua；其他 DAW 和内部 Slot 复制不变。原生 Ctrl+C 复制 item 而非文件路径。要保留裁剪、效果、淡化和变速变调，请先渲染。</p>
 <h2>TEST168 — 将 REAPER 音频 item 复制到 Slot</h2>
-<p>Windows の REAPER では Ctrl+C を元のアクション 40057 のまま使用します。スロット一覧で Alt+V を押すと Windows クリップボードのコピー済みオーディオアイテムを直接読み取り、スロット 24 まで順に読み込みます。上書き時は確認します。スロットの Alt+C/Alt+X も引き続き使用でき、最後にコピーした内容が優先されます。Lua やショートカット設定は不要です。他の DAW の動作は変わりません。単純な音声ファイルとトリミングに対応し、FX・ストレッチ・ピッチ変更・繰り返しは先にレンダリングしてください。REAPER 実機での動作確認が必要です。</p>
+<p>TEST168 历史说明：直接读取 Ctrl+C 的 item 剪贴板仍处于实验阶段。请使用上方 TEST169 的 SWS/BR 音频路径复制操作。</p>
 
 <h2>0.99.25 新功能 — 消除切换爆音和采样窗口边界限制</h2>
 <p>Mono 或 Poly 声部被替换时，旧声部与新声部进行 3 毫秒平滑交叉淡化，不占用额外音乐声部。开启 Legato 且关闭 Portamento 时，音高在 1 毫秒内平滑变化，不重新启动采样或包络。普通音符起音与 Main Loop 保持不变。Sample End 不可低于 Sample Start，Sample Start 不可高于 Sample End，键盘方向键和数字输入均受此限制。</p>
@@ -356,8 +363,9 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="ja" lang="ja">
 <h1>LSampler-24 0.99.25：アクセシブルガイド</h1>
+<h2>TEST169 — SWS/BR で音声ファイルのパスを貼り付け</h2><p>Windows の REAPER でオーディオアイテムを選択し、SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD) を実行してください。LSampler-24 で開始スロットを選択し、Alt+V を押すと、クリップボードの各行のソースファイル全体がスロット24まで順番に読み込まれます。Lua は不要です。通常の Ctrl+C はファイルパスではなくアイテムをコピーします。トリム、エフェクト、フェード、ピッチやストレッチを含めたい場合は先にレンダリングしてください。</p>
 <h2>TEST168 — REAPER のオーディオアイテムをスロットへコピー</h2>
-<p>In REAPER on Windows, keep Ctrl+C on its native action 40057. Alt+V in the slot grid reads copied audio items from REAPER’s Windows clipboard directly and imports them into slots consecutively up to slot 24, requesting confirmation for occupied slots. Alt+C/Alt+X slot copying keeps working; the most recent copy takes precedence. No Lua, no shortcut setup. In other DAWs Alt+V still pastes a slot. Simple file-backed audio with trims is supported; render FX, stretch, pitch and repeats first. Native clipboard integration needs real REAPER testing.</p>
+<p>TEST168 の過去の記録: 通常の Ctrl+C でコピーされたアイテムの読み取りは実験的です。確実にファイルを取り込むには、上記 TEST169 の SWS/BR アクションをご利用ください。</p>
 
 <h2>0.99.25 の新機能 — ノイズ防止とサンプル範囲の制限</h2>
 <p>Mono または Poly のボイスを置き換える場合、3 ms のクロスフェードでクリックノイズを抑えます。音楽用の同時発音数は変わりません。Legato がオンで Portamento がオフの場合、読み取り位置とエンベロープを再起動せず、ピッチを 1 ms で滑らかに切り替えます。通常のアタックと Main Loop は変更しません。Sample End は Sample Start より小さくできず、Sample Start は Sample End を超えられません。矢印キーと数値入力の両方に適用されます。</p>

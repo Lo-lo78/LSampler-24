@@ -1,7 +1,8 @@
 #pragma once
-// LSampler-24 TEST168 | REAPER native clipboard reader (Windows VST3 only).
+// LSampler-24 TEST169 | REAPER clipboard / SWS media-source path reader (Windows VST3 only).
 // The caller MUST first confirm IReaperHostApplication is present.
-// No interception of REAPER Ctrl+C, no Lua, no SWS/extra DLL.
+// No interception of REAPER Ctrl+C, no Lua. SWS/BR path-copy is optional
+// (it is an existing REAPER action; LSampler links to no SWS binary).
 // File-backed, unprocessed audio takes only; no GUI/audio-thread polling.
 #include <juce_core/juce_core.h>
 #include <cmath>
@@ -182,6 +183,51 @@ inline Result parseReaperItemText(const juce::String& text)
     return result;
 }
 
+// SWS/BR _BR_TSOURCE_PATH_TO_CLIPBOARD writes one absolute source path
+// per line to the standard text clipboard. Unlike native item Ctrl+C, this
+// contains *file paths*, not RPP item chunks. File imports intentionally
+// load the ENTIRE source: a trimmed item/FX/stretched take is not rendered.
+inline Result parseMediaSourcePaths(const juce::String& clipboardText)
+{
+    Result result;
+    // All-or-nothing recognition: never interpret general prose as filenames.
+    // Recognise only an absolute path as the first nonempty text line.
+    auto lines = juce::StringArray::fromLines(clipboardText);
+    bool examinedFirst = false;
+    for (auto line : lines)
+    {
+        line = line.trim();
+        if (line.isEmpty()) continue;
+        if (!examinedFirst && line.startsWithChar(0xfeff)) line = line.substring(1).trim();
+        if (line.isEmpty()) continue;
+        if (line.startsWithChar('"') && line.endsWithChar('"') && line.length() > 2)
+            line = line.substring(1, line.length() - 1);
+        if (!examinedFirst)
+        {
+            examinedFirst = true;
+            // Avoid the RPP text path: a single arbitrary string containing
+            // e.g. 'C:\' in the middle is not an exported media path.
+            if (!juce::File::isAbsolutePath(line)) return result;
+            result.recognised = true;
+        }
+        if (!juce::File::isAbsolutePath(line))
+        {
+            ++result.skipped;
+            continue;
+        }
+        const juce::File file(line);
+        if (file.existsAsFile())
+            result.items.push_back({ file, file.getFileNameWithoutExtension(), 0.0, 0.0 });
+        else
+            ++result.skipped;
+        // A huge pasted list must not allocate unlimited entries.
+        if (result.items.size() >= 1024) { ++result.skipped; break; }
+    }
+    if (result.recognised && result.items.empty())
+        result.error = "Source file paths copied from REAPER do not exist on disk";
+    return result;
+}
+
 #if JUCE_WINDOWS
 inline bool isReaperFormat(UINT fmt)
 {
@@ -194,8 +240,8 @@ inline juce::String readText(UINT format)
     HANDLE h = GetClipboardData(format);
     if (!h) return {};
     const SIZE_T count = GlobalSize(h);
-    if (count < 6 || count > 16 * 1024 * 1024) return {};
-    auto* bytes = static_cast<const char*>(GlobalLock(h));
+    if (count < 2 || count > 16 * 1024 * 1024) return {};
+    const auto* bytes = static_cast<const char*>(GlobalLock(h));
     if (bytes == nullptr) return {};
     juce::String result;
     if (format == CF_UNICODETEXT || (count >= 10 && bytes[1] == 0 && bytes[3] == 0))
@@ -210,7 +256,24 @@ inline juce::String readText(UINT format)
     {
         size_t n = 0;
         while (n < count && bytes[n] != '\0') ++n;
-        if (n > 0) result = juce::String::fromUTF8(bytes, static_cast<int>(n));
+        if (n > 0)
+        {
+            // CF_TEXT is the Windows ANSI code page, NOT necessarily UTF-8.
+            // SWS may publish file paths with accented/non-ASCII characters.
+            if (format == CF_TEXT)
+            {
+                const int wideLen = MultiByteToWideChar(CP_ACP, 0, bytes,
+                                                        static_cast<int>(n), nullptr, 0);
+                if (wideLen > 0)
+                {
+                    std::wstring wide(static_cast<size_t>(wideLen), L'\0');
+                    if (MultiByteToWideChar(CP_ACP, 0, bytes, static_cast<int>(n),
+                                            wide.data(), wideLen) == wideLen)
+                        result = juce::String(wide.c_str(), wideLen);
+                }
+            }
+            else result = juce::String::fromUTF8(bytes, static_cast<int>(n));
+        }
     }
     GlobalUnlock(h);
     return result;
@@ -220,7 +283,22 @@ inline Result readNativeReaperAudioItems()
     Result result;
     if (!OpenClipboard(nullptr)) return result;
     struct AutoClose { ~AutoClose() { CloseClipboard(); } } autoClose;
-    // Prefer REAPER's own registered clipboard format over generic text.
+
+    // Try the reliable SWS/BR media source paths FIRST, even when a custom
+    // REAPER clipboard format coexists. Keep an invalid-path result to
+    // prevent accidental fallback to an older internally copied slot.
+    if (IsClipboardFormatAvailable(CF_UNICODETEXT))
+    {
+        auto parsed = parseMediaSourcePaths(readText(CF_UNICODETEXT));
+        if (parsed.recognised) return parsed;
+    }
+    if (IsClipboardFormatAvailable(CF_TEXT))
+    {
+        auto parsed = parseMediaSourcePaths(readText(CF_TEXT));
+        if (parsed.recognised) return parsed;
+    }
+
+    // Backward-compatible experimental native REAPER Ctrl+C RPP parser.
     std::vector<UINT> formats;
     bool sawReaperFormat = false;
     for (UINT f = 0; (f = EnumClipboardFormats(f)) != 0 && formats.size() < 256; )
@@ -235,7 +313,7 @@ inline Result readNativeReaperAudioItems()
     if (sawReaperFormat)
     {
         result.recognised = true;
-        result.error = "This REAPER clipboard format is not yet supported";
+        result.error = "REAPER item clipboard format not recognised. Use SWS/BR: Copy take media source file path";
     }
     return result;
 }

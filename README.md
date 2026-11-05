@@ -1,12 +1,16 @@
 # LSampler-24
 
-**Versione di prova 0.99.25 — 5 novembre 2026 (TEST168)**
+**Versione di prova 0.99.25 — 5 novembre 2026 (TEST169)**
+
+## TEST169 — Incolla i percorsi dei campioni da SWS/BR con Alt+V (senza Lua)
+
+In REAPER seleziona gli item audio e usa l’azione **SWS/BR: Copy take media source file path of selected items to clipboard** (`_BR_TSOURCE_PATH_TO_CLIPBOARD`). Poi scegli uno slot in LSampler-24 e premi **Alt+V**. Il plugin legge l’elenco di percorsi (uno per riga) direttamente dagli appunti Windows, importa i **file sorgente completi** in sequenza fino al 24 e chiede conferma per gli slot occupati. Accetta percorsi con spazi, lettere accentate e più item. Lo script Lua non serve. Alt+C/Alt+X/Alt+V per gli slot funzionano ancora; le altre DAW restano invariate.
+
+**Attenzione:** l’azione REAPER Ctrl+C (40057) copia item, mentre l’azione SWS/BR copia percorsi. Questa è la via affidabile per ottenere i file audio; se un item è tagliato, il file importato rimane intero. Per FX, fade, stretch o pitch applicati agli item, prima renderizzali. Vedi `TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt`. Il lettore del formato nativo di Ctrl+C della TEST168 rimane sperimentale.
 
 ## TEST168 — Copia item REAPER con Ctrl+C e incolla negli slot con Alt+V
 
-Non occorre configurare niente: lascia **Ctrl+C** associato all’azione REAPER originale **40057**. Nella griglia di LSampler-24, **Alt+V** prova a leggere direttamente dal contenuto nativo degli appunti di Windows gli item audio copiati, li importa negli slot successivi fino allo slot 24 e chiede conferma prima di sostituire slot occupati. Alt+C e Alt+X per gli slot mantengono la priorità quando sono l'ultima copia. In altri host VST3 l'incolla degli slot resta invariato. Prima versione limitata a clip audio semplici (file su disco con eventuali tagli). Per i limiti vedere `TEST168_NATIVE_REAPER_CLIPBOARD_NOTE_IT.txt`. La lettura del formato reale degli appunti richiede verifica pratica in REAPER su Windows; nessuno script Lua o modifica delle scorciatoie è necessario.
-
-**Versione precedente: 0.99.25 — 4 novembre 2026 (TEST166)**
+Nota storica: la TEST168 ha introdotto un lettore sperimentale degli item copiati con Ctrl+C originale (40057). Il formato nativo di REAPER non è stato confermato: **non usare questo metodo come percorso affidabile di importazione**. Nella TEST169, per caricare i campioni, utilizza invece l'azione SWS/BR per copiare i percorsi dei file, poi Alt+V. Il codice sperimentale della TEST168 resta presente solo come fallback.
 
 ## TEST166 — Raccordo anti-click e limiti incrociati Sample Start / End
 

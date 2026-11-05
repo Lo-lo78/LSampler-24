@@ -1,0 +1,3 @@
+# LSampler-24 0.99.25 TEST169
+
+REAPER-only paste using the existing SWS/BR `_BR_TSOURCE_PATH_TO_CLIPBOARD` action. Copy one or more take source media file paths to the Windows clipboard, open LSampler-24 and Alt+V pastes the entire original audio sources from the selected slot onwards (max 24). Directly supports Unicode paths, multi-line paths, quoted file names, overwrite confirmation, and internal slot-copy precedence. Ignores unsupported audio extensions. No Lua or new extension, and no DSP changes. The native REAPER Ctrl+C chunk reader from TEST168 remains experimental. GitHub Actions static checks added; REAPER/VST3 runtime verification pending.

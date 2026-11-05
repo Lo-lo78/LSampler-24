@@ -4112,7 +4112,7 @@ void LSampler24AudioProcessorEditor::enterSampleSetEditor()
 // The dialog is a genuine modal accessible window. Y, N and Escape have
 // independent native accelerators so confirmation never relies on a speech-only
 // prompt or an invisible key handler on REAPER's FX Chain.
-// TEST168: batch import from REAPER's native Ctrl+C system clipboard.
+// TEST169: batch import from REAPER/SWS audio-source paths (or supported native items).
 // Read and validate only at Alt+V on the UI thread; heavy file decoding
 // and audio imports use the existing file worker.
 void LSampler24AudioProcessorEditor::pasteCopiedReaperItems(
