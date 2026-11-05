@@ -490,6 +490,7 @@ private:
     void commitSlotLibrarySelection();
     void copySlotLibraryEntry(bool cut);
     void pasteSlotLibraryEntry();
+    void pasteCopiedReaperItems(std::vector<LSampler24AudioProcessor::ReaperCopiedItem> items, int skipped);
     int nextSlotLibraryFreeSlot(int from) const;
     bool slotLibraryDestinationReserved(int slot) const;
     void chooseLoadSlot();

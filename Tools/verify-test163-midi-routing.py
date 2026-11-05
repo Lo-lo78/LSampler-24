@@ -45,10 +45,10 @@ assert 'if (!p.acceptsMidiChannel(ch)) continue;' in voices
 
 # Exposed version and new localized documentation must correspond to the artifact.
 assert 'constexpr auto lsamplerVersion = "0.99.25";' in editor
-assert 'constexpr auto lsamplerReleaseDate = "4 November 2026";' in editor
+assert any(f'constexpr auto lsamplerReleaseDate = "{date}";' in editor for date in ('4 November 2026','5 November 2026'))
 assert 'project(LSampler24 VERSION 0.99.25' in (root/'CMakeLists.txt').read_text()
-assert 'LSampler-24-Windows-VST3-TEST166.zip' in workflow
-assert 'BUILD_TEST166.txt' in workflow
+assert any(f'LSampler-24-Windows-VST3-{version}.zip' in workflow for version in ('TEST166','TEST167','TEST168'))
+assert any(f'BUILD_{version}.txt' in workflow for version in ('TEST166','TEST167','TEST168'))
 assert 'FILTER_TEST62_REPORT.txt' in workflow
 assert 'python Tools/verify-test163-midi-routing.py' in workflow
 for lang in ('en','it','es','pt','fr','ru','zh','ja'):

@@ -1,0 +1,21 @@
+LSampler-24 | TEST168 | REAPER native clipboard, without Lua
+
+Workflow:
+1. Keep your usual Ctrl+C mapped to REAPER's original 40057.
+2. Select/copy one or more audio items in REAPER using Ctrl+C.
+3. Move to LSampler-24 slot N and press Alt+V.
+4. Audio regions are imported into slots N...24 (limit 24); overwrite is confirmed.
+5. Alt+C/Alt+X/Alt+V slot copy remains usable. Most recent clipboard action wins.
+6. In another VST3 host, Alt+V continues to paste the internal slot only.
+
+Technical limits:
+- Windows x64 only for the native REAPER clipboard path.
+- Imports direct file-backed audio takes, with a simple item trim/start offset.
+- Does not render stretch markers, loops beyond the source length, take FX,
+  reversed audio, time stretch/pitch, track FX, item gain or fades.
+- Does not call REAPER's copy/paste actions and does not modify the timeline.
+- REAPER uses a custom clipboard format. This first reader recognises RPP-style
+  media item chunks and must be verified against real Ctrl+C bytes in REAPER.
+  If REAPER exposes another encoding, it announces no change to internal slot.
+- No extra extension, no Lua, no automation ID or DSP changes.
+- No native VST3 runtime compilation or manual test was available here.

@@ -14,7 +14,7 @@ namespace
 constexpr std::array<int, 5> stepWidths { 1, 5, 10, 15, 20 };
 constexpr int valuePageStep = 40;
 constexpr auto lsamplerVersion = "0.99.25";
-constexpr auto lsamplerReleaseDate = "4 November 2026";
+constexpr auto lsamplerReleaseDate = "5 November 2026";
 constexpr auto lsamplerProjectUrl = "https://github.com/Lo-lo78/LSampler-24";
 constexpr auto lsamplerContactEmail = "vmanolo301@gmail.com";
 
@@ -3780,6 +3780,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         if (ch == 'c')
         {
             processor.copyCurrentSlot();
+            processor.markReaperClipboardAsSlot();
             lsampler::announceToActiveScreenReader(slotCells[static_cast<size_t>(currentSlot)],
                                                   "Copied " + processor.getSlotLabel(currentSlot));
             return true;
@@ -3787,11 +3788,23 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
         if (ch == 'x')
         {
             processor.cutCurrentSlot();
+            processor.markReaperClipboardAsSlot();
             announceCurrentSlot();
             return true;
         }
         if (ch == 'v')
         {
+            std::vector<LSampler24AudioProcessor::ReaperCopiedItem> reaperItems;
+            juce::String reaperError;
+            int overflow = 0;
+            if (processor.getReaperCopiedItems(reaperItems, reaperError, overflow))
+            {
+                if (reaperError.isNotEmpty())
+                    lsampler::announceToActiveScreenReader(status, reaperError);
+                else
+                    pasteCopiedReaperItems(std::move(reaperItems), overflow);
+                return true;
+            }
             if (!processor.hasCopiedSlot()) return true;
             auto paste = [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), announceCurrentSlot]
             {
@@ -4099,6 +4112,92 @@ void LSampler24AudioProcessorEditor::enterSampleSetEditor()
 // The dialog is a genuine modal accessible window. Y, N and Escape have
 // independent native accelerators so confirmation never relies on a speech-only
 // prompt or an invisible key handler on REAPER's FX Chain.
+// TEST168: batch import from REAPER's native Ctrl+C system clipboard.
+// Read and validate only at Alt+V on the UI thread; heavy file decoding
+// and audio imports use the existing file worker.
+void LSampler24AudioProcessorEditor::pasteCopiedReaperItems(
+    std::vector<LSampler24AudioProcessor::ReaperCopiedItem> items, int skipped)
+{
+    if (fileUiBusy || processor.isFileTaskRunning())
+    {
+        lsampler::announceToActiveScreenReader(status, "File operation in progress");
+        return;
+    }
+    const int firstSlot = processor.getCurrentSlot();
+    const int available = LSampler24AudioProcessor::slotCount - firstSlot;
+    const int inserted = juce::jmin(available, static_cast<int>(items.size()));
+    skipped += static_cast<int>(items.size()) - inserted;
+    items.resize(static_cast<size_t>(inserted));
+    if (items.empty())
+    {
+        lsampler::announceToActiveScreenReader(status, "No REAPER items fit in the available slots");
+        return;
+    }
+    int overwritten = 0;
+    for (int i = 0; i < inserted; ++i)
+        if (processor.isSlotOccupied(firstSlot + i)) ++overwritten;
+
+    auto perform = [safe = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this),
+                    items = std::move(items), firstSlot, skipped]() mutable
+    {
+        if (safe == nullptr) return;
+        safe->runFileTask("Pasting REAPER items", [items = std::move(items), firstSlot, skipped]
+            (LSampler24AudioProcessor& p) -> FileTaskResult
+        {
+            FileTaskResult r;
+            r.ok = true;
+            r.skipped = skipped;
+            for (int i = 0; i < static_cast<int>(items.size()); ++i)
+            {
+                if (p.shouldStopFileTask())
+                {
+                    r.ok = false;
+                    r.message = "Import stopped";
+                    break;
+                }
+                const auto& item = items[size_t(i)];
+                juce::String error;
+                if (!p.importSampleToSlot(item.file, firstSlot + i,
+                                          item.startSeconds, item.endSeconds, error))
+                {
+                    r.ok = false;
+                    r.message = "Slot " + juce::String(firstSlot + i + 1) + ": " + error;
+                    break;
+                }
+                if (item.takeName.isNotEmpty())
+                    p.setSlotName(firstSlot + i, item.takeName);
+                ++r.count;
+                r.slot = firstSlot + i;
+                p.setFileTaskProgress(double(i + 1) / double(items.size()));
+            }
+            r.message = "Pasted " + juce::String(r.count) + " REAPER audio "
+                + (r.count == 1 ? "item" : "items") + " into slots "
+                + juce::String(firstSlot + 1) + " to " + juce::String(firstSlot + r.count)
+                + (r.skipped ? ". " + juce::String(r.skipped) + " items skipped (unsupported or beyond slot 24)" : juce::String{})
+                + (r.ok ? juce::String{} : ". " + r.message);
+            return r;
+        }, [safe](const FileTaskResult&, bool)
+        {
+            if (safe != nullptr) safe->refreshSlotCells();
+            // runFileTask already restores keyboard focus and announces one
+            // batch result. Do not speak the slot a second time.
+        });
+    };
+    if (overwritten > 0)
+    {
+        const auto label = "Replace " + juce::String(overwritten) + " occupied "
+            + (overwritten == 1 ? "slot" : "slots") + " with REAPER audio items "
+            + "starting at slot " + juce::String(firstSlot + 1)
+            + "? Press Y or N.";
+        confirmOverwrite(label, std::move(perform),
+            [safe = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+            {
+                if (safe != nullptr) safe->returnToCurrentSlotAndAnnounce();
+            });
+    }
+    else perform();
+}
+
 void LSampler24AudioProcessorEditor::confirmOverwrite(
     const juce::String& message, std::function<void()> confirmed,
     std::function<void()> cancelled, const juce::String& title)

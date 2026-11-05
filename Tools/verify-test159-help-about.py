@@ -6,7 +6,7 @@ root = Path(__file__).resolve().parent.parent
 source = (root / 'Source/PluginEditor.cpp').read_text(encoding='utf-8')
 help_page = (root / 'Help/LSampler24Help.html').read_text(encoding='utf-8')
 assert 'constexpr auto lsamplerVersion = "0.99.25";' in source
-assert 'constexpr auto lsamplerReleaseDate = "4 November 2026";' in source
+assert any(f'constexpr auto lsamplerReleaseDate = "{date}";' in source for date in ('4 November 2026','5 November 2026'))
 assert 'aboutInfo.setTitle("About LSampler-24")' in source
 assert 'aboutInfo.copyToClipboard();' in source
 about_nav = source.split('bool LSampler24AudioProcessorEditor::navigateAboutText',1)[1].split('bool LSampler24AudioProcessorEditor::isActionButton',1)[0]

@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "HostSlicePreparation.h"
+#include "ReaperNativeClipboard.h"
 #include "SamplePoolProgress.h"
 #include <cmath>
 #include <limits>
@@ -55,6 +56,49 @@ public:
             host = static_cast<lsampler_reaper::IReaperHostApplication*>(result);
     }
     bool available() const noexcept { return host != nullptr; }
+
+    // Native clipboard is inspected at Alt+V only. A separate state marker
+    // remembers whether the internal slot clipboard was copied AFTER the last
+    // Windows clipboard change; native Ctrl+C does not require interception.
+    bool readCopiedItems(std::vector<LSampler24AudioProcessor::ReaperCopiedItem>& items,
+                         juce::String& error, int& truncated) const
+    {
+        items.clear();
+        error.clear();
+        truncated = 0;
+        if (host == nullptr) return false; // Other DAWs: Alt+V = slot paste.
+       #if JUCE_WINDOWS
+        if (slotCopyIsLatest && GetClipboardSequenceNumber() == slotCopySequence)
+            return false;
+        const auto snapshot = lsampler_reaper_clipboard::readNativeReaperAudioItems();
+        if (!snapshot.recognised) return false;
+        if (snapshot.items.empty())
+        {
+            error = snapshot.error.isNotEmpty() ? snapshot.error
+                : "No compatible REAPER audio items in clipboard";
+            return true;  // Never accidentally paste a stale internal slot.
+        }
+        const int limit = juce::jmin(static_cast<int>(snapshot.items.size()),
+                                      LSampler24AudioProcessor::slotCount);
+        truncated = static_cast<int>(snapshot.items.size()) - limit + snapshot.skipped;
+        for (int i = 0; i < limit; ++i)
+        {
+            const auto& entry = snapshot.items[static_cast<size_t>(i)];
+            items.push_back({ entry.file, entry.name, entry.startSeconds, entry.endSeconds });
+        }
+        return true;
+       #else
+        return false;
+       #endif
+    }
+
+    void markSlotCopy() const
+    {
+       #if JUCE_WINDOWS
+        slotCopySequence = GetClipboardSequenceNumber();
+        slotCopyIsLatest = true;
+       #endif
+    }
 
     int getActive(const LSampler24AudioProcessor& processor, juce::AudioProcessorParameter* param) const
     {
@@ -203,12 +247,28 @@ private:
         if (!juce::String::fromUTF8(name).trim().equalsIgnoreCase(param->getName(512).trim())) return {};
         return { owner, fxIdx, parameter };
     }
+   #if JUCE_WINDOWS
+    mutable DWORD slotCopySequence = 0;
+    mutable bool slotCopyIsLatest = false;
+   #endif
     lsampler_reaper::IReaperHostApplication* host = nullptr;
 };
 
 juce::VST3ClientExtensions* LSampler24AudioProcessor::getVST3ClientExtensions()
 {
     return reaperHostExtension.get();
+}
+bool LSampler24AudioProcessor::getReaperCopiedItems(
+    std::vector<ReaperCopiedItem>& result, juce::String& error, int& truncated) const
+{
+    result.clear();
+    truncated = 0;
+    return reaperHostExtension != nullptr
+        && reaperHostExtension->readCopiedItems(result, error, truncated);
+}
+void LSampler24AudioProcessor::markReaperClipboardAsSlot() const
+{
+    if (reaperHostExtension != nullptr) reaperHostExtension->markSlotCopy();
 }
 bool LSampler24AudioProcessor::hasReaperEnvelopeApi() const noexcept
 {
@@ -1314,7 +1374,12 @@ bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int sl
 
     const double sourceRate = loaded->sourceSampleRate > 0.0 ? loaded->sourceSampleRate : preparedSampleRate;
     const double totalSeconds = loaded->audio.getNumSamples() / juce::jmax(1.0, sourceRate);
-    const bool hasSlice = endSeconds > startSeconds + 0.0005 && totalSeconds > 0.0;
+    // A complete-file import must keep its original file reference instead
+    // of embedding a redundant full-length copy in REAPER project state.
+    const bool differentWindow = startSeconds > (1.5 / juce::jmax(1.0, sourceRate))
+        || endSeconds < totalSeconds - (1.5 / juce::jmax(1.0, sourceRate));
+    const bool hasSlice = endSeconds > startSeconds + 0.0005 && totalSeconds > 0.0
+        && differentWindow;
 
     if (hasSlice)
     {

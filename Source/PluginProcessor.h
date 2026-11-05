@@ -39,6 +39,20 @@ public:
     juce::VST3ClientExtensions* getVST3ClientExtensions() override;
 
     // REAPER-only host integration: true envelope ACTIVE state, not lane visibility.
+    // TEST168: read REAPER's native Windows media-item clipboard directly.
+    // Ctrl+C remains action 40057: no ReaScript, no change to shortcuts.
+    // Only a genuine REAPER VST3 host activates this Windows-only path.
+    struct ReaperCopiedItem
+    {
+        juce::File file;
+        juce::String takeName;
+        double startSeconds = 0.0;
+        double endSeconds = 0.0;
+    };
+    bool getReaperCopiedItems(std::vector<ReaperCopiedItem>& result,
+                              juce::String& error, int& truncated) const;
+    void markReaperClipboardAsSlot() const;
+
     bool hasReaperEnvelopeApi() const noexcept;
     int getReaperEnvelopeActive(juce::AudioProcessorParameter*) const; // -1 unknown
     bool toggleReaperEnvelopeActive(juce::AudioProcessorParameter*);

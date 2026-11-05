@@ -1,6 +1,12 @@
 # LSampler-24
 
-**Versione di prova 0.99.25 — 4 novembre 2026 (TEST166)**
+**Versione di prova 0.99.25 — 5 novembre 2026 (TEST168)**
+
+## TEST168 — Copia item REAPER con Ctrl+C e incolla negli slot con Alt+V
+
+Non occorre configurare niente: lascia **Ctrl+C** associato all’azione REAPER originale **40057**. Nella griglia di LSampler-24, **Alt+V** prova a leggere direttamente dal contenuto nativo degli appunti di Windows gli item audio copiati, li importa negli slot successivi fino allo slot 24 e chiede conferma prima di sostituire slot occupati. Alt+C e Alt+X per gli slot mantengono la priorità quando sono l'ultima copia. In altri host VST3 l'incolla degli slot resta invariato. Prima versione limitata a clip audio semplici (file su disco con eventuali tagli). Per i limiti vedere `TEST168_NATIVE_REAPER_CLIPBOARD_NOTE_IT.txt`. La lettura del formato reale degli appunti richiede verifica pratica in REAPER su Windows; nessuno script Lua o modifica delle scorciatoie è necessario.
+
+**Versione precedente: 0.99.25 — 4 novembre 2026 (TEST166)**
 
 ## TEST166 — Raccordo anti-click e limiti incrociati Sample Start / End
 
