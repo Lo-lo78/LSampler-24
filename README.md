@@ -1,6 +1,17 @@
 # LSampler-24
 
-**Versione di prova 0.99.25 — 5 novembre 2026 (TEST169)**
+**Versione di prova 0.99.25 — 5 novembre 2026 (TEST170)**
+
+## TEST170 — LFO Free deterministici al Play della DAW
+
+LFO 1 e LFO 2 con Trigger Off (Free) ripartono dalla fase iniziale
+quando REAPER o un'altra DAW passa a Play. Anche gli stati Mono condivisi,
+Poly per voce e Sample & Hold ripartono da semi definiti; Smooth, Delay
+e One Shot vengono reinizializzati solo nel modo Free. Triggered non
+cambia, gli altri moduli DSP e i campioni non vengono azzerati. Nessun
+nuovo parametro o modifica ai preset. Il rilevamento avviene prima
+anche dell'uscita CPU idle. Vedi `TEST170_FREE_LFO_HOST_PLAY_NOTE_IT.txt`.
+
 
 ## TEST169 — Incolla i percorsi dei campioni da SWS/BR con Alt+V (senza Lua)
 

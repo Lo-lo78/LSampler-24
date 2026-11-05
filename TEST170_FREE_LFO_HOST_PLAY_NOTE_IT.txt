@@ -1,0 +1,26 @@
+LSampler-24 0.99.25 TEST170 — LFO Free ripetibili all'avvio Play della DAW
+5 novembre 2026
+
+LFO 1/2: quando Trigger è Off (Free), ogni nuova partenza del trasporto
+REAPER o della DAW riporta la fase a 0 e reinizializza lo stato di Smooth,
+Delay, One Shot e Sample & Hold. Ogni Slot mantiene i propri due LFO;
+funziona per Mono condiviso e per Poly per-voce. Nessun nuovo parametro.
+
+Sample & Hold Free: semi fissi distinti per Slot, LFO e nota MIDI. La
+sequenza non dipende più dal generatore di casualità di Slice o rumore,
+e torna uguale dopo Stop/Play. Gli LFO Triggered non si resettano al Play.
+Le voci non vengono spente: restano attive con inviluppi e testine dei
+campioni inalterati. FX, campioni, CC e preset non vengono azzerati.
+
+La modalità Free non diventa BPM Sync: riparte solo al Play, non segue
+continuamente la posizione del brano. Un host che non segnali Stop può
+essere riconosciuto attraverso un salto della posizione, esclusi i loop.
+I preview della libreria non vengono resettati dal trasporto host.
+
+Prova: LFO1 Free -> Pitch, forma Sine; ripeti Stop/Play sullo stesso MIDI.
+Poi prova Sample & Hold Free. Con Trigger On l'avvio della DAW non deve
+modificare il comportamento. Ripeti nelle voci Poly e Mono.
+
+Test automatici: Tools/verify-test170-free-lfo-play.py e
+LSampler24FreeLfoTests (CTest free-lfo-transport).
+La compilazione VST3 su Windows e la prova REAPER rimangono da verificare.

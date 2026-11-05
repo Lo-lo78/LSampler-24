@@ -58,6 +58,7 @@ target_sources(LSampler24 PRIVATE
     Source/SlotAudioState.cpp
     Source/SamplerVoice.cpp
     Source/SamplerVoice.h
+    Source/FreeLfoTransport.h
     Source/SliceState.h
     Source/SliceState.cpp
     Source/SliceEngine.h
@@ -134,4 +135,9 @@ if(LSAMPLER_BUILD_FILTER_TESTS)
         target_link_libraries(LSampler24ClipboardTests PRIVATE user32)
     endif()
     add_test(NAME clipboard-paths COMMAND LSampler24ClipboardTests)
+
+    # TEST170: JUCE-independent real transport detector/Free S&H seed test.
+    add_executable(LSampler24FreeLfoTests Tests/FreeLfoTransportTests.cpp)
+    target_compile_features(LSampler24FreeLfoTests PRIVATE cxx_std_17)
+    add_test(NAME free-lfo-transport COMMAND LSampler24FreeLfoTests)
 endif()

@@ -5,6 +5,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "SamplePool.h"
 #include "SamplerVoice.h"
+#include "FreeLfoTransport.h"
 #include "LibraryManager.h"
 #include <array>
 #include <vector>
@@ -425,6 +426,7 @@ private:
     uint64_t nextRevision = 0;
     double preparedSampleRate = 44100;
     std::vector<std::shared_ptr<SharedSample>> retiredSamples;
+    lsampler::HostPlayRestartDetector hostPlayDetector;
     GlobalVoicePool voicePool;
 
     std::array<std::atomic<double>, lsampler::globalParameterCount> globalOutputParameters {

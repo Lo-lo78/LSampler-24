@@ -21,6 +21,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="en" lang="en">
 <h1>LSampler-24 0.99.25: accessible guide</h1>
+<h2>New in TEST170 — deterministic Free LFO restart on DAW Play</h2><p>Whenever REAPER or another compatible DAW starts playback, LFO 1 and LFO 2 with Trigger Off (Free) restart from a known phase. This applies to per-slot Mono and per-voice Poly, including repeatable Sample &amp; Hold, Smooth, Delay and Free One Shot. Triggered LFOs and sample playback, envelopes and effects are unchanged; no new parameter or preset change. Free still runs at its selected frequency, not continuously tied to the song timeline.</p>
 <h2>New in TEST169 — paste SWS audio source paths</h2><p>In REAPER on Windows, select audio items and run the existing action SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD). In LSampler-24 choose the starting Slot and press Alt+V. One complete source file per clipboard line is imported consecutively until Slot 24. No Lua required; existing slot copy/paste and other DAWs are unchanged. The original Ctrl+C copies REAPER items, NOT audio file paths. Trimmed items import as complete files: render first to include item FX, fades, pitch or stretch.</p>
 <h2>New in TEST168 — REAPER-only copy of audio items into Slots</h2>
 <p>Historical TEST168 note: the native REAPER Ctrl+C item-clipboard reader is experimental. For reliable imports, use the TEST169 SWS/BR source-file-path action above instead.</p>
@@ -94,6 +95,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="it" lang="it">
 <h1>LSampler-24 0.99.25: guida accessibile</h1>
+<h2>Novità TEST170 — LFO Free deterministici a ogni Play della DAW</h2><p>Quando REAPER o un’altra DAW compatibile avvia Play, LFO 1 e LFO 2 con Trigger disattivato (Free) ripartono da una fase definita. Vale per Mono condiviso nello slot e Poly per voce, compresi Sample &amp; Hold ripetibile, Smooth, Delay e One Shot in Free. Gli LFO Triggered non cambiano. Non vengono riavviati campioni, inviluppi o effetti; nessun parametro nuovo né modifica ai preset. Free conserva la propria velocità e non viene sincronizzato continuamente alla posizione del brano.</p>
 <h2>Novità TEST169 — incolla i percorsi dei file audio con SWS/BR</h2><p>In REAPER su Windows seleziona uno o più item audio ed esegui l’azione SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD). In LSampler-24 scegli lo slot iniziale e premi Alt+V. I file sorgente interi, uno per riga negli appunti, vengono caricati in sequenza fino allo slot 24. Nessun Lua. La copia interna degli slot e le altre DAW non cambiano. Ctrl+C originale copia gli item, NON i percorsi audio. Gli item tagliati importano il file intero; per incorporare FX, fade, pitch o stretch serve prima renderizzare.</p>
 <h2>Novità TEST168 — copia degli item REAPER direttamente negli Slot</h2>
 <p>Nota storica TEST168: il lettore degli item copiati con Ctrl+C originale è sperimentale. Per importare con affidabilità utilizza l’azione SWS/BR della TEST169 descritta sopra.</p>
@@ -173,6 +175,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="es" lang="es">
 <h1>LSampler-24 0.99.25: guía accesible</h1>
+<h2>Novedad TEST170 — reinicio reproducible de los LFO Free al iniciar la DAW</h2><p>Al pulsar Play en REAPER u otra DAW compatible, LFO 1 y LFO 2 con Trigger desactivado (Free) reinician su fase. Esto funciona en Mono y Poly por voz, incluyendo Sample &amp; Hold reproducible, Smooth, Delay y One Shot. Los LFO Triggered, las muestras, envolventes, efectos y presets no cambian. Free no se sincroniza continuamente con la línea de tiempo.</p>
 <h2>Novedad TEST169 — pegar rutas de audio mediante SWS/BR</h2><p>En REAPER para Windows seleccione ítems de audio y ejecute SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD). En LSampler-24 seleccione la ranura inicial y pulse Alt+V. Se importan los archivos fuente completos, uno por línea, hasta la ranura 24. No se necesita Lua; las funciones de copiar ranuras y las demás DAW no cambian. Ctrl+C original copia ítems, no rutas. Para conservar efectos, recortes, fundidos, cambios de tono o estiramientos, renderice primero.</p>
 <h2>Novedad TEST168 — copiar ítems de REAPER a las ranuras</h2>
 <p>Nota histórica de TEST168: el lector de ítems de Ctrl+C sigue siendo experimental. Para importar archivos use la acción SWS/BR de TEST169 descrita arriba.</p>
@@ -215,6 +218,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="pt" lang="pt">
 <h1>LSampler-24 0.99.25: guia acessível</h1>
+<h2>Novidade TEST170 — LFO Free reinicia de modo determinístico no Play da DAW</h2><p>Ao iniciar Play no REAPER ou noutra DAW compatível, LFO 1 e LFO 2 com Trigger desligado (Free) reiniciam a fase. Funciona em Mono por slot e Poly por voz, com Sample &amp; Hold repetível, Smooth, Delay e One Shot. LFO Triggered, amostras, envelopes, efeitos e presets não mudam. Free mantém a frequência própria.</p>
 <h2>Novidade TEST169 — colar caminhos de áudio com SWS/BR</h2><p>No REAPER para Windows, selecione os itens de áudio e execute SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD). No LSampler-24, selecione o slot inicial e pressione Alt+V. Importa os ficheiros originais completos, um por linha, até ao slot 24. Não requer Lua; a cópia de slots e as outras DAW não mudam. O Ctrl+C original copia itens, não caminhos. Para incluir efeitos, cortes, fades, pitch e stretch, renderize antes.</p>
 <h2>Novidade TEST168 — copiar itens do REAPER para Slots</h2>
 <p>Nota histórica da TEST168: o leitor de itens copiados pelo Ctrl+C continua experimental. Para importar ficheiros utilize a ação SWS/BR da TEST169 acima.</p>
@@ -252,6 +256,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="fr" lang="fr">
 <h1>LSampler-24 0.99.25 : guide accessible</h1>
+<h2>Nouveauté TEST170 — redémarrage déterministe des LFO Free à Play</h2><p>Au démarrage de REAPER ou d’un autre séquenceur compatible, les LFO 1 et 2 avec Trigger désactivé (Free) repartent d’une phase connue. Cela fonctionne en Mono par emplacement et en Poly par voix, avec Sample &amp; Hold reproductible, Smooth, Delay et One Shot. Les LFO Triggered, échantillons, enveloppes, effets et préréglages sont inchangés. Free conserve sa fréquence propre.</p>
 <h2>Nouveauté TEST169 — coller les chemins audio via SWS/BR</h2><p>Dans REAPER sous Windows, sélectionnez les items audio et lancez SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD). Dans LSampler-24, sélectionnez le premier emplacement et appuyez sur Alt+V. Les fichiers source complets, un par ligne, sont importés jusqu’au slot 24. Aucun script Lua requis; copie des slots et autres DAW inchangées. Ctrl+C original copie les items, pas les chemins. Effectuez un rendu préalable pour inclure coupes, effets, fondus, hauteur ou étirement.</p>
 <h2>Nouveauté TEST168 — copier les items REAPER dans les Slots</h2>
 <p>Note historique TEST168 : le lecteur des items copiés avec Ctrl+C reste expérimental. Pour importer des fichiers, utilisez l’action SWS/BR de TEST169 ci-dessus.</p>
@@ -289,6 +294,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="ru" lang="ru">
 <h1>LSampler-24 0.99.25: доступное руководство</h1>
+<h2>TEST170 — повторяемый запуск Free LFO при Play</h2><p>При запуске воспроизведения в REAPER или другой совместимой DAW LFO 1 и LFO 2 с выключенным Trigger (Free) начинают работу с исходной фазы. Это относится к Mono для слота и Poly для голоса, включая повторяемый Sample &amp; Hold, Smooth, Delay и One Shot. Triggered, сэмплы, огибающие, эффекты и пресеты не меняются. Free не привязан непрерывно к позиции проекта.</p>
 <h2>TEST169 — вставка путей к аудиофайлам через SWS/BR</h2><p>В REAPER для Windows выделите аудиоэлементы и выполните SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD). В LSampler-24 выберите начальный слот и нажмите Alt+V. Полные исходные файлы (по одному пути в строке) загружаются последовательно до слота 24. Lua не нужен. Ctrl+C копирует элементы, а не пути к файлам. Для сохранения эффектов, обрезки, фейдов и изменения высоты или скорости сначала выполните рендеринг.</p>
 <h2>TEST168 — копирование аудиоэлементов REAPER в слоты</h2>
 <p>Историческое примечание TEST168: чтение элементов из Ctrl+C остаётся экспериментальным. Для импорта используйте действие SWS/BR, описанное в TEST169 выше.</p>
@@ -326,6 +332,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="zh" lang="zh">
 <h1>LSampler-24 0.99.25：无障碍指南</h1>
+<h2>TEST170 — DAW 播放开始时重置 Free LFO</h2><p>在 REAPER 或其他兼容 DAW 中按 Play 时，Trigger 关闭（Free）的 LFO 1 和 LFO 2 从确定的相位重新启动。适用于每个 Slot 的 Mono 和每个声音的 Poly，并重置 Sample &amp; Hold、Smooth、Delay 及 Free One Shot。Triggered LFO、采样、包络、效果和预设保持不变；Free 不会持续锁定歌曲时间轴。</p>
 <h2>TEST169 — 使用 SWS/BR 粘贴音频源文件路径</h2><p>在 Windows 版 REAPER 中选择音频 item，运行 SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD)。在 LSampler-24 中选择起始 Slot，然后按 Alt+V。剪贴板中每行一个源文件路径，按顺序导入完整音频文件，最多到第 24 个 Slot。无需 Lua；其他 DAW 和内部 Slot 复制不变。原生 Ctrl+C 复制 item 而非文件路径。要保留裁剪、效果、淡化和变速变调，请先渲染。</p>
 <h2>TEST168 — 将 REAPER 音频 item 复制到 Slot</h2>
 <p>TEST168 历史说明：直接读取 Ctrl+C 的 item 剪贴板仍处于实验阶段。请使用上方 TEST169 的 SWS/BR 音频路径复制操作。</p>
@@ -363,6 +370,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="ja" lang="ja">
 <h1>LSampler-24 0.99.25：アクセシブルガイド</h1>
+<h2>TEST170 — DAW再生開始時にFree LFOをリセット</h2><p>REAPERまたは対応DAWでPlayを開始すると、Triggerがオフ（Free）のLFO 1/2は決まった位相から再開します。Slot単位のMonoと各ボイスのPolyに対応し、Sample &amp; Hold、Smooth、Delay、Free One Shotも再初期化します。Triggered LFO、サンプル、エンベロープ、エフェクト、プリセットは変更されません。Freeの周期は再生位置に常時同期しません。</p>
 <h2>TEST169 — SWS/BR で音声ファイルのパスを貼り付け</h2><p>Windows の REAPER でオーディオアイテムを選択し、SWS/BR: Copy take media source file path of selected items to clipboard (_BR_TSOURCE_PATH_TO_CLIPBOARD) を実行してください。LSampler-24 で開始スロットを選択し、Alt+V を押すと、クリップボードの各行のソースファイル全体がスロット24まで順番に読み込まれます。Lua は不要です。通常の Ctrl+C はファイルパスではなくアイテムをコピーします。トリム、エフェクト、フェード、ピッチやストレッチを含めたい場合は先にレンダリングしてください。</p>
 <h2>TEST168 — REAPER のオーディオアイテムをスロットへコピー</h2>
 <p>TEST168 の過去の記録: 通常の Ctrl+C でコピーされたアイテムの読み取りは実験的です。確実にファイルを取り込むには、上記 TEST169 の SWS/BR アクションをご利用ください。</p>

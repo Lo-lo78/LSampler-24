@@ -407,6 +407,7 @@ LSampler24AudioProcessor::~LSampler24AudioProcessor()
     // Finish the running disk operation before any processor-owned state is freed.
     // Closing only the editor never waits for this worker.
     while (!fileWorker.removeAllJobs(false, 1000)) {}
+    hostPlayDetector.reset();
     voicePool.allNotesOff();
     libraryPreviewVoicePool.allNotesOff();
 }
@@ -433,6 +434,7 @@ bool LSampler24AudioProcessor::startFileTask(FileTask task, std::function<void(F
 
 void LSampler24AudioProcessor::prepareToPlay(double sampleRate, int)
 {
+    hostPlayDetector.reset();
     voicePool.prepare(sampleRate);
     libraryPreviewVoicePool.prepare(sampleRate);
     libraryPreviewVoicePool.setStates(&libraryPreviewStates);
@@ -694,6 +696,14 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (resetFXEngineRequested.exchange(false, std::memory_order_acq_rel))
         fxEngine.reset();
     syncAudioStateFromSlots();
+    // TEST170: observe the transport BEFORE the CPU-idle early return.
+    // Otherwise a DAW could start playing during silence and the Free LFOs
+    // would keep the phase/random sequence from the previous playback.
+    if (auto* head=getPlayHead()) if (auto position=head->getPosition()) {
+        if (hostPlayDetector.observe(position->getIsPlaying(), position->getTimeInSamples(),
+                                     position->getIsLooping(), buffer.getNumSamples()))
+            voicePool.restartFreeLfosOnTransportPlay();
+    }
     if (resetOutputEnvelope.load(std::memory_order_acquire) && resetOutputEnvelope.exchange(false)) outputGlueEnvelope = 0.0;
     if ((libraryPreviewMiddle.load(std::memory_order_acquire) & 4) != 0) {
         // Stop old voices before handing their snapshot back to the publisher.

@@ -2,6 +2,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "SlotAudioState.h"
 #include "SliceEngine.h"
+#include "FreeLfoTransport.h"
 #include <array>
 #include <cstdint>
 
@@ -13,6 +14,8 @@ public:
     void prepare(double sampleRate);
     void setStates(const std::array<lsampler::SlotAudioState, slotCount>* states) noexcept;
     void setTempo(double tempo) noexcept { bpm = tempo; }
+    // TEST170: reset Free LFOs only when the host starts a new Play.
+    void restartFreeLfosOnTransportPlay() noexcept;
     void setOutputRoutes(const std::array<int,25>& routes) noexcept { outputRoutes=routes; }
     void noteOn(int slotIndex,int note,float velocity,int channel=0,bool preview=false,double previewStartPercent=-1.0,int sliceRequest=-1,bool sliceMidiPad=false,int previewSampleIndex=-1);
     void noteOff(int note,int channel=0);
@@ -41,7 +44,7 @@ private:
         double tick(const lsampler::EnvelopeSettings&) noexcept;
         void release() noexcept { if(phase!=0)phase=4; }
     };
-    struct Lfo { double phase=0,output=0,hold=0; uint64_t age=0; };
+    struct Lfo { double phase=0,output=0,hold=0; uint64_t age=0; uint32_t freeRandomState=1; };
     struct Filter { double band[2]{},low[2]{}; };
     struct Voice {
         lsampler::SlicePlayback slice;
@@ -113,9 +116,12 @@ private:
     static constexpr int monoLfoChunk = 512;
     std::array<std::array<Lfo,2>,slotCount> monoLfo {};
     std::array<uint32_t,slotCount> monoLfoRandom {};
+    // Free-mode S&H does not share its PRNG with Triggered LFOs, slices or noise.
+    std::array<std::array<uint32_t,2>,slotCount> monoFreeLfoRandom {};
     std::array<std::array<std::array<double,monoLfoChunk>,2>,slotCount> monoLfoSamples {};
     std::array<std::array<std::array<double,monoLfoChunk>,2>,slotCount> monoLfoCoreSamples {};
     void retriggerMonoLfos(int slot,const lsampler::SlotAudioState&) noexcept;
+    void initialiseFreeVoiceLfo(Voice&,int index) noexcept;
     std::array<int,slotCount> activePerSlot {};
     std::array<std::array<uint32_t, lsampler::SlotAudioState::sampleSetSize>, slotCount> roundRobinCounters {};
     std::array<std::array<int, lsampler::SlotAudioState::sampleSetSize>, slotCount> lastRandomChoice {};

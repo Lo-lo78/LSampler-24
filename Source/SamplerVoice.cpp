@@ -33,13 +33,48 @@ void GlobalVoicePool::prepare(double rate) {
     allNotesOff();hostSampleRate=rate>0?rate:44100;ageCounter=noteCounter=0;
     transitionSamples=std::max(16,int(std::round(hostSampleRate*.003))); // 3 ms equal-phase crossfade
     freePhase={};monoLfo={};bend={};wheel={};pedal={};diagnostics={};roundRobinCounters={};
-    for(int slot=0;slot<slotCount;++slot)monoLfoRandom[size_t(slot)]=0x48e102cdu^uint32_t((slot+1)*2654435761u);
+    for(int slot=0;slot<slotCount;++slot) {
+        monoLfoRandom[size_t(slot)]=0x48e102cdu^uint32_t((slot+1)*2654435761u);
+        for(int i=0;i<2;++i)monoFreeLfoRandom[size_t(slot)][size_t(i)]=freeLfoSeed(slot,i,-1);
+    }
     for(auto& row:lastRandomChoice)row.fill(-1);
     for(auto& groups:shuffleBags)for(auto& bag:groups)bag=ShuffleBag{};
     shuffleTurns={};
     for(int slot=0;slot<slotCount;++slot)variationRandomState[size_t(slot)]=0x9e3779b9u^uint32_t((slot+1)*2654435761u);
     outputRoutes.fill(-1);outputRoutes[0]=0;
 }
+void GlobalVoicePool::initialiseFreeVoiceLfo(Voice& voice,int index) noexcept {
+    auto& l=voice.lfo[size_t(index)];
+    l={};
+    l.freeRandomState=freeLfoSeed(voice.slotIndex,index,voice.note);
+    l.hold=nextFreeLfoHold(l.freeRandomState);
+}
+
+void GlobalVoicePool::restartFreeLfosOnTransportPlay() noexcept {
+    if(!states)return;
+    // Reset only the LFOs with Trigger off, independently per slot/LFO.
+    // One Shot is an independent option and is included when Trigger is off.
+    for(int slot=0;slot<slotCount;++slot)for(int i=0;i<2;++i) {
+        if((*states)[size_t(slot)].lfo[size_t(i)].trigger)continue;
+        freePhase[size_t(slot)][size_t(i)]=0.0;
+        auto& shared=monoLfo[size_t(slot)][size_t(i)];
+        shared={};
+        auto& rng=monoFreeLfoRandom[size_t(slot)][size_t(i)];
+        rng=freeLfoSeed(slot,i,-1);
+        shared.hold=nextFreeLfoHold(rng);
+    }
+    // Existing playing/retiring voices retain their sample heads, ADSRs,
+    // filters and effects. Only their Free LFO's phase, S&H and delay reset.
+    const auto resetVoice=[this](Voice& voice) noexcept {
+        if(!voice.active||voice.preview||voice.slotIndex<0||voice.slotIndex>=slotCount)return;
+        const auto& slot=(*states)[size_t(voice.slotIndex)];
+        for(int i=0;i<2;++i)if(!slot.lfo[size_t(i)].trigger)
+            initialiseFreeVoiceLfo(voice,i);
+    };
+    for(auto& voice:voices)resetVoice(voice);
+    for(auto& voice:retiringVoices)resetVoice(voice);
+}
+
 void GlobalVoicePool::setStates(const std::array<SlotAudioState,slotCount>* next) noexcept {
     states=next;
     if(!states)return;
@@ -278,7 +313,10 @@ void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudio
             const double localFrame = clamp(absoluteFrame - g.start, 0.0, double(g.length - 1));
             v.position=clamp(std::round(localFrame)+skip,0,double(g.length-1));
         }
-        for(int i=0;i<2;++i)if(s.lfo[size_t(i)].trigger||(s.lfo[size_t(i)].oneShot&&s.lfo[size_t(i)].oneShotPercent>0))v.lfo[size_t(i)]={};
+        for(int i=0;i<2;++i)if(s.lfo[size_t(i)].trigger||(s.lfo[size_t(i)].oneShot&&s.lfo[size_t(i)].oneShotPercent>0)) {
+            if(s.lfo[size_t(i)].trigger)v.lfo[size_t(i)]={};
+            else initialiseFreeVoiceLfo(v,i);
+        }
     }
     if(retrigger)v.slice.start(s.slice,-1,v.randomState);
     if(s.params[P::portamento]==0)v.effectiveNote=note;
@@ -366,8 +404,11 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
     v.position=clamp(std::round(localFrame)+skip,0,double(g.length-1));
     for(int i=0;i<2;++i) {
         const auto& l=s.lfo[size_t(i)];
-        if(!l.trigger&&!(l.oneShot&&l.oneShotPercent>0))v.lfo[size_t(i)].phase=freePhase[size_t(slot)][size_t(i)];
-        v.lfo[size_t(i)].hold=random(v);
+        if(!l.trigger) {
+            initialiseFreeVoiceLfo(v,i);
+            if(!(l.oneShot&&l.oneShotPercent>0))
+                v.lfo[size_t(i)].phase=freePhase[size_t(slot)][size_t(i)];
+        } else v.lfo[size_t(i)].hold=random(v);
     }
     updateVoice(v,s);
     v.slice.start(s.slice,sliceRequest,v.randomState,sliceMidiPad);
@@ -466,7 +507,9 @@ double GlobalVoicePool::lfoTick(Voice& v,int index,const LfoSettings& s,double w
 double GlobalVoicePool::lfoTickPrepared(Voice& v,int index,const LfoSettings& s,double phaseIncrement,
                                         double envelopeSource,double crossSource) noexcept {
     ++diagnostics.lfo;
-    return lfoTickState(v.lfo[size_t(index)],v.randomState,s,phaseIncrement,envelopeSource,crossSource);
+    auto& state=v.lfo[size_t(index)];
+    uint32_t& rng=s.trigger?v.randomState:state.freeRandomState;
+    return lfoTickState(state,rng,s,phaseIncrement,envelopeSource,crossSource);
 }
 double GlobalVoicePool::lfoTickState(Lfo& l,uint32_t& randomState,const LfoSettings& s,double phaseIncrement,
                                     double envelopeSource,double crossSource) noexcept {
@@ -487,7 +530,7 @@ double GlobalVoicePool::lfoTickState(Lfo& l,uint32_t& randomState,const LfoSetti
     // matches the pre-TEST160 behaviour (one random value per LFO cycle).
     if(s.wave==5 && (!oneShot || l.phase<s.oneShotPercent)) {
         if(std::floor(previous+s.phaseOffset)!=std::floor(previous+phaseIncrement+s.phaseOffset))
-            l.hold=([&]() noexcept { uint32_t x=randomState; x^=x<<13; x^=x>>17; x^=x<<5; randomState=x; return double(x)*(2.0/4294967296.0)-1; }());
+            l.hold=nextFreeLfoHold(randomState);
     }
     const double raw=s.wave==5?l.hold
         :s.wave==4?(effectivePhase<s.squarePwm?1.0:-1.0)
@@ -1314,8 +1357,10 @@ void GlobalVoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,
                 double value=0;
                 if(running[i]) {
                     ++diagnostics.lfo;
+                    uint32_t& rng=ss.lfo[size_t(i)].trigger ? monoLfoRandom[size_t(slot)]
+                        : monoFreeLfoRandom[size_t(slot)][size_t(i)];
                     value=lfoTickState(monoLfo[size_t(slot)][size_t(i)],
-                        monoLfoRandom[size_t(slot)],ss.lfo[size_t(i)],inc[i],sharedEnvelope,i?cross1:cross0);
+                        rng,ss.lfo[size_t(i)],inc[i],sharedEnvelope,i?cross1:cross0);
                 }
                 monoLfoSamples[size_t(slot)][size_t(i)][size_t(frame)]=value;
             }

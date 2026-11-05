@@ -41,7 +41,7 @@ assert all(x in ui_tests for x in ('TEST166 End cannot cross Start','TEST166 Sta
                                    'TEST166 Start slider maximum','TEST166 End slider minimum'))
 assert 'project(LSampler24 VERSION 0.99.25' in (r/'CMakeLists.txt').read_text()
 assert 'constexpr auto lsamplerVersion = "0.99.25"' in editor
-assert any('LSampler-24-Windows-VST3-' + v in workflow for v in ('TEST166', 'TEST167', 'TEST168', 'TEST169'))
+assert any('LSampler-24-Windows-VST3-' + v in workflow for v in ('TEST166', 'TEST167', 'TEST168', 'TEST169', 'TEST170'))
 assert 'Tools/verify-test166-declick-bounds.py' in workflow
 # Frozen reference must never be touched by bugfix tests.
 assert (r/'Tests/ReferenceTEST59/SamplerVoice.cpp').is_file()
