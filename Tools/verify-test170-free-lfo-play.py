@@ -27,9 +27,19 @@ assert 'if(!voice.active||voice.preview' in voice
 assert 'for(auto& voice:retiringVoices)resetVoice(voice)' in voice
 assert 'monoFreeLfoRandom' in voice and 'monoFreeLfoRandom' in voice_header
 assert 'freeLfoSeed(voice.slotIndex,index,voice.note)' in voice
-assert 'ss.lfo[size_t(i)].trigger ? monoLfoRandom' in voice
-assert 's.trigger?v.randomState:state.freeRandomState' in voice
+assert 'useIndependentFreeLfoRandom(hostFreeLfoTransportStarted,ss.lfo[size_t(i)].trigger)' in voice
+assert 'useIndependentFreeLfoRandom(hostFreeLfoTransportStarted,s.trigger)' in voice
 assert 'nextFreeLfoHold(randomState)' in voice
+# Regression: TEST59 bitwise parity must survive without a Play event.
+selector=(r/'Source/FreeLfoTransport.h').read_text(encoding='utf-8')
+assert 'return hostPlaySeen && !triggered;' in selector
+assert 'hostFreeLfoTransportStarted=false;' in voice
+assert 'hostFreeLfoTransportStarted=true;' in voice
+assert 'if(!useIndependentFreeLfoRandom(hostFreeLfoTransportStarted,l.trigger))' in voice
+assert 'if(useIndependentFreeLfoRandom(hostFreeLfoTransportStarted,l.trigger))' in voice
+assert 'useIndependentFreeLfoRandom(hostFreeLfoTransportStarted, s.lfo[size_t(i)].trigger)' in voice
+assert 'useIndependentFreeLfoRandom(hostFreeLfoTransportStarted,ss.lfo[size_t(i)].trigger)' in voice
+assert 'if((*states)[size_t(slot)].lfo[size_t(i)].trigger)continue;' in voice
 assert 'LSampler24FreeLfoTests' in cmake
 assert 'free-lfo-transport' in (r/'Tools/build-windows.ps1').read_text(encoding='utf-8')
 assert 'Tools/verify-test170-free-lfo-play.py' in workflow

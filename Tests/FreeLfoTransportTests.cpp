@@ -26,6 +26,12 @@ int main() {
     assert(host.observe(true, 8192, true, 512));
     assert(!host.observe(true, 100, true, 512));
     assert(!host.observe(true, 612, true, 512));
+    // Legacy DSP/output must not change until a host Play has been observed.
+    // Triggered LFOs always retain their original shared random path.
+    assert(!useIndependentFreeLfoRandom(false, false));
+    assert(!useIndependentFreeLfoRandom(false, true));
+    assert(useIndependentFreeLfoRandom(true, false));
+    assert(!useIndependentFreeLfoRandom(true, true));
     // Two different Free LFOs and two polyphonic notes have unique stable seeds.
     assert(freeLfoSeed(0,0,60)==freeLfoSeed(0,0,60));
     assert(freeLfoSeed(0,0,60)!=freeLfoSeed(0,1,60));

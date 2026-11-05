@@ -33,6 +33,7 @@ void GlobalVoicePool::prepare(double rate) {
     allNotesOff();hostSampleRate=rate>0?rate:44100;ageCounter=noteCounter=0;
     transitionSamples=std::max(16,int(std::round(hostSampleRate*.003))); // 3 ms equal-phase crossfade
     freePhase={};monoLfo={};bend={};wheel={};pedal={};diagnostics={};roundRobinCounters={};
+    hostFreeLfoTransportStarted=false;
     for(int slot=0;slot<slotCount;++slot) {
         monoLfoRandom[size_t(slot)]=0x48e102cdu^uint32_t((slot+1)*2654435761u);
         for(int i=0;i<2;++i)monoFreeLfoRandom[size_t(slot)][size_t(i)]=freeLfoSeed(slot,i,-1);
@@ -52,6 +53,7 @@ void GlobalVoicePool::initialiseFreeVoiceLfo(Voice& voice,int index) noexcept {
 
 void GlobalVoicePool::restartFreeLfosOnTransportPlay() noexcept {
     if(!states)return;
+    hostFreeLfoTransportStarted=true;
     // Reset only the LFOs with Trigger off, independently per slot/LFO.
     // One Shot is an independent option and is included when Trigger is off.
     for(int slot=0;slot<slotCount;++slot)for(int i=0;i<2;++i) {
@@ -314,7 +316,9 @@ void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudio
             v.position=clamp(std::round(localFrame)+skip,0,double(g.length-1));
         }
         for(int i=0;i<2;++i)if(s.lfo[size_t(i)].trigger||(s.lfo[size_t(i)].oneShot&&s.lfo[size_t(i)].oneShotPercent>0)) {
-            if(s.lfo[size_t(i)].trigger)v.lfo[size_t(i)]={};
+            // Keep pre-Play One Shot behaviour bit-identical to TEST59.
+            if(!useIndependentFreeLfoRandom(hostFreeLfoTransportStarted, s.lfo[size_t(i)].trigger))
+                v.lfo[size_t(i)]={};
             else initialiseFreeVoiceLfo(v,i);
         }
     }
@@ -404,11 +408,15 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
     v.position=clamp(std::round(localFrame)+skip,0,double(g.length-1));
     for(int i=0;i<2;++i) {
         const auto& l=s.lfo[size_t(i)];
-        if(!l.trigger) {
+        if(useIndependentFreeLfoRandom(hostFreeLfoTransportStarted,l.trigger))
             initialiseFreeVoiceLfo(v,i);
-            if(!(l.oneShot&&l.oneShotPercent>0))
-                v.lfo[size_t(i)].phase=freePhase[size_t(slot)][size_t(i)];
-        } else v.lfo[size_t(i)].hold=random(v);
+        // The frozen TEST59 renderer consumes the voice PRNG here, even for
+        // Free LFOs. Retain it until Play, otherwise S&H and subsequent random
+        // slice choices diverge from historical output without a DAW restart.
+        if(!useIndependentFreeLfoRandom(hostFreeLfoTransportStarted,l.trigger))
+            v.lfo[size_t(i)].hold=random(v);
+        if(!l.trigger && !(l.oneShot&&l.oneShotPercent>0))
+            v.lfo[size_t(i)].phase=freePhase[size_t(slot)][size_t(i)];
     }
     updateVoice(v,s);
     v.slice.start(s.slice,sliceRequest,v.randomState,sliceMidiPad);
@@ -508,7 +516,8 @@ double GlobalVoicePool::lfoTickPrepared(Voice& v,int index,const LfoSettings& s,
                                         double envelopeSource,double crossSource) noexcept {
     ++diagnostics.lfo;
     auto& state=v.lfo[size_t(index)];
-    uint32_t& rng=s.trigger?v.randomState:state.freeRandomState;
+    uint32_t& rng=useIndependentFreeLfoRandom(hostFreeLfoTransportStarted,s.trigger)
+        ?state.freeRandomState:v.randomState;
     return lfoTickState(state,rng,s,phaseIncrement,envelopeSource,crossSource);
 }
 double GlobalVoicePool::lfoTickState(Lfo& l,uint32_t& randomState,const LfoSettings& s,double phaseIncrement,
@@ -1357,8 +1366,9 @@ void GlobalVoicePool::renderInternal(juce::AudioBuffer<float>& output,int start,
                 double value=0;
                 if(running[i]) {
                     ++diagnostics.lfo;
-                    uint32_t& rng=ss.lfo[size_t(i)].trigger ? monoLfoRandom[size_t(slot)]
-                        : monoFreeLfoRandom[size_t(slot)][size_t(i)];
+                    uint32_t& rng=useIndependentFreeLfoRandom(hostFreeLfoTransportStarted,ss.lfo[size_t(i)].trigger)
+                        ? monoFreeLfoRandom[size_t(slot)][size_t(i)]
+                        : monoLfoRandom[size_t(slot)];
                     value=lfoTickState(monoLfo[size_t(slot)][size_t(i)],
                         rng,ss.lfo[size_t(i)],inc[i],sharedEnvelope,i?cross1:cross0);
                 }

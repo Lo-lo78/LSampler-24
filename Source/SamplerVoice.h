@@ -118,6 +118,9 @@ private:
     std::array<uint32_t,slotCount> monoLfoRandom {};
     // Free-mode S&H does not share its PRNG with Triggered LFOs, slices or noise.
     std::array<std::array<uint32_t,2>,slotCount> monoFreeLfoRandom {};
+    // Before the first host Play, preserve the frozen TEST59 PRNG behaviour.
+    // After Play, Free LFOs use their own resettable streams.
+    bool hostFreeLfoTransportStarted = false;
     std::array<std::array<std::array<double,monoLfoChunk>,2>,slotCount> monoLfoSamples {};
     std::array<std::array<std::array<double,monoLfoChunk>,2>,slotCount> monoLfoCoreSamples {};
     void retriggerMonoLfos(int slot,const lsampler::SlotAudioState&) noexcept;

@@ -24,3 +24,9 @@ modificare il comportamento. Ripeti nelle voci Poly e Mono.
 Test automatici: Tools/verify-test170-free-lfo-play.py e
 LSampler24FreeLfoTests (CTest free-lfo-transport).
 La compilazione VST3 su Windows e la prova REAPER rimangono da verificare.
+
+Correzione compatibilità TEST59: prima che la DAW segnali il primo Play,
+Sample & Hold usa esattamente il comportamento precedente, anche per il
+consumo dei numeri pseudo-casuali della voce. Dopo Play, gli LFO Free
+usano i propri semi ripetibili; gli LFO Triggered restano invariati.
+Il test filter-parity TEST59 non viene disattivato né indebolito.

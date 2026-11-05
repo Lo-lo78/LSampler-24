@@ -7,6 +7,13 @@
 
 namespace lsampler {
 
+// Preserve TEST59 bitwise audio output when no DAW Play was observed.
+// Only after the host starts transport do Free-mode S&H oscillators use their
+// own resettable generator; Triggered oscillators always keep the legacy path.
+inline bool useIndependentFreeLfoRandom(bool hostPlaySeen, bool triggered) noexcept {
+    return hostPlaySeen && !triggered;
+}
+
 inline uint32_t freeLfoSeed(int slot, int lfo, int note) noexcept {
     // Stable across DAW playbacks; distinct slot, LFO and MIDI note streams.
     uint32_t x = 0x9e3779b9u ^ (uint32_t(slot + 1) * 0x85ebca6bu)
