@@ -23,7 +23,9 @@ int main()
         juce::File folder;
         ~Cleanup() { folder.deleteRecursively(); }
     } cleanup { root };
-    const auto first = root.getChildFile(juce::String::fromUTF8("pianò 01.wav"));
+    // Construct an accented file name independent of the MSVC source code page.
+    const auto first = root.getChildFile(juce::String("pian")
+                            + juce::String::charToString(0x00f2) + " 01.wav");
     const auto second = root.getChildFile("long filename 02.wav");
     expect(first.create().wasOk(), "first file");
     expect(second.create().wasOk(), "second file");

@@ -16,10 +16,10 @@ assert h.index('parseMediaSourcePaths(readText(CF_UNICODETEXT))') < h.index('par
 assert 'hasSupportedExtension(entry.file)' in p
 assert 'slotCopyIsLatest && GetClipboardSequenceNumber() == slotCopySequence' in p
 assert 'importSampleToSlot(item.file, firstSlot + i,' in e
-assert '_BR_TSOURCE_PATH_TO_CLIPBOARD' in (r/'TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt').read_text()
+assert '_BR_TSOURCE_PATH_TO_CLIPBOARD' in (r/'TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt').read_text(encoding='utf-8')
 assert 'LSampler-24-Windows-VST3-TEST169.zip' in w
 assert 'Tools/verify-test169-sws-source-paths.py' in w
-assert 'LSampler24ClipboardTests' in (r/'CMakeLists.txt').read_text()
-assert 'clipboard-paths' in (r/'Tools/build-windows.ps1').read_text()
-assert 'pianò 01.wav' in (r/'Tests/ReaperClipboardPathTests.cpp').read_text()
+assert 'LSampler24ClipboardTests' in (r/'CMakeLists.txt').read_text(encoding='utf-8')
+assert 'clipboard-paths' in (r/'Tools/build-windows.ps1').read_text(encoding='utf-8')
+assert 'charToString(0x00f2)' in (r/'Tests/ReaperClipboardPathTests.cpp').read_text(encoding='utf-8')
 print('TEST169 SWS media source path clipboard checks passed')

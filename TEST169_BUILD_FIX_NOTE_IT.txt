@@ -1,0 +1,6 @@
+LSampler-24 v0.99.25 TEST169 - CORREZIONE GitHub Actions (5 novembre 2026)
+
+Il job Windows si arrestava prima della compilazione VST3 per un assert del test statico sui nomi Unicode.
+Il controllo ora legge i file con encoding UTF-8 esplicito. Il test C++ costruisce il nome accentato tramite codice Unicode, senza dipendere dalla code page MSVC.
+Nessuna modifica al motore audio, alla gestione degli slot o al comportamento SWS/BR di Alt+V.
+Il VST3 non e stato compilato o provato in REAPER in questo ambiente: GitHub Actions deve ancora verificarlo.
