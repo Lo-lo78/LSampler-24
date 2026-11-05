@@ -11,3 +11,12 @@
 - Nuovi test di trasporto e Sample & Hold; workflow e Help aggiornati.
 
 Test native su Windows/GitHub Actions ancora da eseguire.
+
+## Correzione compilazione TEST170 (5 novembre 2026)
+
+- Risolto l'errore MSVC C2664 in `PluginProcessor.cpp` causato dal passaggio
+  diretto di `juce::Optional<int64_t>` al rilevatore che riceve
+  `std::optional<int64_t>`. Conversione esplicita senza allocazioni in audio thread.
+- Aggiunto controllo di regressione al test TEST170 per prevenire il ripetersi
+  dell'errore; nessun cambiamento alle funzioni musicali, preset o parametri.
+- Compilazione VST3 completa da verificare su GitHub Actions.

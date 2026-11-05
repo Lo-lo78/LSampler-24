@@ -9,7 +9,14 @@ voice_header=(r/'Source/SamplerVoice.h').read_text(encoding='utf-8')
 workflow=(r/'.github/workflows/build-windows.yml').read_text(encoding='utf-8')
 cmake=(r/'CMakeLists.txt').read_text(encoding='utf-8')
 assert 'hostPlayDetector.reset();' in processor
-assert 'hostPlayDetector.observe(position->getIsPlaying(), position->getTimeInSamples()' in processor
+# Regression for MSVC C2664: JUCE Optional must not be passed directly to
+# the std::optional-based, JUCE-independent transport detector.
+assert 'const auto hostSamplePosition = position->getTimeInSamples();' in processor
+assert 'std::optional<int64_t> samplePosition;' in processor
+assert 'if (hostSamplePosition.hasValue())' in processor
+assert 'samplePosition = static_cast<int64_t>(*hostSamplePosition);' in processor
+assert 'hostPlayDetector.observe(position->getIsPlaying(), samplePosition,' in processor
+assert 'hostPlayDetector.observe(position->getIsPlaying(), position->getTimeInSamples()' not in processor
 assert processor.index('hostPlayDetector.observe(') < processor.index('if (midi.isEmpty() && voicePool.activeVoiceCount() == 0')
 assert 'voicePool.restartFreeLfosOnTransportPlay();' in processor
 assert 'lsampler::HostPlayRestartDetector hostPlayDetector;' in header

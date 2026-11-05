@@ -700,7 +700,14 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     // Otherwise a DAW could start playing during silence and the Free LFOs
     // would keep the phase/random sequence from the previous playback.
     if (auto* head=getPlayHead()) if (auto position=head->getPosition()) {
-        if (hostPlayDetector.observe(position->getIsPlaying(), position->getTimeInSamples(),
+        // JUCE PositionInfo returns juce::Optional, while the portable
+        // transport detector expects std::optional. Convert explicitly:
+        // the two optional types are not implicitly interchangeable.
+        const auto hostSamplePosition = position->getTimeInSamples();
+        std::optional<int64_t> samplePosition;
+        if (hostSamplePosition.hasValue())
+            samplePosition = static_cast<int64_t>(*hostSamplePosition);
+        if (hostPlayDetector.observe(position->getIsPlaying(), samplePosition,
                                      position->getIsLooping(), buffer.getNumSamples()))
             voicePool.restartFreeLfosOnTransportPlay();
     }
