@@ -64,6 +64,12 @@ jobs:
           python Tools/verify-test170-free-lfo-play.py
           if ($LASTEXITCODE -ne 0) { throw "TEST170 Free LFO Play reset check failed." }
 
+      - name: Verify TEST172 Alt+S complete slot preview
+        shell: powershell
+        run: |
+          python Tools/verify-test172-alt-s-layer-preview.py
+          if ($LASTEXITCODE -ne 0) { throw "TEST172 Alt+S preview check failed." }
+
       - name: Build TEST62, compare audio and measure performance
         id: compare
         shell: powershell

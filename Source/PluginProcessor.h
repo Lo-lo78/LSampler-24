@@ -450,7 +450,7 @@ private:
     std::array<lsampler::SlotAudioState,GlobalVoicePool::slotCount>& libraryPreviewStates=*libraryPreviewStorage;
     struct LibraryPreviewSnapshot {
         lsampler::SlotAudioState state;
-        std::shared_ptr<SharedSample> owner;
+        std::array<std::shared_ptr<SharedSample>, sampleSetSize> owners {};
     };
     std::unique_ptr<std::array<LibraryPreviewSnapshot, 3>> libraryPreviewSnapshots =
         std::make_unique<std::array<LibraryPreviewSnapshot, 3>>();

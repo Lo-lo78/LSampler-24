@@ -909,11 +909,25 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             libraryPreviewVoicePool.stopPreviewVoices();
             libraryPreviewPlaying = false;
         }
-        else if (libraryPreviewStates[0].sample != nullptr)
+        else if (slotHasAudio(libraryPreviewStates[0]))
         {
             libraryPreviewVoicePool.stopPreviewVoices();
-            libraryPreviewVoicePool.noteOn(0, previewMidiNoteForSlot(libraryPreviewStates[0]), 1.0f, 0, true);
-            libraryPreviewPlaying = true;
+            const auto& previewState = libraryPreviewStates[0];
+            const int previewNote = previewMidiNoteForSlot(previewState);
+            if (previewState.variationMode == variationLayer && previewState.params[P::polyphony] != 0)
+            {
+                // Preview the saved Layer with exactly the same velocity-eligible
+                // voices and individual Pitch/Pan/Volume as normal MIDI playback.
+                for (int sampleIndex = 0; sampleIndex < sampleSetSize; ++sampleIndex)
+                    if (previewState.sampleSet[size_t(sampleIndex)] != nullptr
+                        && previewState.sampleVelocityLow[size_t(sampleIndex)] <= 127
+                        && previewState.sampleVelocityHigh[size_t(sampleIndex)] >= 127)
+                        libraryPreviewVoicePool.noteOn(0, previewNote, 1.0f, 0, true,
+                                                       -1.0, -1, false, -1, sampleIndex);
+            }
+            else
+                libraryPreviewVoicePool.noteOn(0, previewNote, 1.0f, 0, true);
+            libraryPreviewPlaying = libraryPreviewVoicePool.hasPreviewVoices(0);
         }
         libraryPreviewPlayingAtomic.store(libraryPreviewPlaying, std::memory_order_relaxed);
     }
@@ -2654,29 +2668,100 @@ bool LSampler24AudioProcessor::prepareLibrarySlotPreview(const juce::File& prese
         }
     }
 
+    const auto sampleSet = tree.getChildWithName("SampleSet");
+    std::array<std::shared_ptr<SharedSample>, sampleSetSize> owners {};
+    std::array<int, sampleSetSize> velocityLow {}, velocityHigh {};
+    std::array<double, sampleSetSize> pitchCents {}, pan {}, volumeDb {};
+    velocityLow.fill(1);
+    velocityHigh.fill(127);
+    int variationMode = variationOff;
+    if (sampleSet.isValid())
+    {
+        variationMode = juce::jlimit<int>(variationOff, variationLayer,
+            int(sampleSet.getProperty("variationMode", variationOff)));
+        for (int j = 0; j < sampleSet.getNumChildren(); ++j)
+        {
+            const auto entry = sampleSet.getChild(j);
+            const int index = int(entry.getProperty("index", j));
+            if (index < 0 || index >= sampleSetSize) continue;
+            auto& lo = velocityLow[size_t(index)];
+            auto& hi = velocityHigh[size_t(index)];
+            lo = juce::jlimit(1, 127, int(entry.getProperty("velocityLow", 1)));
+            hi = juce::jlimit(1, 127, int(entry.getProperty("velocityHigh", 127)));
+            if (lo > hi) std::swap(lo, hi);
+            pitchCents[size_t(index)] = juce::jlimit(-1200.0, 1200.0,
+                double(entry.getProperty("pitchCents", 0.0)));
+            pan[size_t(index)] = juce::jlimit(-100.0, 100.0,
+                double(entry.getProperty("pan", 0.0)));
+            volumeDb[size_t(index)] = juce::jlimit(-120.0, 24.0,
+                double(entry.getProperty("volumeDb", 0.0)));
+        }
+    }
     auto reference = tree.getProperty("sampleReference").toString();
     if (reference.isEmpty()) reference = tree.getProperty("samplePath").toString();
-    const auto sampleHash = tree.getProperty("sampleHash").toString();
+    auto sampleHash = tree.getProperty("sampleHash").toString();
+    if (reference.isEmpty() && sampleSet.isValid())
+        for (int j = 0; j < sampleSet.getNumChildren(); ++j)
+        {
+            const auto entry = sampleSet.getChild(j);
+            if (int(entry.getProperty("index", j)) != 0) continue;
+            reference = entry.getProperty("sampleReference").toString();
+            sampleHash = entry.getProperty("sampleHash").toString();
+            break;
+        }
     const auto file = library.resolveSampleReference(reference, sampleHash);
-    if (!file.existsAsFile())
-    {
-        error = "Sample missing: " + file.getFileName();
-        return false;
-    }
-    auto loaded = SamplePool::instance().load(file, error);
-    if (!loaded) return false;
+    if (tree.getChildWithName("EditedAudio").isValid())
+        owners[0] = restoreEditedAudio(tree.getChildWithName("EditedAudio"), file, error);
+    else if (file.existsAsFile())
+        owners[0] = SamplePool::instance().load(file, error);
+    else if (reference.isNotEmpty())
+        error = "Sample missing: " + juce::File(reference).getFileName();
+    if (!owners[0] && reference.isNotEmpty()) return false;
+    if (sampleSet.isValid())
+        for (int j = 0; j < sampleSet.getNumChildren(); ++j)
+        {
+            const auto entry = sampleSet.getChild(j);
+            const int index = int(entry.getProperty("index", j));
+            if (index <= 0 || index >= sampleSetSize) continue;
+            const auto ref = entry.getProperty("sampleReference").toString();
+            if (ref.isEmpty()) continue;
+            const auto alternate = library.resolveSampleReference(ref,
+                entry.getProperty("sampleHash").toString());
+            if (!alternate.existsAsFile())
+            {
+                error = "Sample Set file missing: " + juce::File(ref).getFileName();
+                return false;
+            }
+            owners[size_t(index)] = SamplePool::instance().load(alternate, error);
+            if (!owners[size_t(index)]) return false;
+        }
+    bool anySample = false;
+    for (const auto& owner : owners) if (owner) { anySample = true; break; }
+    if (!anySample) { error = "No samples in saved slot"; return false; }
 
-    // Browsing an old recipe upgrades it in place. If the WAV was manually
-    // moved below Library/Samples, store its current path and stable hash.
-    tree.setProperty("sampleReference", library.makeSampleReference(file), nullptr);
-    tree.setProperty("sampleHash", library.makeSampleHash(file), nullptr);
-    { juce::String ignored; writePreset(presetFile, tree, ignored); }
-
+    // All disk I/O is completed on the message thread. Publish the complete
+    // immutable multi-sample snapshot atomically to the audio thread.
     const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     auto& target = (*libraryPreviewSnapshots)[size_t(libraryPreviewWriter)];
-    target.owner = std::move(loaded);
-    target.state = lsampler::prepareSlotAudioState(params, target.owner.get(), preparedSampleRate, ++nextRevision);
-    target.state.slice = prepareSliceAudio(SliceState::fromTree(tree.getChildWithName("Slice")), target.state.length);
+    target.owners = std::move(owners);
+    target.state = lsampler::prepareSlotAudioState(params, target.owners[0].get(),
+                                                   preparedSampleRate, ++nextRevision);
+    for (int index = 0; index < sampleSetSize; ++index)
+    {
+        auto* sample = target.owners[size_t(index)].get();
+        target.state.sampleSet[size_t(index)] = sample;
+        target.state.playback[size_t(index)] = lsampler::prepareSamplePlaybackState(
+            params, sample, preparedSampleRate);
+        target.state.sampleVelocityLow[size_t(index)] = uint8_t(velocityLow[size_t(index)]);
+        target.state.sampleVelocityHigh[size_t(index)] = uint8_t(velocityHigh[size_t(index)]);
+        target.state.samplePitchCents[size_t(index)] = pitchCents[size_t(index)];
+        target.state.samplePan[size_t(index)] = pan[size_t(index)] * .01;
+        target.state.sampleVolumeGain[size_t(index)] = volumeDb[size_t(index)] <= -120.0
+            ? 0.0 : std::pow(10.0, volumeDb[size_t(index)] / 20.0);
+    }
+    target.state.variationMode = variationMode;
+    target.state.slice = prepareSliceAudio(SliceState::fromTree(tree.getChildWithName("Slice")),
+                                           target.state.length);
     libraryPreviewWriter = libraryPreviewMiddle.exchange(libraryPreviewWriter | 4, std::memory_order_acq_rel) & 3;
     return true;
 }
