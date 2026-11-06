@@ -49,7 +49,7 @@ private:
     struct Voice {
         lsampler::SlicePlayback slice;
         bool active=false,preview=false,keyDown=true,sustained=false,loopsReleased=false,retiring=false;
-        int fadeInLeft=0,fadeOutLeft=0,legatoPitchSlewLeft=0,legatoPitchSlewTotal=0;
+        int fadeInLeft=0,fadeOutLeft=0,legatoPitchSlewLeft=0,legatoPitchSlewTotal=0,delayFramesRemaining=0;
         double mirrorSign=1.0,legatoFromIncrement=1.0;
         bool autoSliceHasLoops=false; // cached once per automatic source-slice event
         int slotIndex=-1,note=-1,channel=0,stage=-1,repeat=0,skipStage=-1,sampleIndex=0,loopPitchTimeRepeat=-1;

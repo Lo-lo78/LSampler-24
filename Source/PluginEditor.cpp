@@ -2917,7 +2917,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 if (code == juce::KeyPress::endKey)
                 {
                     constexpr int rows = 8;
-                    const int total = sampleSetPage == 2 ? 3 : 5;
+                    const int total = sampleSetPage == 2 ? 3 : 7;
                     const int columnStart = (sampleSetField / rows) * rows;
                     const int columnEnd = juce::jmin(total - 1, columnStart + rows - 1);
                     if (sampleSetField != columnEnd) { sampleSetField = columnEnd; refreshSampleSetCell(true); }
@@ -2931,11 +2931,11 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             const auto typed=parameterSearchCharacter(key);
             if (typed!=0)
             {
-                const int found=sampleSetParameterSearch.next(static_cast<wchar_t>(typed),sampleSetField,5,
+                const int found=sampleSetParameterSearch.next(static_cast<wchar_t>(typed),sampleSetField,7,
                     mods.isShiftDown()?-1:1,juce::Time::getMillisecondCounter(),
                     [](int index) {
-                        static const wchar_t* labels[] = {L"Velocity Low", L"Velocity High", L"Pitch", L"Pan", L"Volume"};
-                        return std::wstring(labels[juce::jlimit(0,4,index)]);
+                        static const wchar_t* labels[] = {L"Velocity Low", L"Velocity High", L"Pitch", L"Octave", L"Pan", L"Volume", L"Delay"};
+                        return std::wstring(labels[juce::jlimit(0,6,index)]);
                     });
                 if(found>=0 && found!=sampleSetField)
                 {
@@ -4381,14 +4381,16 @@ juce::String LSampler24AudioProcessorEditor::sampleSetParameterText() const
           ? juce::String(", Auto") : juce::String();
     const int slot = processor.getCurrentSlot();
     const auto info = processor.getSampleSetEntry(slot, sampleSetIndex);
-    switch (sampleSetPage == 2 ? 5 : juce::jlimit(0, 4, sampleSetField))
+    switch (sampleSetPage == 2 ? 7 : juce::jlimit(0, 6, sampleSetField))
     {
         case 0: return "Velocity Low, " + juce::String(info.velocityLow) + suffix;
         case 1: return "Velocity High, " + juce::String(info.velocityHigh) + suffix;
-        case 2: return "Pitch, " + juce::String(info.pitchCents, 0) + " cents";
-        case 3: return "Pan, " + (info.pan == 0 ? juce::String("Center") :
-            (info.pan < 0 ? juce::String("Left ") + juce::String(-info.pan, 0) : juce::String("Right ") + juce::String(info.pan, 0)));
-        case 4: return "Volume, " + juce::String(info.volumeDb, 1) + " dB";
+        case 2: return "Pitch, " + juce::String(info.pitchCents, 0) + " cents" + suffix;
+        case 3: return "Octave, " + juce::String(info.octave, 0) + suffix;
+        case 4: return "Pan, " + (info.pan == 0 ? juce::String("Center") :
+            (info.pan < 0 ? juce::String("Left ") + juce::String(-info.pan, 0) : juce::String("Right ") + juce::String(info.pan, 0))) + suffix;
+        case 5: return "Volume, " + juce::String(info.volumeDb, 1) + " dB" + suffix;
+        case 6: return "Delay, " + juce::String(info.delayMs, 0) + " ms" + suffix;
         default: return "Variation Mode, " + LSampler24AudioProcessor::variationModeName(processor.getVariationMode(slot)) + suffix;
     }
 }
@@ -4407,7 +4409,7 @@ void LSampler24AudioProcessorEditor::moveSampleSetField(int direction)
 {
     if (!sampleSetGridFocus || sampleSetValueFocus || sampleSetPage == 2) return;
     constexpr int rows = 8;
-    const int total = 5;
+    const int total = 7;
     const int column = sampleSetField / rows;
     const int columnStart = column * rows;
     const int columnEnd = juce::jmin(total - 1, columnStart + rows - 1);
@@ -4421,7 +4423,7 @@ void LSampler24AudioProcessorEditor::moveSampleSetGridColumn(int direction)
 {
     if (!sampleSetGridFocus || sampleSetValueFocus || sampleSetPage == 2) return;
     constexpr int rows = 8;
-    const int total = 5;
+    const int total = 7;
     const int next = sampleSetField + (direction < 0 ? -rows : rows);
     if (next < 0 || next >= total) return;
     sampleSetField = next;
@@ -4452,12 +4454,14 @@ void LSampler24AudioProcessorEditor::setSampleSetBoundary(bool maximum)
         if (info.velocityHigh == next) return;
         processor.setSampleSetVelocityRange(slot, sampleSetIndex, info.velocityLow, next);
     }
-    else if (sampleSetField >= 2 && sampleSetField <= 4)
+    else if (sampleSetField >= 2 && sampleSetField <= 6)
     {
-        const double next = maximum ? (sampleSetField == 2 ? 1200.0 : sampleSetField == 3 ? 100.0 : 24.0)
-                                    : (sampleSetField == 2 ? -1200.0 : sampleSetField == 3 ? -100.0 : -120.0);
-        const double current = sampleSetField == 2 ? info.pitchCents : sampleSetField == 3 ? info.pan : info.volumeDb;
-        if (next == current) return;
+        const double minima[] = {-1200.0, -4.0, -100.0, -120.0, 0.0};
+        const double maxima[] = { 1200.0,  4.0,  100.0,   24.0, 1000.0};
+        const double current[] = {info.pitchCents, info.octave, info.pan, info.volumeDb, info.delayMs};
+        const int i = sampleSetField - 2;
+        const double next = maximum ? maxima[i] : minima[i];
+        if (next == current[i]) return;
         processor.setSampleSetMix(slot, sampleSetIndex, sampleSetField, next);
     }
     refreshSampleSetCell(true);
@@ -4491,15 +4495,16 @@ void LSampler24AudioProcessorEditor::changeSampleSetValue(int direction, bool co
         if (next == info.velocityHigh) return;
         processor.setSampleSetVelocityRange(slot, sampleSetIndex, info.velocityLow, next);
     }
-    else if (sampleSetField >= 2 && sampleSetField <= 4)
+    else if (sampleSetField >= 2 && sampleSetField <= 6)
     {
-        const double current = sampleSetField == 2 ? info.pitchCents : sampleSetField == 3 ? info.pan : info.volumeDb;
-        const double minimum = sampleSetField == 4 ? -120.0 : sampleSetField == 3 ? -100.0 : -1200.0;
-        const double maximum = sampleSetField == 4 ? 24.0 : sampleSetField == 3 ? 100.0 : 1200.0;
-        const double step = sampleSetField == 4 ? 0.1 : 1.0;
-        const double next = juce::jlimit(minimum, maximum,
-            current + (direction < 0 ? -1.0 : 1.0) * amount * step);
-        if (next == current) return;
+        const double minima[] = {-1200.0, -4.0, -100.0, -120.0, 0.0};
+        const double maxima[] = { 1200.0,  4.0,  100.0,   24.0, 1000.0};
+        const double current[] = {info.pitchCents, info.octave, info.pan, info.volumeDb, info.delayMs};
+        const double step[] = {1.0, 1.0, 1.0, 0.1, 1.0};
+        const int i = sampleSetField - 2;
+        const double next = juce::jlimit(minima[i], maxima[i],
+            current[i] + (direction < 0 ? -1.0 : 1.0) * amount * step[i]);
+        if (next == current[i]) return;
         processor.setSampleSetMix(slot, sampleSetIndex, sampleSetField, next);
     }
     refreshSampleSetCell(true);

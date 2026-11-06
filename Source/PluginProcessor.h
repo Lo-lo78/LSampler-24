@@ -25,7 +25,7 @@ public:
         juce::File file;
         juce::String name;
         int velocityLow = 1, velocityHigh = 127;
-        double pitchCents = 0, pan = 0, volumeDb = 0;
+        double pitchCents = 0, octave = 0, pan = 0, volumeDb = 0, delayMs = 0;
     };
 
     explicit LSampler24AudioProcessor(const juce::File& libraryRootOverride = {});
@@ -297,9 +297,7 @@ private:
         std::array<juce::File, sampleSetSize - 1> alternateSampleFiles {};
         std::array<int, sampleSetSize> sampleVelocityLow = [] { std::array<int, sampleSetSize> v {}; v.fill(1); return v; }();
         std::array<int, sampleSetSize> sampleVelocityHigh = [] { std::array<int, sampleSetSize> v {}; v.fill(127); return v; }();
-    std::array<double, sampleSetSize> samplePitchCents {};
-    std::array<double, sampleSetSize> samplePan {};
-    std::array<double, sampleSetSize> sampleVolumeDb {};
+    std::array<double, sampleSetSize> samplePitchCents {}, sampleOctave {}, samplePan {}, sampleVolumeDb {}, sampleDelayMs {};
         int variationMode = variationOff;
         juce::String slotName;
         juce::File presetFile; // Runtime-only origin/save location for Alt+Enter properties.
@@ -317,10 +315,12 @@ private:
         std::array<lsampler::HostParameter*,13> slice {};
         lsampler::HostParameter* variation = nullptr;
         std::array<lsampler::HostParameter*,sampleSetSize> velocityLow {}, velocityHigh {};
+        std::array<std::array<lsampler::HostParameter*,sampleSetSize>,5> sampleMix {}; // Pitch, Octave, Pan, Volume, Delay
         mutable lsampler::SlotParameters control;
         mutable lsampler::SliceState controlSlice;
         mutable int controlVariation = 0;
         mutable std::array<int,sampleSetSize> controlLow {}, controlHigh {};
+        mutable std::array<std::array<double,sampleSetSize>,5> controlMix {};
     };
     std::array<HostSlot,slotCount> hostSlots;
     std::array<lsampler::HostParameter*,lsampler::fx::count> hostFX {};

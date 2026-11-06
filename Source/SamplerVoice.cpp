@@ -140,7 +140,7 @@ bool GlobalVoicePool::retireVoice(const Voice& previous) noexcept {
     ++activeRetiringVoices;
     return true;
 }
-void GlobalVoicePool::release(Voice& v) noexcept {v.amp.release();v.lpEnvelope.release();v.hpEnvelope.release();v.keyDown=false;v.sustained=false;v.loopsReleased=true;}
+void GlobalVoicePool::release(Voice& v) noexcept {if(v.delayFramesRemaining>0){stop(v);return;}v.amp.release();v.lpEnvelope.release();v.hpEnvelope.release();v.keyDown=false;v.sustained=false;v.loopsReleased=true;}
 void GlobalVoicePool::allNotesOff() {for(auto& v:voices)stop(v);for(auto& v:retiringVoices)stop(v);held={};pedal={};}
 void GlobalVoicePool::stopSlotVoices(int slot) {for(auto& v:voices)if(v.active&&v.slotIndex==slot)stop(v);for(auto& v:retiringVoices)if(v.active&&v.slotIndex==slot)stop(v);}
 void GlobalVoicePool::stopPreviewVoices(int slot) {for(auto& v:voices)if(v.active&&v.preview&&(slot<0||v.slotIndex==slot))stop(v);for(auto& v:retiringVoices)if(v.active&&v.preview&&(slot<0||v.slotIndex==slot))stop(v);}
@@ -162,7 +162,7 @@ int GlobalVoicePool::chooseSampleIndex(int slot,const SlotAudioState& s,int velo
     std::array<int,SlotAudioState::sampleSetSize> candidates {};
     int count=0;
     for(int i=0;i<SlotAudioState::sampleSetSize;++i) {
-        if(!s.sampleSet[size_t(i)])continue;
+        if(!s.sampleSet[size_t(i)] || !s.playback[size_t(i)].sample)continue;
         if(preview || (velocity>=s.sampleVelocityLow[size_t(i)] && velocity<=s.sampleVelocityHigh[size_t(i)]))
             candidates[size_t(count++)]=i;
     }
@@ -313,7 +313,8 @@ void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudio
                 ? clamp(s.params[P::sample_play_start], 0.0, 100.0) * .01 * rawSamples
                 : double(g.start);
             const double localFrame = clamp(absoluteFrame - g.start, 0.0, double(g.length - 1));
-            v.position=clamp(std::round(localFrame)+skip,0,double(g.length-1));
+            // Start/End already crop the shared slot timeline.
+            v.position=clamp(skip,0,double(g.length-1));
         }
         for(int i=0;i<2;++i)if(s.lfo[size_t(i)].trigger||(s.lfo[size_t(i)].oneShot&&s.lfo[size_t(i)].oneShotPercent>0)) {
             // Keep pre-Play One Shot behaviour bit-identical to TEST59.
@@ -338,7 +339,7 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
         std::array<int,SlotAudioState::sampleSetSize> indices {};
         int count=0;
         for(int i=0;i<SlotAudioState::sampleSetSize;++i)
-            if(s.sampleSet[size_t(i)] && velocityValue>=s.sampleVelocityLow[size_t(i)]
+            if(s.playback[size_t(i)].sample && velocityValue>=s.sampleVelocityLow[size_t(i)]
                && velocityValue<=s.sampleVelocityHigh[size_t(i)])
                 indices[size_t(count++)]=i;
         if(!count)return;
@@ -354,9 +355,9 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
         return;
     }
     const int sampleIndex = (forcedSampleIndex>=0 && forcedSampleIndex<SlotAudioState::sampleSetSize)
-        ? (s.sampleSet[size_t(forcedSampleIndex)] ? forcedSampleIndex : -1)
+        ? (s.playback[size_t(forcedSampleIndex)].sample ? forcedSampleIndex : -1)
         : (preview && previewSampleIndex >= 0 && previewSampleIndex < SlotAudioState::sampleSetSize)
-        ? (s.sampleSet[size_t(previewSampleIndex)] ? previewSampleIndex : -1)
+        ? (s.playback[size_t(previewSampleIndex)].sample ? previewSampleIndex : -1)
         : (slicePlayback ? (s.sampleSet[0] ? 0 : -1)
                          : chooseSampleIndex(slot, s, std::clamp(int(std::round(velocity * 127.0f)), 1, 127), preview));
     if(sampleIndex<0)return;
@@ -409,6 +410,7 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
     v.active=true;v.preview=preview;v.slotIndex=slot;v.note=note;v.channel=channel;v.velocity=velocity;v.sampleIndex=sampleIndex;
     v.sample=g.sample;v.sample->voiceReferences.fetch_add(1,std::memory_order_relaxed);++activePerSlot[size_t(slot)];
     ++activeTotal; if (preview) ++previewTotal;
+    v.delayFramesRemaining=s.sampleDelayFrames[size_t(sampleIndex)];
     v.age=++ageCounter;v.randomState=uint32_t(v.age*747796405u+uint64_t(note)*2891336453u+1);
     v.mirrorSign=(p[P::polyphony]!=0&&((&v-voices.data())%2)!=0)?-1.0:1.0;
     v.effectiveNote=note;v.velocityGain=velocityGain(velocity,p[P::vel_volume_depth]);v.velocitySmooth=v.velocityGain;
@@ -430,7 +432,9 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
         ? clamp(absoluteStart, 0.0, 100.0) * .01 * rawSamples
         : double(g.start);
     const double localFrame = clamp(absoluteFrame - g.start, 0.0, double(g.length - 1));
-    v.position=clamp(std::round(localFrame)+skip,0,double(g.length-1));
+    // Start/End already positioned this sample on the slot's shared timeline.
+    v.position=clamp(std::round((preview && previewStartPercent>=0.0) ? localFrame : 0.0)+skip,
+                     0,double(g.length-1));
     for(int i=0;i<2;++i) {
         const auto& l=s.lfo[size_t(i)];
         if(useIndependentFreeLfoRandom(hostFreeLfoTransportStarted,l.trigger))
@@ -965,6 +969,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
     const bool sendToFX = fxSendLevels != nullptr && fxSendBuses[0] != nullptr;
     const auto sends = sendToFX ? (*fxSendLevels)[size_t(v.slotIndex)] : std::array<float,3> {};
     for(int frame=start;frame<start+count && v.active;++frame) {
+        if(v.delayFramesRemaining>0) { --v.delayFramesRemaining; continue; }
         if(v.amp.phase==0){stop(v);break;}
         if(!BasicRead && v.slice.active) {
             if(s.slice.count<=0){stop(v);break;}
@@ -996,7 +1001,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
                 ? &g.stages[size_t(v.stage)] : nullptr;
             const int silentRepeat=silentLoop
                 ? (silentLoop->repeats>0?std::min(v.repeat,silentLoop->repeats):std::min(v.repeat,128)) : 0;
-            const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+s.samplePitchCents[size_t(v.sampleIndex)]*.01+v.drift
+            const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+s.samplePitchCents[size_t(v.sampleIndex)]*.01+s.sampleOctave[size_t(v.sampleIndex)]*12+v.drift
                 -(silentLoop?silentRepeat*silentLoop->pitch:0);
             if(pitch!=v.pitchCached){v.increment=std::pow(2.0,pitch/12)*g.sourceRatio;v.pitchCached=pitch;}
             if(!BasicRead&&v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);continue;
@@ -1039,7 +1044,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
                 : 1.0-std::abs(1.0-double(v.repeat%256)/128.0);
             repeatPan=(phase*2.0-1.0)*loop->repeatPan*.01;
         }
-        const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+s.samplePitchCents[size_t(v.sampleIndex)]*.01+v.drift
+        const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+s.samplePitchCents[size_t(v.sampleIndex)]*.01+s.sampleOctave[size_t(v.sampleIndex)]*12+v.drift
             +v.amp.value*p[P::pitch_env]+l1*s.lfo[0].pitch+l2*(s.lfo[1].pitch+wheelValue*s.lfo[1].wheel)+repeatPitch;
         if(pitch!=v.pitchCached || v.legatoPitchSlewLeft>0) {
             const double target=std::pow(2.0,pitch/12)*g.sourceRatio;

@@ -141,6 +141,51 @@ SamplePlaybackState prepareSamplePlaybackState(const SlotParameters& p, SharedSa
     return g;
 }
 
+// TEST173: a slot is one timeline. Each sample retains its independent source
+// duration, then is positioned by its per-sample delay. Start/End crop the
+// union of these timelines; the last-ending sample determines 100%.
+// This is performed on immutable snapshots, never in the audio render loop.
+void applySampleSetGlobalWindow(SlotAudioState& s) noexcept
+{
+    const double sr=std::max(1.0,s.sampleRate);
+    double timelineSeconds=0.0;
+    for(int i=0;i<SlotAudioState::sampleSetSize;++i) {
+        auto* sample=s.sampleSet[size_t(i)];
+        if(!sample)continue;
+        const double sourceRate=std::max(1.0,sample->sourceSampleRate);
+        const int frames=sample->audio.getNumSamples();
+        if(frames<2)continue;
+        timelineSeconds=std::max(timelineSeconds,double(s.sampleDelayRawFrames[size_t(i)])/sr+frames/sourceRate);
+    }
+    if(timelineSeconds<=0)return;
+    const double a=std::clamp(s.params[P::sample_start]*.01,0.0,1.0)*timelineSeconds;
+    const double b=std::clamp(s.params[P::sample_end]*.01,0.0,1.0)*timelineSeconds;
+    const double windowEnd=std::max(a,b);
+    for(int i=0;i<SlotAudioState::sampleSetSize;++i) {
+        auto* sample=s.sampleSet[size_t(i)];
+        if(!sample)continue;
+        const double rate=std::max(1.0,sample->sourceSampleRate);
+        const double delay=double(s.sampleDelayRawFrames[size_t(i)])/sr;
+        const int frames=sample->audio.getNumSamples();
+        const double startInSource=std::max(0.0,a-delay);
+        const double endInSource=std::min(double(frames)/rate,windowEnd-delay);
+        if(frames<2 || endInSource<=startInSource) {
+            s.playback[size_t(i)]={};
+            s.sampleDelayFrames[size_t(i)]=0;
+            continue;
+        }
+        const int first=std::clamp(int(std::floor(startInSource*rate)),0,frames-2);
+        const int last=std::clamp(int(std::ceil(endInSource*rate)),first+1,frames);
+        s.playback[size_t(i)]=prepareSamplePlaybackState(s.params,sample,sr,first,last);
+        // Remaining delay is after the global window's beginning.
+        s.sampleDelayFrames[size_t(i)]=std::max(0,int(std::round((delay-a)*sr)));
+    }
+    s.length=0;
+    for(int i=0;i<SlotAudioState::sampleSetSize;++i)
+        if(s.sampleSet[size_t(i)])
+            s.length=std::max(s.length,s.playback[size_t(i)].length);
+}
+
 SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sample,double sr,uint64_t revision,
                                     int effectiveStart,int effectiveEnd) {
     SlotAudioState s; s.params=p;s.sample=sample;s.sampleRate=sr;s.revision=revision;

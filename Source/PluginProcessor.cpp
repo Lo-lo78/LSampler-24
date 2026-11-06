@@ -527,11 +527,14 @@ void LSampler24AudioProcessor::markAudioStateDirty()
             state.sampleVelocityLow[size_t(sampleIndex)] = static_cast<uint8_t>(juce::jlimit(1, 127, slot.sampleVelocityLow[size_t(sampleIndex)]));
             state.sampleVelocityHigh[size_t(sampleIndex)] = static_cast<uint8_t>(juce::jlimit(1, 127, slot.sampleVelocityHigh[size_t(sampleIndex)]));
             state.samplePitchCents[size_t(sampleIndex)] = slot.samplePitchCents[size_t(sampleIndex)];
+            state.sampleOctave[size_t(sampleIndex)] = slot.sampleOctave[size_t(sampleIndex)];
+            state.sampleDelayRawFrames[size_t(sampleIndex)] = state.sampleDelayFrames[size_t(sampleIndex)] = int(std::round(slot.sampleDelayMs[size_t(sampleIndex)] * .001 * preparedSampleRate));
             state.samplePan[size_t(sampleIndex)] = slot.samplePan[size_t(sampleIndex)] * .01;
             const double dB = slot.sampleVolumeDb[size_t(sampleIndex)];
             state.sampleVolumeGain[size_t(sampleIndex)] = dB <= -120.0 ? 0.0 : std::pow(10.0, dB / 20.0);
         }
         state.variationMode = juce::jlimit<int>(variationOff, variationLayer, slot.variationMode);
+        applySampleSetGlobalWindow(state);
         state.slice = prepareSliceAudio(slot.slice,state.length);
     }
     writerSnapshot = middleSnapshot.exchange(writerSnapshot | 4, std::memory_order_acq_rel) & 3;
@@ -1210,7 +1213,7 @@ bool LSampler24AudioProcessor::loadSampleToSlot(const juce::File& file, int slot
         s.alternateSampleFiles = {};
         s.sampleVelocityLow.fill(1);
         s.sampleVelocityHigh.fill(127);
-        s.samplePitchCents.fill(0); s.samplePan.fill(0); s.sampleVolumeDb.fill(0);
+        s.samplePitchCents.fill(0); s.sampleOctave.fill(0); s.samplePan.fill(0); s.sampleVolumeDb.fill(0); s.sampleDelayMs.fill(0);
         s.variationMode = variationOff;
         s.slotName = file.getFileNameWithoutExtension();
         s.presetFile = {};
@@ -1334,6 +1337,8 @@ void LSampler24AudioProcessor::clearSampleSetEntry(int slotIndex, int sampleInde
         slot.alternateSampleFiles[size_t(sampleIndex - 1)] = {};
     }
     slot.samplePitchCents[size_t(sampleIndex)] = 0;
+    slot.sampleOctave[size_t(sampleIndex)] = 0;
+    slot.sampleDelayMs[size_t(sampleIndex)] = 0;
     slot.samplePan[size_t(sampleIndex)] = 0;
     slot.sampleVolumeDb[size_t(sampleIndex)] = 0;
     slot.presetFile = {};
@@ -1367,6 +1372,8 @@ LSampler24AudioProcessor::SampleSetEntryInfo LSampler24AudioProcessor::getSample
     info.velocityLow = slot.sampleVelocityLow[size_t(sampleIndex)];
     info.velocityHigh = slot.sampleVelocityHigh[size_t(sampleIndex)];
     info.pitchCents = slot.samplePitchCents[size_t(sampleIndex)];
+    info.octave = slot.sampleOctave[size_t(sampleIndex)];
+    info.delayMs = slot.sampleDelayMs[size_t(sampleIndex)];
     info.pan = slot.samplePan[size_t(sampleIndex)];
     info.volumeDb = slot.sampleVolumeDb[size_t(sampleIndex)];
     return info;
@@ -1398,8 +1405,10 @@ void LSampler24AudioProcessor::setSampleSetMix(int slotIndex, int sampleIndex, i
     const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     auto& slot = slots[size_t(slotIndex)];
     if (field == 2) slot.samplePitchCents[size_t(sampleIndex)] = juce::jlimit(-1200.0, 1200.0, std::round(value));
-    else if (field == 3) slot.samplePan[size_t(sampleIndex)] = juce::jlimit(-100.0, 100.0, std::round(value));
-    else if (field == 4) slot.sampleVolumeDb[size_t(sampleIndex)] = juce::jlimit(-120.0, 24.0, std::round(value * 10.0) * .1);
+    else if (field == 3) slot.sampleOctave[size_t(sampleIndex)] = juce::jlimit(-4.0, 4.0, std::round(value));
+    else if (field == 4) slot.samplePan[size_t(sampleIndex)] = juce::jlimit(-100.0, 100.0, std::round(value));
+    else if (field == 5) slot.sampleVolumeDb[size_t(sampleIndex)] = juce::jlimit(-120.0, 24.0, std::round(value * 10.0) * .1);
+    else if (field == 6) slot.sampleDelayMs[size_t(sampleIndex)] = juce::jlimit(0.0, 1000.0, std::round(value));
     else return;
     slot.presetFile = {};
     markAudioStateDirty();
@@ -1494,7 +1503,7 @@ bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int sl
         slot.alternateSampleFiles = {};
         slot.sampleVelocityLow.fill(1);
         slot.sampleVelocityHigh.fill(127);
-        slot.samplePitchCents.fill(0); slot.samplePan.fill(0); slot.sampleVolumeDb.fill(0);
+        slot.samplePitchCents.fill(0); slot.sampleOctave.fill(0); slot.samplePan.fill(0); slot.sampleVolumeDb.fill(0); slot.sampleDelayMs.fill(0);
         slot.variationMode = variationOff;
         slot.slotName = file.getFileNameWithoutExtension();
         slot.presetFile = {};
@@ -2241,6 +2250,8 @@ juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slotIndex, const juc
         entry.setProperty("velocityLow",s.sampleVelocityLow[size_t(sampleIndex)],nullptr);
         entry.setProperty("velocityHigh",s.sampleVelocityHigh[size_t(sampleIndex)],nullptr);
         entry.setProperty("pitchCents",s.samplePitchCents[size_t(sampleIndex)],nullptr);
+        entry.setProperty("octave",s.sampleOctave[size_t(sampleIndex)],nullptr);
+        entry.setProperty("delayMs",s.sampleDelayMs[size_t(sampleIndex)],nullptr);
         entry.setProperty("pan",s.samplePan[size_t(sampleIndex)],nullptr);
         entry.setProperty("volumeDb",s.sampleVolumeDb[size_t(sampleIndex)],nullptr);
         const auto file=sampleIndex==0?s.sampleFile:s.alternateSampleFiles[size_t(sampleIndex-1)];
@@ -2366,6 +2377,8 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
                 slot.sampleVelocityLow[size_t(sampleIndex)]=lo;
                 slot.sampleVelocityHigh[size_t(sampleIndex)]=hi;
                 slot.samplePitchCents[size_t(sampleIndex)] = juce::jlimit(-1200.0,1200.0,double(entry.getProperty("pitchCents",0.0)));
+                slot.sampleOctave[size_t(sampleIndex)] = juce::jlimit(-4.0,4.0,double(entry.getProperty("octave",0.0)));
+                slot.sampleDelayMs[size_t(sampleIndex)] = juce::jlimit(0.0,1000.0,double(entry.getProperty("delayMs",0.0)));
                 slot.samplePan[size_t(sampleIndex)] = juce::jlimit(-100.0,100.0,double(entry.getProperty("pan",0.0)));
                 slot.sampleVolumeDb[size_t(sampleIndex)] = juce::jlimit(-120.0,24.0,double(entry.getProperty("volumeDb",0.0)));
                 if(sampleIndex==0)continue;
@@ -2671,7 +2684,7 @@ bool LSampler24AudioProcessor::prepareLibrarySlotPreview(const juce::File& prese
     const auto sampleSet = tree.getChildWithName("SampleSet");
     std::array<std::shared_ptr<SharedSample>, sampleSetSize> owners {};
     std::array<int, sampleSetSize> velocityLow {}, velocityHigh {};
-    std::array<double, sampleSetSize> pitchCents {}, pan {}, volumeDb {};
+    std::array<double, sampleSetSize> pitchCents {}, octave {}, pan {}, volumeDb {}, delayMs {};
     velocityLow.fill(1);
     velocityHigh.fill(127);
     int variationMode = variationOff;
@@ -2691,6 +2704,8 @@ bool LSampler24AudioProcessor::prepareLibrarySlotPreview(const juce::File& prese
             if (lo > hi) std::swap(lo, hi);
             pitchCents[size_t(index)] = juce::jlimit(-1200.0, 1200.0,
                 double(entry.getProperty("pitchCents", 0.0)));
+            octave[size_t(index)] = juce::jlimit(-4.0, 4.0, double(entry.getProperty("octave", 0.0)));
+            delayMs[size_t(index)] = juce::jlimit(0.0, 1000.0, double(entry.getProperty("delayMs", 0.0)));
             pan[size_t(index)] = juce::jlimit(-100.0, 100.0,
                 double(entry.getProperty("pan", 0.0)));
             volumeDb[size_t(index)] = juce::jlimit(-120.0, 24.0,
@@ -2755,11 +2770,14 @@ bool LSampler24AudioProcessor::prepareLibrarySlotPreview(const juce::File& prese
         target.state.sampleVelocityLow[size_t(index)] = uint8_t(velocityLow[size_t(index)]);
         target.state.sampleVelocityHigh[size_t(index)] = uint8_t(velocityHigh[size_t(index)]);
         target.state.samplePitchCents[size_t(index)] = pitchCents[size_t(index)];
+        target.state.sampleOctave[size_t(index)] = octave[size_t(index)];
+        target.state.sampleDelayRawFrames[size_t(index)] = target.state.sampleDelayFrames[size_t(index)] = int(std::round(delayMs[size_t(index)] * .001 * preparedSampleRate));
         target.state.samplePan[size_t(index)] = pan[size_t(index)] * .01;
         target.state.sampleVolumeGain[size_t(index)] = volumeDb[size_t(index)] <= -120.0
             ? 0.0 : std::pow(10.0, volumeDb[size_t(index)] / 20.0);
     }
     target.state.variationMode = variationMode;
+    applySampleSetGlobalWindow(target.state);
     target.state.slice = prepareSliceAudio(SliceState::fromTree(tree.getChildWithName("Slice")),
                                            target.state.length);
     libraryPreviewWriter = libraryPreviewMiddle.exchange(libraryPreviewWriter | 4, std::memory_order_acq_rel) & 3;
@@ -3886,6 +3904,26 @@ void LSampler24AudioProcessor::createHostParameters()
             "Slot "+juce::String(slot+1)+" - "+juce::String(d.name),
             d, hostGenerations[size_t(slot)]);
     }
+    // TEST173: append independent Sample Set automation AFTER all existing VST3 IDs.
+    // Original velocity and variation lanes retain both identifiers and indices.
+    const Descriptor sampleDescriptors[] = {
+        {"pitch_cents", "Pitch", "Sample Set", Kind::integer, 0, -1200, 1200, 1, 1, "cent", 0, ""},
+        {"octave", "Octave", "Sample Set", Kind::integer, 0, -4, 4, 1, 1, "", 0, ""},
+        {"pan", "Pan", "Sample Set", Kind::integer, 0, -100, 100, 1, 1, "", 0, ""},
+        {"volume_db", "Volume", "Sample Set", Kind::continuous, 0, -120, 24, 0.1, 0.1, "dB", 1, ""},
+        {"delay_ms", "Delay", "Sample Set", Kind::integer, 0, 0, 1000, 1, 1, "ms", 0, ""}
+    };
+    for(int slot=0;slot<slotCount;++slot) {
+        auto& h=hostSlots[size_t(slot)];
+        const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
+        for(int j=0;j<sampleSetSize;++j) {
+            const auto prefix=id+"sample"+juce::String(j+1).paddedLeft('0',2)+"_";
+            const auto name="Slot "+juce::String(slot+1)+" - Sample "+juce::String(j+1)+" - ";
+            for(int field=0;field<5;++field)
+                h.sampleMix[size_t(field)][size_t(j)]=add(prefix+sampleDescriptors[field].key,
+                    name+sampleDescriptors[field].name,sampleDescriptors[field],hostGenerations[size_t(slot)]);
+        }
+    }
     hostParametersReady=true;
 }
 
@@ -3920,6 +3958,11 @@ void LSampler24AudioProcessor::absorbHostValuesLocked() const
         for(int j=0;j<sampleSetSize;++j) {
             s.sampleVelocityLow[size_t(j)]=h.controlLow[size_t(j)]=int(h.velocityLow[size_t(j)]->load());
             s.sampleVelocityHigh[size_t(j)]=h.controlHigh[size_t(j)]=int(h.velocityHigh[size_t(j)]->load());
+            auto values = std::array<double*,5>{&s.samplePitchCents[size_t(j)], &s.sampleOctave[size_t(j)],
+                &s.samplePan[size_t(j)], &s.sampleVolumeDb[size_t(j)], &s.sampleDelayMs[size_t(j)]};
+            for(int field=0;field<5;++field)
+                *values[size_t(field)]=h.controlMix[size_t(field)][size_t(j)]
+                    =h.sampleMix[size_t(field)][size_t(j)]->load();
         }
     }
 }
@@ -3943,6 +3986,11 @@ void LSampler24AudioProcessor::publishHostValuesLocked(bool notify, int forceSlo
         for(int j=0;j<sampleSetSize;++j) {
             publish(h.velocityLow[size_t(j)],s.sampleVelocityLow[size_t(j)],h.controlLow[size_t(j)],k==forceSlot);
             publish(h.velocityHigh[size_t(j)],s.sampleVelocityHigh[size_t(j)],h.controlHigh[size_t(j)],k==forceSlot);
+            const double mixValues[] = {s.samplePitchCents[size_t(j)],s.sampleOctave[size_t(j)],
+                s.samplePan[size_t(j)],s.sampleVolumeDb[size_t(j)],s.sampleDelayMs[size_t(j)]};
+            for(int field=0;field<5;++field)
+                publish(h.sampleMix[size_t(field)][size_t(j)],mixValues[field],
+                    h.controlMix[size_t(field)][size_t(j)],k==forceSlot);
         }
         h.control=s.parameters;h.controlSlice=s.slice;h.controlVariation=s.variationMode;
         h.controlLow=s.sampleVelocityLow;h.controlHigh=s.sampleVelocityHigh;
@@ -4005,6 +4053,7 @@ juce::AudioProcessorParameter* LSampler24AudioProcessor::getAutomationSampleSetP
     if (page != 1 || !juce::isPositiveAndBelow(sample, sampleSetSize)) return nullptr;
     if (field == 0) return hs.velocityLow[size_t(sample)];
     if (field == 1) return hs.velocityHigh[size_t(sample)];
+    if (field >= 2 && field <= 6) return hs.sampleMix[size_t(field - 2)][size_t(sample)];
     return nullptr;
 }
 
@@ -4149,6 +4198,30 @@ void LSampler24AudioProcessor::updateAutomatedAudio(bool snapshotChanged)
             const int low=int(h.velocityLow[size_t(j)]->load()),high=int(h.velocityHigh[size_t(j)]->load());
             out.sampleVelocityLow[size_t(j)]=uint8_t(std::min(low,high));
             out.sampleVelocityHigh[size_t(j)]=uint8_t(std::max(low,high));
+            out.samplePitchCents[size_t(j)]=h.sampleMix[0][size_t(j)]->load();
+            out.sampleOctave[size_t(j)]=h.sampleMix[1][size_t(j)]->load();
+            out.samplePan[size_t(j)]=h.sampleMix[2][size_t(j)]->load()*.01;
+            const double volume=h.sampleMix[3][size_t(j)]->load();
+            out.sampleVolumeGain[size_t(j)]=volume<=-120?0:std::pow(10.,volume/20.);
+            out.sampleDelayRawFrames[size_t(j)]=int(std::round(
+                h.sampleMix[4][size_t(j)]->load()*.001*preparedSampleRate));
+        }
+        // Regenerate original per-sample windows from full raw sources when
+        // Start/End or a sample Delay is automated. Do not crop cropped windows.
+        bool timelineChanged=p[P::sample_start]!=original.params[P::sample_start]
+            ||p[P::sample_end]!=original.params[P::sample_end];
+        for(int j=0;j<sampleSetSize;++j) {
+            const int delay=int(std::round(h.sampleMix[4][size_t(j)]->load()*.001*preparedSampleRate));
+            if(delay!=original.sampleDelayRawFrames[size_t(j)])timelineChanged=true;
+        }
+        if(timelineChanged) {
+            for(int j=0;j<sampleSetSize;++j) {
+                out.sampleSet[size_t(j)]=original.sampleSet[size_t(j)];
+                out.playback[size_t(j)]=prepareSamplePlaybackState(p,out.sampleSet[size_t(j)],preparedSampleRate);
+                out.sampleDelayRawFrames[size_t(j)]=out.sampleDelayFrames[size_t(j)]=int(std::round(
+                    h.sampleMix[4][size_t(j)]->load()*.001*preparedSampleRate));
+            }
+            applySampleSetGlobalWindow(out);
         }
         out.revision=++audioAutomationRevision;changed=true;
     }

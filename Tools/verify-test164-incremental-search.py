@@ -34,9 +34,9 @@ assert 'mainParameterSearch.reset();' in editor and 'bankMacroParameterSearch.re
 assert 'constexpr auto lsamplerVersion = "0.99.25";' in editor
 assert 'LReaParams-style incremental search:' in editor
 assert 'project(LSampler24 VERSION 0.99.25 LANGUAGES C CXX)' in (root/'CMakeLists.txt').read_text()
-assert any(f'LSampler-24-Windows-VST3-{version}.zip' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170'))
-assert any(f'name: LSampler-24-Windows-VST3-{version}' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170'))
-assert any(f'BUILD_{version}.txt' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170'))
+assert any(f'LSampler-24-Windows-VST3-{version}.zip' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173'))
+assert any(f'name: LSampler-24-Windows-VST3-{version}' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173'))
+assert any(f'BUILD_{version}.txt' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173'))
 assert 'python Tools/verify-test164-incremental-search.py' in workflow
 assert 'python Tools/verify-test163-midi-routing.py' in workflow
 assert 'FILTER_TEST62_REPORT.txt' in workflow

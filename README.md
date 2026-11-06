@@ -1,3 +1,7 @@
+## TEST173 (6 novembre 2026)
+
+Alt+M F2: automazione per Pitch, Octave, Pan, Volume e Delay di ogni campione. Nuovi Octave (-4/+4) e Delay (0–1000 ms). Start/End dello slot definiti sulla durata complessiva del Sample Set, includendo i ritardi. Dettagli in `RELEASE_TEST173.md`.
+
 # LSampler-24
 
 **Versione di prova 0.99.25 — 6 novembre 2026 (TEST171)**

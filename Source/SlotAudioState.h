@@ -50,7 +50,8 @@ struct SlotAudioState {
     std::array<SharedSample*, sampleSetSize> sampleSet {};
     std::array<uint8_t, sampleSetSize> sampleVelocityLow {};
     std::array<uint8_t, sampleSetSize> sampleVelocityHigh {};
-    std::array<double, sampleSetSize> samplePitchCents {}, samplePan {};
+    std::array<double, sampleSetSize> samplePitchCents {}, sampleOctave {}, samplePan {};
+    std::array<int, sampleSetSize> sampleDelayFrames {}, sampleDelayRawFrames {};
     std::array<double, sampleSetSize> sampleVolumeGain = [] { std::array<double, sampleSetSize> values {}; values.fill(1.0); return values; }();
     std::array<SamplePlaybackState, sampleSetSize> playback {};
     int variationMode = 0; // 0 Off, 1 Round Robin, 2 Random, 3 Random No Repeat, 4 Shuffle No Repeat
@@ -81,6 +82,8 @@ struct SlotAudioState {
     std::array<LoopAudioState, loopCount> stages {};
     int stageCount = 0;
 };
+// TEST173: interpret global Start/End on the full delayed Sample Set timeline.
+void applySampleSetGlobalWindow(SlotAudioState&) noexcept;
 FilterCoefficients filterCoefficients(bool highPass, double hz, double resonance, double sampleRate) noexcept;
 struct ThresholdWindow { int start = 0, end = 0; };
 ThresholdWindow calculateThresholdWindow(const SlotParameters&, SharedSample*) noexcept;
