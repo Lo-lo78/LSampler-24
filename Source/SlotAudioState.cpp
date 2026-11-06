@@ -1,5 +1,6 @@
 #include "SlotAudioState.h"
 #include <cmath>
+#include <vector>
 namespace lsampler {
 namespace {
 constexpr double pi = 3.14159265358979323846;
@@ -159,9 +160,65 @@ void applySampleSetGlobalWindow(SlotAudioState& s) noexcept
         timelineSeconds=std::max(timelineSeconds,double(s.sampleDelayRawFrames[size_t(i)])/sr+frames/sourceRate);
     }
     if(timelineSeconds<=0)return;
-    const double a=std::clamp(s.params[P::sample_start]*.01,0.0,1.0)*timelineSeconds;
+    double a=std::clamp(s.params[P::sample_start]*.01,0.0,1.0)*timelineSeconds;
     const double b=std::clamp(s.params[P::sample_end]*.01,0.0,1.0)*timelineSeconds;
-    const double windowEnd=std::max(a,b);
+    double windowEnd=std::max(a,b);
+
+    // TEST174: the threshold detectors must inspect the WHOLE Sample Set,
+    // not only sample 1. The timeline is measured after individual delays,
+    // inside the global Start/End percentage window. A 1 ms peak envelope
+    // detects an onset and the existing 65 ms continuous-quiet tail.
+    // The expensive scan is only run on the control/preview preparation thread.
+    const double startDb=s.params[P::start_threshold];
+    const double endDb=s.params[P::end_threshold];
+    if (windowEnd>a && (startDb>-119.9 || endDb>-119.9)) {
+        constexpr double resolution=0.001;
+        const auto bins=std::max<size_t>(1,size_t(std::ceil((windowEnd-a)/resolution)));
+        std::vector<float> peaks(bins,0.0f);
+        for(int i=0;i<SlotAudioState::sampleSetSize;++i) {
+            auto* sample=s.sampleSet[size_t(i)];
+            if(!sample || sample->audio.getNumSamples()<2)continue;
+            const auto& audio=sample->audio;
+            const double rate=std::max(1.0,sample->sourceSampleRate);
+            const double delay=double(s.sampleDelayRawFrames[size_t(i)])/sr;
+            const int n=audio.getNumSamples();
+            const int first=std::clamp(int(std::floor((a-delay)*rate)),0,n);
+            const int last=std::clamp(int(std::ceil((windowEnd-delay)*rate)),first,n);
+            const int channels=std::min(2,audio.getNumChannels());
+            for(int frame=first;frame<last;++frame) {
+                const double timeline=delay+double(frame)/rate;
+                if(timeline<a || timeline>=windowEnd)continue;
+                const size_t bin=std::min(bins-1,size_t((timeline-a)/resolution));
+                float amplitude=0.0f;
+                for(int ch=0;ch<channels;++ch)
+                    amplitude=std::max(amplitude,std::abs(audio.getSample(ch,frame)));
+                peaks[bin]=std::max(peaks[bin],amplitude);
+            }
+        }
+        size_t startBin=0;
+        if(startDb>-119.9) {
+            const float amplitude=float(std::pow(10.0,startDb/20.0));
+            for(size_t i=0;i<bins;++i)
+                if(peaks[i]>=amplitude) { startBin=i; break; }
+        }
+        size_t endBin=bins;
+        if(endDb>-119.9) {
+            const float amplitude=float(std::pow(10.0,endDb/20.0));
+            constexpr size_t holdBins=65;
+            bool seenHot=false;
+            size_t firstQuiet=0, quietCount=0;
+            for(size_t i=startBin;i<bins;++i) {
+                if(peaks[i]>=amplitude) {seenHot=true;quietCount=0;}
+                else if(seenHot) {
+                    if(quietCount==0)firstQuiet=i;
+                    if(++quietCount>=holdBins) {endBin=firstQuiet;break;}
+                }
+            }
+        }
+        const double initialA=a;
+        a=std::min(windowEnd,initialA+double(startBin)*resolution);
+        windowEnd=std::max(a, std::min(windowEnd,initialA+double(endBin)*resolution));
+    }
     for(int i=0;i<SlotAudioState::sampleSetSize;++i) {
         auto* sample=s.sampleSet[size_t(i)];
         if(!sample)continue;
