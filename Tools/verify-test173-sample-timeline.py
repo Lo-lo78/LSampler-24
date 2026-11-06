@@ -2,10 +2,10 @@
 """TEST173 structural verification and independent reference for delayed sample-window math."""
 from pathlib import Path
 r=Path(__file__).resolve().parents[1]
-editor=(r/'Source/PluginEditor.cpp').read_text()
-proc=(r/'Source/PluginProcessor.cpp').read_text()
-voice=(r/'Source/SamplerVoice.cpp').read_text()
-state=(r/'Source/SlotAudioState.cpp').read_text()
+editor=(r/'Source/PluginEditor.cpp').read_text(encoding="utf-8")
+proc=(r/'Source/PluginProcessor.cpp').read_text(encoding="utf-8")
+voice=(r/'Source/SamplerVoice.cpp').read_text(encoding="utf-8")
+state=(r/'Source/SlotAudioState.cpp').read_text(encoding="utf-8")
 for marker in ('L"Octave"','L"Delay"','info.octave','info.delayMs','sampleSetField <= 6','sampleSetField,7,'):
     assert marker in editor,marker
 for marker in ('"octave"','"delayMs"','sampleDelayRawFrames','applySampleSetGlobalWindow(state)','applySampleSetGlobalWindow(target.state)','h.sampleMix[size_t(field)][size_t(j)]','if (field >= 2 && field <= 6)'):
