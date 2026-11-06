@@ -26,7 +26,8 @@ assert "if (code >= '0' && code <= '9')" in key
 assert 'numberPad0' in key
 assert 'std::wstring(name.toWideCharPointer())' in editor
 assert 'L"0 Zero Crossing"' in editor
-assert 'std::wstring(bankEntryName(' in editor and 'std::wstring(L"Velocity Low")' in editor
+assert 'std::wstring(bankEntryName(' in editor
+assert 'static const wchar_t* labels[] = {L"Velocity Low", L"Velocity High", L"Pitch", L"Pan", L"Volume"}' in editor
 assert 'std::wstring(juce::String(' in fx
 assert 'parameterSearch.next(' in slice
 assert 'constexpr auto lsamplerVersion = "0.99.25"' in editor

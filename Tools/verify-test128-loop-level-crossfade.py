@@ -22,7 +22,7 @@ assert 'l.level=levelDb<=-119.9?0:db(levelDb);' in state
 assert 'repeatPan = 0, level = 1' in headers
 assert 'const double targetLoopLevel=activeLoop?loop->level*v.repeatLevelGain:1.0;' in engine
 assert 'v.loopLevelSmooth+=(targetLoopLevel-v.loopLevelSmooth)*loopLevelSmoothing;' in engine
-assert 'v.ampSmooth*s.level*v.loopLevelSmooth' in engine
+assert 'v.ampSmooth*s.level*s.sampleVolumeGain[size_t(v.sampleIndex)]*v.loopLevelSmooth' in engine
 assert 'const bool mayRepeat=(loop->repeats==0 || !v.loopsReleased || p[P::global_release_loops]!=0)' in engine
 assert '(loop->repeats==0 || v.repeat<' in engine
 assert 'const bool mayRepeat=(loop->repeats==0 || !v.loopsReleased || p[P::global_release_loops]!=0)' in engine
