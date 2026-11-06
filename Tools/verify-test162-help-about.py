@@ -21,8 +21,8 @@ assert 'void LSampler24AudioProcessorEditor::openAbout()' in editor
 assert 'void LSampler24AudioProcessorEditor::showHelpLanguageMenu()' in editor
 assert 'void LSampler24AudioProcessorEditor::openHelp(' in editor
 assert 'LB-303' not in help_html
-assert any(f'LSampler-24-Windows-VST3-{version}.zip' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173'))
-assert any(f'BUILD_{version}.txt' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173'))
+assert any(f'LSampler-24-Windows-VST3-{version}.zip' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173','TEST173.2'))
+assert any(f'BUILD_{version}.txt' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173','TEST173.2'))
 assert 'FILTER_TEST62_REPORT.txt' in workflow, 'Do not change historical TEST62 audio gate'
 
 languages = ('en', 'it', 'es', 'pt', 'fr', 'ru', 'zh', 'ja')

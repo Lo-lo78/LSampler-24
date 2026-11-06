@@ -147,6 +147,7 @@ SamplePlaybackState prepareSamplePlaybackState(const SlotParameters& p, SharedSa
 // This is performed on immutable snapshots, never in the audio render loop.
 void applySampleSetGlobalWindow(SlotAudioState& s) noexcept
 {
+    s.sharedSampleWindow = true;
     const double sr=std::max(1.0,s.sampleRate);
     double timelineSeconds=0.0;
     for(int i=0;i<SlotAudioState::sampleSetSize;++i) {

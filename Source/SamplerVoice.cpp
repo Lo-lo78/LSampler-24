@@ -313,8 +313,10 @@ void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudio
                 ? clamp(s.params[P::sample_play_start], 0.0, 100.0) * .01 * rawSamples
                 : double(g.start);
             const double localFrame = clamp(absoluteFrame - g.start, 0.0, double(g.length - 1));
-            // Start/End already crop the shared slot timeline.
-            v.position=clamp(skip,0,double(g.length-1));
+            // The complete Sample Set window already includes its global Start.
+            // Legacy prepared states still use the absolute Sample Play Start.
+            v.position=clamp((s.sharedSampleWindow ? 0.0 : std::round(localFrame))+skip,
+                             0,double(g.length-1));
         }
         for(int i=0;i<2;++i)if(s.lfo[size_t(i)].trigger||(s.lfo[size_t(i)].oneShot&&s.lfo[size_t(i)].oneShotPercent>0)) {
             // Keep pre-Play One Shot behaviour bit-identical to TEST59.
@@ -432,9 +434,12 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
         ? clamp(absoluteStart, 0.0, 100.0) * .01 * rawSamples
         : double(g.start);
     const double localFrame = clamp(absoluteFrame - g.start, 0.0, double(g.length - 1));
-    // Start/End already positioned this sample on the slot's shared timeline.
-    v.position=clamp(std::round((preview && previewStartPercent>=0.0) ? localFrame : 0.0)+skip,
-                     0,double(g.length-1));
+    // Keep the TEST59/TEST172 absolute Sample Play Start when a state has
+    // not been processed through the new global Sample Set timeline.
+    // Preview's explicit position keeps its original absolute meaning.
+    const double startFrame = (!s.sharedSampleWindow || (preview && previewStartPercent >= 0.0))
+        ? std::round(localFrame) : 0.0;
+    v.position=clamp(startFrame+skip,0,double(g.length-1));
     for(int i=0;i<2;++i) {
         const auto& l=s.lfo[size_t(i)];
         if(useIndependentFreeLfoRandom(hostFreeLfoTransportStarted,l.trigger))

@@ -14,6 +14,12 @@ for marker in ('sampleOctave[size_t(v.sampleIndex)]*12','delayFramesRemaining>0'
     assert marker in voice,marker
 for marker in ('timelineSeconds=std::max','sampleDelayRawFrames','endInSource','startInSource','prepareSamplePlaybackState(s.params,sample,sr,first,last)'):
     assert marker in state,marker
+# Audio parity regression: legacy standalone prepared states must continue
+# using Sample Play Start; only globally windowed snapshots start at zero.
+assert 'bool sharedSampleWindow = false' in (r/'Source/SlotAudioState.h').read_text(encoding='utf-8')
+assert 's.sharedSampleWindow = true;' in state
+assert '(!s.sharedSampleWindow || (preview && previewStartPercent >= 0.0))' in voice
+assert 's.sharedSampleWindow ? 0.0 : std::round(localFrame)' in voice
 # Example discussed with user: absolute end is the last sample end plus its delay.
 tracks=[(0,1.0),(0.3,1.5),(0.5,2.0)]
 end=max(delay+length for delay,length in tracks)

@@ -54,6 +54,7 @@ struct SlotAudioState {
     std::array<int, sampleSetSize> sampleDelayFrames {}, sampleDelayRawFrames {};
     std::array<double, sampleSetSize> sampleVolumeGain = [] { std::array<double, sampleSetSize> values {}; values.fill(1.0); return values; }();
     std::array<SamplePlaybackState, sampleSetSize> playback {};
+    bool sharedSampleWindow = false; // true only after full Sample Set global Start/End preparation
     int variationMode = 0; // 0 Off, 1 Round Robin, 2 Random, 3 Random No Repeat, 4 Shuffle No Repeat
     uint64_t revision = 0;
     double sampleRate = 44100, sourceRatio = 1;
