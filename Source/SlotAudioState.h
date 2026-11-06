@@ -50,6 +50,8 @@ struct SlotAudioState {
     std::array<SharedSample*, sampleSetSize> sampleSet {};
     std::array<uint8_t, sampleSetSize> sampleVelocityLow {};
     std::array<uint8_t, sampleSetSize> sampleVelocityHigh {};
+    std::array<double, sampleSetSize> samplePitchCents {}, samplePan {};
+    std::array<double, sampleSetSize> sampleVolumeGain = [] { std::array<double, sampleSetSize> values {}; values.fill(1.0); return values; }();
     std::array<SamplePlaybackState, sampleSetSize> playback {};
     int variationMode = 0; // 0 Off, 1 Round Robin, 2 Random, 3 Random No Repeat, 4 Shuffle No Repeat
     uint64_t revision = 0;

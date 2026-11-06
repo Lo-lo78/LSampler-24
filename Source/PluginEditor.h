@@ -596,7 +596,7 @@ private:
     bool sampleSetPreviewEnabled = false; // Persistent Space on/off across F1, F2 and F3
     bool sampleSetReturnWasParameterPage = false;
     int sampleSetIndex = 0;
-    int sampleSetField = 0; // Parameter grid: Velocity Low, Velocity High, Variation Mode
+    int sampleSetField = 0; // Parameter grid: Velocity Low/High, Pitch, Pan, Volume; global Variation Mode
     int sampleSetPage = 0; // F1 samples, F2 per-sample, F3 global
     bool sampleSetGridFocus = false;
     bool sampleSetValueFocus = false;

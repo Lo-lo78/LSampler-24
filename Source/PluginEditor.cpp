@@ -2917,7 +2917,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 if (code == juce::KeyPress::endKey)
                 {
                     constexpr int rows = 8;
-                    const int total = sampleSetPage == 2 ? 3 : 2;
+                    const int total = sampleSetPage == 2 ? 3 : 5;
                     const int columnStart = (sampleSetField / rows) * rows;
                     const int columnEnd = juce::jmin(total - 1, columnStart + rows - 1);
                     if (sampleSetField != columnEnd) { sampleSetField = columnEnd; refreshSampleSetCell(true); }
@@ -2931,9 +2931,12 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             const auto typed=parameterSearchCharacter(key);
             if (typed!=0)
             {
-                const int found=sampleSetParameterSearch.next(static_cast<wchar_t>(typed),sampleSetField,2,
+                const int found=sampleSetParameterSearch.next(static_cast<wchar_t>(typed),sampleSetField,5,
                     mods.isShiftDown()?-1:1,juce::Time::getMillisecondCounter(),
-                    [](int index) {return index==0 ? std::wstring(L"Velocity Low") : std::wstring(L"Velocity High");});
+                    [](int index) {
+                        static const wchar_t* labels[] = {L"Velocity Low", L"Velocity High", L"Pitch", L"Pan", L"Volume"};
+                        return std::wstring(labels[juce::jlimit(0,4,index)]);
+                    });
                 if(found>=0 && found!=sampleSetField)
                 {
                     sampleSetField=found;
@@ -3864,6 +3867,48 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
     const int slot = processor.getCurrentSlot();
     const int row = slot % 8;
     const int col = slot / 8;
+    // TEST171: main rack Page Up/Down navigates four rows, clamped to
+    // the current column of eight (never wraps into an adjacent column).
+    if (!mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown())
+    {
+        if (!mods.isShiftDown() && code == juce::KeyPress::pageUpKey)
+        {
+            const int nextRow = juce::jmax(0, row - 4);
+            if (nextRow != row) selectSlot(col * 8 + nextRow, true);
+            return true;
+        }
+        if (!mods.isShiftDown() && code == juce::KeyPress::pageDownKey)
+        {
+            const int nextRow = juce::jmin(7, row + 4);
+            if (nextRow != row) selectSlot(col * 8 + nextRow, true);
+            return true;
+        }
+        // Change the existing slot Level from the rack, without entering the
+        // parameter page. One key press equals one dB, respecting -120..+24.
+        const auto character = key.getTextCharacter();
+        if (character == '+' || (!mods.isShiftDown() && character == '-') || code == juce::KeyPress::numberPadAdd
+            || code == juce::KeyPress::numberPadSubtract)
+        {
+            const int levelGridIndex = [] {
+                for (int i = 0; i < int(lsampler::grid.size()); ++i)
+                    if (lsampler::grid[size_t(i)].parameter == int(lsampler::P::input_gain)) return i;
+                return -1;
+            }();
+            if (levelGridIndex >= 0)
+            {
+                const double current = processor.getSlotParameter(levelGridIndex);
+                const double direction = (character == '-' || code == juce::KeyPress::numberPadSubtract) ? -1.0 : 1.0;
+                const double next = juce::jlimit(-120.0, 24.0, current + direction);
+                if (next != current)
+                {
+                    processor.setSlotParameter(levelGridIndex, next);
+                    lsampler::announceToActiveScreenReader(slotCells[size_t(slot)],
+                        "Slot " + juce::String(slot + 1) + ", Level " + juce::String(next, 1) + " dB");
+                }
+            }
+            return true;
+        }
+    }
     if (code == juce::KeyPress::upKey)    { if (row > 0) selectSlot(slot - 1, true); return true; }
     if (code == juce::KeyPress::downKey)  { if (row < 7) selectSlot(slot + 1, true); return true; }
     if (code == juce::KeyPress::leftKey)  { if (col > 0) selectSlot(slot - 8, true); return true; }
@@ -4336,10 +4381,14 @@ juce::String LSampler24AudioProcessorEditor::sampleSetParameterText() const
           ? juce::String(", Auto") : juce::String();
     const int slot = processor.getCurrentSlot();
     const auto info = processor.getSampleSetEntry(slot, sampleSetIndex);
-    switch (sampleSetPage == 2 ? 2 : juce::jlimit(0, 1, sampleSetField))
+    switch (sampleSetPage == 2 ? 5 : juce::jlimit(0, 4, sampleSetField))
     {
         case 0: return "Velocity Low, " + juce::String(info.velocityLow) + suffix;
         case 1: return "Velocity High, " + juce::String(info.velocityHigh) + suffix;
+        case 2: return "Pitch, " + juce::String(info.pitchCents, 0) + " cents";
+        case 3: return "Pan, " + (info.pan == 0 ? juce::String("Center") :
+            (info.pan < 0 ? juce::String("Left ") + juce::String(-info.pan, 0) : juce::String("Right ") + juce::String(info.pan, 0)));
+        case 4: return "Volume, " + juce::String(info.volumeDb, 1) + " dB";
         default: return "Variation Mode, " + LSampler24AudioProcessor::variationModeName(processor.getVariationMode(slot)) + suffix;
     }
 }
@@ -4358,7 +4407,7 @@ void LSampler24AudioProcessorEditor::moveSampleSetField(int direction)
 {
     if (!sampleSetGridFocus || sampleSetValueFocus || sampleSetPage == 2) return;
     constexpr int rows = 8;
-    const int total = 2;
+    const int total = 5;
     const int column = sampleSetField / rows;
     const int columnStart = column * rows;
     const int columnEnd = juce::jmin(total - 1, columnStart + rows - 1);
@@ -4372,7 +4421,7 @@ void LSampler24AudioProcessorEditor::moveSampleSetGridColumn(int direction)
 {
     if (!sampleSetGridFocus || sampleSetValueFocus || sampleSetPage == 2) return;
     constexpr int rows = 8;
-    const int total = 2;
+    const int total = 5;
     const int next = sampleSetField + (direction < 0 ? -rows : rows);
     if (next < 0 || next >= total) return;
     sampleSetField = next;
@@ -4386,7 +4435,7 @@ void LSampler24AudioProcessorEditor::setSampleSetBoundary(bool maximum)
     const auto info = processor.getSampleSetEntry(slot, sampleSetIndex);
     if (sampleSetPage == 2)
     {
-        const int next = maximum ? LSampler24AudioProcessor::variationShuffleNoRepeat
+        const int next = maximum ? LSampler24AudioProcessor::variationLayer
                                  : LSampler24AudioProcessor::variationOff;
         if (processor.getVariationMode(slot) == next) return; // Silent boundary.
         processor.setVariationMode(slot, next);
@@ -4403,6 +4452,14 @@ void LSampler24AudioProcessorEditor::setSampleSetBoundary(bool maximum)
         if (info.velocityHigh == next) return;
         processor.setSampleSetVelocityRange(slot, sampleSetIndex, info.velocityLow, next);
     }
+    else if (sampleSetField >= 2 && sampleSetField <= 4)
+    {
+        const double next = maximum ? (sampleSetField == 2 ? 1200.0 : sampleSetField == 3 ? 100.0 : 24.0)
+                                    : (sampleSetField == 2 ? -1200.0 : sampleSetField == 3 ? -100.0 : -120.0);
+        const double current = sampleSetField == 2 ? info.pitchCents : sampleSetField == 3 ? info.pan : info.volumeDb;
+        if (next == current) return;
+        processor.setSampleSetMix(slot, sampleSetIndex, sampleSetField, next);
+    }
     refreshSampleSetCell(true);
 }
 
@@ -4416,7 +4473,7 @@ void LSampler24AudioProcessorEditor::changeSampleSetValue(int direction, bool co
     {
         const int current = processor.getVariationMode(slot);
         const int next = juce::jlimit<int>(LSampler24AudioProcessor::variationOff,
-            LSampler24AudioProcessor::variationShuffleNoRepeat, current + (direction < 0 ? -1 : 1));
+            LSampler24AudioProcessor::variationLayer, current + (direction < 0 ? -1 : 1));
         if (next == current) return; // Silent at the minimum and maximum.
         processor.setVariationMode(slot, next);
     }
@@ -4433,6 +4490,17 @@ void LSampler24AudioProcessorEditor::changeSampleSetValue(int direction, bool co
             info.velocityHigh + (direction < 0 ? -amount : amount));
         if (next == info.velocityHigh) return;
         processor.setSampleSetVelocityRange(slot, sampleSetIndex, info.velocityLow, next);
+    }
+    else if (sampleSetField >= 2 && sampleSetField <= 4)
+    {
+        const double current = sampleSetField == 2 ? info.pitchCents : sampleSetField == 3 ? info.pan : info.volumeDb;
+        const double minimum = sampleSetField == 4 ? -120.0 : sampleSetField == 3 ? -100.0 : -1200.0;
+        const double maximum = sampleSetField == 4 ? 24.0 : sampleSetField == 3 ? 100.0 : 1200.0;
+        const double step = sampleSetField == 4 ? 0.1 : 1.0;
+        const double next = juce::jlimit(minimum, maximum,
+            current + (direction < 0 ? -1.0 : 1.0) * amount * step);
+        if (next == current) return;
+        processor.setSampleSetMix(slot, sampleSetIndex, sampleSetField, next);
     }
     refreshSampleSetCell(true);
 }

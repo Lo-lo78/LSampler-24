@@ -526,8 +526,12 @@ void LSampler24AudioProcessor::markAudioStateDirty()
         {
             state.sampleVelocityLow[size_t(sampleIndex)] = static_cast<uint8_t>(juce::jlimit(1, 127, slot.sampleVelocityLow[size_t(sampleIndex)]));
             state.sampleVelocityHigh[size_t(sampleIndex)] = static_cast<uint8_t>(juce::jlimit(1, 127, slot.sampleVelocityHigh[size_t(sampleIndex)]));
+            state.samplePitchCents[size_t(sampleIndex)] = slot.samplePitchCents[size_t(sampleIndex)];
+            state.samplePan[size_t(sampleIndex)] = slot.samplePan[size_t(sampleIndex)] * .01;
+            const double dB = slot.sampleVolumeDb[size_t(sampleIndex)];
+            state.sampleVolumeGain[size_t(sampleIndex)] = dB <= -120.0 ? 0.0 : std::pow(10.0, dB / 20.0);
         }
-        state.variationMode = juce::jlimit<int>(variationOff, variationShuffleNoRepeat, slot.variationMode);
+        state.variationMode = juce::jlimit<int>(variationOff, variationLayer, slot.variationMode);
         state.slice = prepareSliceAudio(slot.slice,state.length);
     }
     writerSnapshot = middleSnapshot.exchange(writerSnapshot | 4, std::memory_order_acq_rel) & 3;
@@ -1192,6 +1196,7 @@ bool LSampler24AudioProcessor::loadSampleToSlot(const juce::File& file, int slot
         s.alternateSampleFiles = {};
         s.sampleVelocityLow.fill(1);
         s.sampleVelocityHigh.fill(127);
+        s.samplePitchCents.fill(0); s.samplePan.fill(0); s.sampleVolumeDb.fill(0);
         s.variationMode = variationOff;
         s.slotName = file.getFileNameWithoutExtension();
         s.presetFile = {};
@@ -1206,12 +1211,13 @@ bool LSampler24AudioProcessor::loadSampleToSlot(const juce::File& file, int slot
 
 juce::String LSampler24AudioProcessor::variationModeName(int mode)
 {
-    switch (juce::jlimit<int>(variationOff, variationShuffleNoRepeat, mode))
+    switch (juce::jlimit<int>(variationOff, variationLayer, mode))
     {
         case variationRoundRobin: return "Round Robin";
         case variationRandom: return "Random";
         case variationRandomNoRepeat: return "Random No Repeat";
         case variationShuffleNoRepeat: return "Shuffle No Repeat";
+        case variationLayer: return "Layer";
         default: return "Off";
     }
 }
@@ -1313,6 +1319,9 @@ void LSampler24AudioProcessor::clearSampleSetEntry(int slotIndex, int sampleInde
         slot.alternateSamples[size_t(sampleIndex - 1)].reset();
         slot.alternateSampleFiles[size_t(sampleIndex - 1)] = {};
     }
+    slot.samplePitchCents[size_t(sampleIndex)] = 0;
+    slot.samplePan[size_t(sampleIndex)] = 0;
+    slot.sampleVolumeDb[size_t(sampleIndex)] = 0;
     slot.presetFile = {};
     slot.status = "Sample " + juce::String(sampleIndex + 1) + " cleared";
     markAudioStateDirty();
@@ -1343,6 +1352,9 @@ LSampler24AudioProcessor::SampleSetEntryInfo LSampler24AudioProcessor::getSample
     }
     info.velocityLow = slot.sampleVelocityLow[size_t(sampleIndex)];
     info.velocityHigh = slot.sampleVelocityHigh[size_t(sampleIndex)];
+    info.pitchCents = slot.samplePitchCents[size_t(sampleIndex)];
+    info.pan = slot.samplePan[size_t(sampleIndex)];
+    info.volumeDb = slot.sampleVolumeDb[size_t(sampleIndex)];
     return info;
 }
 
@@ -1366,6 +1378,19 @@ void LSampler24AudioProcessor::setSampleSetVelocityRange(int slotIndex, int samp
     markAudioStateDirty();
 }
 
+void LSampler24AudioProcessor::setSampleSetMix(int slotIndex, int sampleIndex, int field, double value)
+{
+    if (!juce::isPositiveAndBelow(slotIndex, slotCount) || !juce::isPositiveAndBelow(sampleIndex, sampleSetSize)) return;
+    const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
+    auto& slot = slots[size_t(slotIndex)];
+    if (field == 2) slot.samplePitchCents[size_t(sampleIndex)] = juce::jlimit(-1200.0, 1200.0, std::round(value));
+    else if (field == 3) slot.samplePan[size_t(sampleIndex)] = juce::jlimit(-100.0, 100.0, std::round(value));
+    else if (field == 4) slot.sampleVolumeDb[size_t(sampleIndex)] = juce::jlimit(-120.0, 24.0, std::round(value * 10.0) * .1);
+    else return;
+    slot.presetFile = {};
+    markAudioStateDirty();
+}
+
 int LSampler24AudioProcessor::getVariationMode(int slotIndex) const
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
@@ -1376,7 +1401,7 @@ int LSampler24AudioProcessor::getVariationMode(int slotIndex) const
 void LSampler24AudioProcessor::setVariationMode(int slotIndex, int mode)
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
-    mode = juce::jlimit<int>(variationOff, variationShuffleNoRepeat, mode);
+    mode = juce::jlimit<int>(variationOff, variationLayer, mode);
     const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
     auto& slot = slots[size_t(slotIndex)];
     slot.variationMode = mode;
@@ -1455,6 +1480,7 @@ bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int sl
         slot.alternateSampleFiles = {};
         slot.sampleVelocityLow.fill(1);
         slot.sampleVelocityHigh.fill(127);
+        slot.samplePitchCents.fill(0); slot.samplePan.fill(0); slot.sampleVolumeDb.fill(0);
         slot.variationMode = variationOff;
         slot.slotName = file.getFileNameWithoutExtension();
         slot.presetFile = {};
@@ -2200,6 +2226,9 @@ juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slotIndex, const juc
         entry.setProperty("index",sampleIndex,nullptr);
         entry.setProperty("velocityLow",s.sampleVelocityLow[size_t(sampleIndex)],nullptr);
         entry.setProperty("velocityHigh",s.sampleVelocityHigh[size_t(sampleIndex)],nullptr);
+        entry.setProperty("pitchCents",s.samplePitchCents[size_t(sampleIndex)],nullptr);
+        entry.setProperty("pan",s.samplePan[size_t(sampleIndex)],nullptr);
+        entry.setProperty("volumeDb",s.sampleVolumeDb[size_t(sampleIndex)],nullptr);
         const auto file=sampleIndex==0?s.sampleFile:s.alternateSampleFiles[size_t(sampleIndex-1)];
         const bool loaded=sampleIndex==0?bool(s.sample):bool(s.alternateSamples[size_t(sampleIndex-1)]);
         if(loaded||file.getFullPathName().isNotEmpty()) {
@@ -2313,7 +2342,7 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
         }
         slot.slice = SliceState::fromTree(tree.getChildWithName("Slice"));
         if(sampleSetTree.isValid()) {
-            slot.variationMode=juce::jlimit<int>(variationOff,variationShuffleNoRepeat,int(sampleSetTree.getProperty("variationMode",variationOff)));
+            slot.variationMode=juce::jlimit<int>(variationOff,variationLayer,int(sampleSetTree.getProperty("variationMode",variationOff)));
             for(int i=0;i<sampleSetTree.getNumChildren();++i) {
                 const auto entry=sampleSetTree.getChild(i);
                 const int sampleIndex=juce::jlimit(0,sampleSetSize-1,int(entry.getProperty("index",i)));
@@ -2322,6 +2351,9 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
                 if(lo>hi)std::swap(lo,hi);
                 slot.sampleVelocityLow[size_t(sampleIndex)]=lo;
                 slot.sampleVelocityHigh[size_t(sampleIndex)]=hi;
+                slot.samplePitchCents[size_t(sampleIndex)] = juce::jlimit(-1200.0,1200.0,double(entry.getProperty("pitchCents",0.0)));
+                slot.samplePan[size_t(sampleIndex)] = juce::jlimit(-100.0,100.0,double(entry.getProperty("pan",0.0)));
+                slot.sampleVolumeDb[size_t(sampleIndex)] = juce::jlimit(-120.0,24.0,double(entry.getProperty("volumeDb",0.0)));
                 if(sampleIndex==0)continue;
                 const auto ref=entry.getProperty("sampleReference").toString();
                 const auto hash=entry.getProperty("sampleHash").toString();
@@ -3638,8 +3670,8 @@ void LSampler24AudioProcessor::createHostParameters()
                 d.initial,d.min,d.max,d.step,d.step,"",d.step==1?0:2,d.labels};
             h.slice[size_t(i)]=add(id+"slice_"+d.key,name+d.name,converted,revision);
         }
-        Descriptor variation{"variation_mode","Variation Mode","Sample Set",Kind::enumeration,0,0,4,1,1,"",0,
-            "Off|Round Robin|Random|Random No Repeat|Shuffle No Repeat"};
+        Descriptor variation{"variation_mode","Variation Mode","Sample Set",Kind::enumeration,0,0,5,1,1,"",0,
+            "Off|Round Robin|Random|Random No Repeat|Shuffle No Repeat|Layer"};
         h.variation=add(id+variation.key,name+variation.name,variation,revision);
         for(int j=0;j<sampleSetSize;++j) {
             const auto sampleId=id+"sample"+juce::String(j+1).paddedLeft('0',2)+"_";

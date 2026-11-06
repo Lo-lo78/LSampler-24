@@ -18,13 +18,14 @@ class LSampler24AudioProcessor : public juce::AudioProcessor, private juce::Asyn
 public:
     static constexpr int slotCount = 24;
     static constexpr int sampleSetSize = lsampler::SlotAudioState::sampleSetSize;
-    enum VariationMode { variationOff = 0, variationRoundRobin = 1, variationRandom = 2, variationRandomNoRepeat = 3, variationShuffleNoRepeat = 4 };
+    enum VariationMode { variationOff = 0, variationRoundRobin = 1, variationRandom = 2, variationRandomNoRepeat = 3, variationShuffleNoRepeat = 4, variationLayer = 5 };
     struct SampleSetEntryInfo
     {
         bool loaded = false;
         juce::File file;
         juce::String name;
         int velocityLow = 1, velocityHigh = 127;
+        double pitchCents = 0, pan = 0, volumeDb = 0;
     };
 
     explicit LSampler24AudioProcessor(const juce::File& libraryRootOverride = {});
@@ -94,6 +95,7 @@ public:
     SampleSetEntryInfo getSampleSetEntry(int slot, int sampleIndex) const;
     juce::File getSampleSetEntryFile(int slot, int sampleIndex) const;
     void setSampleSetVelocityRange(int slot, int sampleIndex, int low, int high);
+    void setSampleSetMix(int slot, int sampleIndex, int field, double value);
     int getVariationMode(int slot) const;
     void setVariationMode(int slot, int mode);
     static juce::String variationModeName(int mode);
@@ -295,6 +297,9 @@ private:
         std::array<juce::File, sampleSetSize - 1> alternateSampleFiles {};
         std::array<int, sampleSetSize> sampleVelocityLow = [] { std::array<int, sampleSetSize> v {}; v.fill(1); return v; }();
         std::array<int, sampleSetSize> sampleVelocityHigh = [] { std::array<int, sampleSetSize> v {}; v.fill(127); return v; }();
+    std::array<double, sampleSetSize> samplePitchCents {};
+    std::array<double, sampleSetSize> samplePan {};
+    std::array<double, sampleSetSize> sampleVolumeDb {};
         int variationMode = variationOff;
         juce::String slotName;
         juce::File presetFile; // Runtime-only origin/save location for Alt+Enter properties.

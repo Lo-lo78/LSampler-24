@@ -1,6 +1,14 @@
 # LSampler-24
 
-**Versione di prova 0.99.25 — 5 novembre 2026 (TEST170)**
+**Versione di prova 0.99.25 — 6 novembre 2026 (TEST171)**
+
+## TEST171 — Sample Set: Pitch, Pan, Volume, Layer e scorciatoie Rack
+
+- Alt+M, F2 Sample Parameters: ogni campione dei 16 dispone di Velocity Low/High, Pitch (cents), Pan e Volume (dB). Solo Pitch/Pan/Volume sono indipendenti per campione; il resto del motore resta condiviso a livello di Slot. I valori predefiniti sono 0 e i preset precedenti si aprono senza cambiare suono.
+- Alt+M, F3 Variation Mode: nuova modalità Layer che sovrappone i campioni appartenenti alla stessa zona velocity in modalità Poly. Le modalità Off, Round Robin, Random e Shuffle rimangono disponibili.
+- Griglia principale: + e - regolano Level dello slot selezionato di 1 dB; Pagina Su/Giù si spostano di 4 righe, senza uscire dalla colonna di 8.
+- Limiti: Layer richiede Voice Mode Poly, aumenta l'uso di voci e CPU; i controlli Pitch/Pan/Volume per campione sono memorizzati nel preset, ma in questa TEST non hanno parametri di automazione host separati.
+- Versione sorgente sperimentale: verificare build GitHub Actions e test audio in REAPER.
 
 ## TEST170 — LFO Free deterministici al Play della DAW
 

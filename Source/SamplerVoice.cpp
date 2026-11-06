@@ -326,25 +326,50 @@ void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudio
     if(s.params[P::portamento]==0)v.effectiveNote=note;
     updateVoice(v,s);
 }
-void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool preview,double previewStartPercent,int sliceRequest,bool sliceMidiPad,int previewSampleIndex) {
+void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool preview,double previewStartPercent,int sliceRequest,bool sliceMidiPad,int previewSampleIndex,int forcedSampleIndex) {
     if(!states||slot<0||slot>=slotCount||note<0||note>127||channel<0||channel>15)return;
     const auto& s=(*states)[size_t(slot)];const auto& p=s.params;
     const bool slicePlayback=sliceMidiPad||sliceRequest!=-1||int(s.slice.state[SliceG::mode])!=0;
-    const int sampleIndex = (preview && previewSampleIndex >= 0 && previewSampleIndex < SlotAudioState::sampleSetSize)
+    // Layer plays every velocity-eligible Sample Set entry together, using the
+    // same shared engine/effects and one source sample per voice. Preserve the
+    // legacy single-sample selection for Mono, Slices and explicit Preview.
+    if(forcedSampleIndex<0 && !preview && !slicePlayback && s.variationMode==5 && p[P::polyphony]!=0) {
+        const int velocityValue=std::clamp(int(std::round(velocity*127.0f)),1,127);
+        std::array<int,SlotAudioState::sampleSetSize> indices {};
+        int count=0;
+        for(int i=0;i<SlotAudioState::sampleSetSize;++i)
+            if(s.sampleSet[size_t(i)] && velocityValue>=s.sampleVelocityLow[size_t(i)]
+               && velocityValue<=s.sampleVelocityHigh[size_t(i)])
+                indices[size_t(count++)]=i;
+        if(!count)return;
+        held[size_t(channel)][size_t(note)]={++noteCounter,velocity};
+        retriggerMonoLfos(slot,s);
+        if(p[P::same_note_replace]!=0)
+            for(auto& existing:voices)
+                if(existing.active&&!existing.preview&&existing.slotIndex==slot&&existing.note==note) {
+                    retireVoice(existing);stop(existing);
+                }
+        for(int k=0;k<count;++k)
+            noteOn(slot,note,velocity,channel,false,previewStartPercent,sliceRequest,sliceMidiPad,-1,indices[size_t(k)]);
+        return;
+    }
+    const int sampleIndex = (forcedSampleIndex>=0 && forcedSampleIndex<SlotAudioState::sampleSetSize)
+        ? (s.sampleSet[size_t(forcedSampleIndex)] ? forcedSampleIndex : -1)
+        : (preview && previewSampleIndex >= 0 && previewSampleIndex < SlotAudioState::sampleSetSize)
         ? (s.sampleSet[size_t(previewSampleIndex)] ? previewSampleIndex : -1)
         : (slicePlayback ? (s.sampleSet[0] ? 0 : -1)
                          : chooseSampleIndex(slot, s, std::clamp(int(std::round(velocity * 127.0f)), 1, 127), preview));
     if(sampleIndex<0)return;
     const auto& g=s.playback[size_t(sampleIndex)];
     if(!g.sample||g.length<1||g.sample->peak<1e-12)return;
-    if(!preview)held[size_t(channel)][size_t(note)]={++noteCounter,velocity};
-    retriggerMonoLfos(slot,s);
+    if(!preview && forcedSampleIndex<0)held[size_t(channel)][size_t(note)]={++noteCounter,velocity};
+    if(forcedSampleIndex<0)retriggerMonoLfos(slot,s);
     const bool mono=p[P::polyphony]==0;
     // Optional per-slot voice economy/retrigger mode.  A new Note On for the
     // same MIDI note replaces any older voice of that note in this slot, even
     // when sustain is holding it. Other notes and other slots are untouched.
     bool hasReplacedVoice=false;
-    if(!mono && !preview && !sliceMidiPad && p[P::same_note_replace]!=0)
+    if(forcedSampleIndex<0 && !mono && !preview && !sliceMidiPad && p[P::same_note_replace]!=0)
         for(auto& existing:voices)
             if(existing.active && !existing.preview && existing.slotIndex==slot && existing.note==note) {
                 hasReplacedVoice |= retireVoice(existing);
@@ -362,7 +387,7 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
         existing.stage = -1; existing.repeat = 0; existing.skipStage = -1;
         existing.pitchCached = existing.followCached = existing.lpModCached = existing.hpModCached = 1e30;
     };
-    if(!mono&&!preview&&!sliceMidiPad&&p[P::retrigger_smooth]>0)
+    if(forcedSampleIndex<0 && !mono&&!preview&&!sliceMidiPad&&p[P::retrigger_smooth]>0)
         for(auto& existing:voices)if(existing.active&&!existing.preview&&existing.slotIndex==slot) {
             if(retireVoice(existing))existing.fadeInLeft=transitionSamples;
             switchSample(existing);
@@ -971,7 +996,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
                 ? &g.stages[size_t(v.stage)] : nullptr;
             const int silentRepeat=silentLoop
                 ? (silentLoop->repeats>0?std::min(v.repeat,silentLoop->repeats):std::min(v.repeat,128)) : 0;
-            const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+v.drift
+            const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+s.samplePitchCents[size_t(v.sampleIndex)]*.01+v.drift
                 -(silentLoop?silentRepeat*silentLoop->pitch:0);
             if(pitch!=v.pitchCached){v.increment=std::pow(2.0,pitch/12)*g.sourceRatio;v.pitchCached=pitch;}
             if(!BasicRead&&v.slice.active)advanceSlice(v,s,v.increment);else advanceLoops(v,s,v.increment);continue;
@@ -1014,7 +1039,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
                 : 1.0-std::abs(1.0-double(v.repeat%256)/128.0);
             repeatPan=(phase*2.0-1.0)*loop->repeatPan*.01;
         }
-        const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+v.drift
+        const double pitch=effective-p[P::root]+p[P::octave]*12+p[P::voice_pitch]+s.samplePitchCents[size_t(v.sampleIndex)]*.01+v.drift
             +v.amp.value*p[P::pitch_env]+l1*s.lfo[0].pitch+l2*(s.lfo[1].pitch+wheelValue*s.lfo[1].wheel)+repeatPitch;
         if(pitch!=v.pitchCached || v.legatoPitchSlewLeft>0) {
             const double target=std::pow(2.0,pitch/12)*g.sourceRatio;
@@ -1258,9 +1283,12 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         }
         const double targetLoopLevel=activeLoop?loop->level*v.repeatLevelGain:1.0;
         v.loopLevelSmooth+=(targetLoopLevel-v.loopLevelSmooth)*loopLevelSmoothing;
-        const double gain=v.ampSmooth*s.level*v.loopLevelSmooth
+        const double gain=v.ampSmooth*s.level*s.sampleVolumeGain[size_t(v.sampleIndex)]*v.loopLevelSmooth
             *clamp(1+l1*s.lfo[0].volume+l2*s.lfo[1].volume,0,2);
         double panL=s.panL,panR=s.panR;
+        const double samplePan=s.samplePan[size_t(v.sampleIndex)];
+        panL*=1.0-std::max(0.0,samplePan);
+        panR*=1.0+std::min(0.0,samplePan);
         if(!BasicRead&&p[P::pan_env]!=0){const double pan=clamp((p[P::pan]+amp*p[P::pan_env]*mirror)*.01,-1,1);panL=1-std::max(0.0,pan);panR=1+std::min(0.0,pan);}
         // Same attenuation pan law used by Slice Repeat Pan. It combines
         // with (rather than replacing) the slot's own pan and pan envelope.
