@@ -352,6 +352,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     status.setTitle("Status");
     status.setDescription({});
     status.setWantsKeyboardFocus(false);
+    status.addKeyListener(this); // Escape can reach REAPER even if other file jobs focus Status.
     addAndMakeVisible(status);
 
     parameterSelector.setWantsKeyboardFocus(true);
@@ -3934,21 +3935,31 @@ void LSampler24AudioProcessorEditor::setFileUiBusy(bool busy)
     fileUiBusy = busy;
     if (busy) {
         fileReturnFocus = juce::Component::getCurrentlyFocusedComponent();
+        // TEST178: REAPER Alt+V must not hijack focus while a long source is
+        // decoding. NVDA gets the same rate-limited UIA progress events, but
+        // Escape remains available to REAPER and the original grid keeps focus.
+        const bool nonModalReaperImport = fileTaskTitle == "Importing REAPER items";
+        juce::Component* focusedRoot = fileReturnFocus.getComponent();
+        while (focusedRoot != nullptr && focusedRoot->getParentComponent() != this)
+            focusedRoot = focusedRoot->getParentComponent();
         fileDisabledComponents.clear();
         for (int i = 0; i < getNumChildComponents(); ++i) {
             auto* child = getChildComponent(i);
             if (child == &status) continue;
+            // Keep just the already-focused control enabled, not the full UI.
+            // Keyboard edits remain blocked by handleKeyPress while loading.
+            if (nonModalReaperImport && child == focusedRoot) continue;
             fileDisabledComponents.emplace_back(child, child->isEnabled());
             child->setEnabled(false);
         }
         status.setVisible(true);
-        status.setWantsKeyboardFocus(true);
-        // The status is the focused, readable line for NVDA+Up. No redundant
-        // "Status" heading while the task is in progress.
+        status.setWantsKeyboardFocus(!nonModalReaperImport);
         status.setTitle({});
         status.setDescription({});
         status.setName(fileTaskTitle + ", 0 percent");
-        if (isShowing() && (fileReturnFocus == nullptr || fileReturnFocus == this || isParentOf(fileReturnFocus.getComponent())))
+        if (!nonModalReaperImport && isShowing()
+            && (fileReturnFocus == nullptr || fileReturnFocus == this
+                || isParentOf(fileReturnFocus.getComponent())))
             status.grabKeyboardFocus();
     } else {
         for (auto& child : fileDisabledComponents)
@@ -4081,7 +4092,11 @@ void LSampler24AudioProcessorEditor::timerCallback()
         // even between spoken updates. Never interrupt REAPER when this editor
         // isn't the focused window. Repeat every 4 s, including slow/long WAVs.
         const auto now = juce::Time::getMillisecondCounter();
-        if (isShowing() && status.hasKeyboardFocus(true)
+        // For direct REAPER imports, keep focus on the original slot instead
+        // of forcing NVDA to follow an always-updating status component.
+        const bool progressFocus = fileTaskTitle == "Importing REAPER items"
+            ? hasKeyboardFocus(true) : status.hasKeyboardFocus(true);
+        if (isShowing() && progressFocus
             && now - lastProgressAnnouncementMs >= 4000u)
         {
             lastProgressAnnouncementMs = now;
@@ -4249,6 +4264,11 @@ void LSampler24AudioProcessorEditor::pasteCopiedReaperItems(
             FileTaskResult r;
             r.ok = true;
             r.skipped = skipped;
+            // One strong source owner stays alive on this worker until a
+            // different source file is encountered. All adjacent REAPER
+            // splits share its decode without doubling long-lived slot RAM.
+            juce::File cachedFile;
+            std::shared_ptr<SharedSample> cachedSource;
             for (int i = 0; i < static_cast<int>(items.size()); ++i)
             {
                 if (p.shouldStopFileTask())
@@ -4258,11 +4278,22 @@ void LSampler24AudioProcessorEditor::pasteCopiedReaperItems(
                     break;
                 }
                 const auto& item = items[size_t(i)];
+                if (cachedFile != item.file)
+                {
+                    cachedFile = item.file;
+                    cachedSource.reset();
+                }
                 juce::String error;
                 // REAPER Alt+V imports: Low/High/Original Pitch at consecutive
                 // notes from 60 (C4), independent of the destination slot.
+                // TEST177: report the decoding/copy progress for each item,
+                // not only 1 of N after a potentially multi-minute source loads.
                 if (!p.importSampleToSlot(item.file, firstSlot + i,
-                                          item.startSeconds, item.endSeconds, error, 60 + i))
+                                          item.startSeconds, item.endSeconds, error, 60 + i,
+                                          [&p, i, total = static_cast<int>(items.size())](double fraction)
+                                          {
+                                              p.setFileTaskProgress((double(i) + fraction) / double(total));
+                                          }, &cachedSource))
                 {
                     r.ok = false;
                     r.message = "Slot " + juce::String(firstSlot + i + 1) + ": " + error;

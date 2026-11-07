@@ -106,7 +106,9 @@ public:
     // mappedMidiNote is ONLY supplied by REAPER Alt+V batch imports.
     // -1 preserves the existing full-keyboard mapping for every other import.
     bool importSampleToSlot(const juce::File& file, int slotIndex, double startSeconds, double endSeconds,
-                            juce::String& error, int mappedMidiNote = -1);
+                            juce::String& error, int mappedMidiNote = -1,
+                            std::function<void(double)> progress = {},
+                            std::shared_ptr<SharedSample>* batchSourceCache = nullptr);
 
     // TEST175: MIDI note learning for the focused Low Key / High Key grid field.
     // Producer (audio thread) writes only atomics; UI thread owns state and host updates.
@@ -316,6 +318,10 @@ private:
         juce::String slotName;
         juce::File presetFile; // Runtime-only origin/save location for Alt+Enter properties.
         bool sampleAudioModified = false;
+        // TEST177: lossless source window for direct REAPER item imports.
+        // Avoid serialising minutes of PCM into VST3 host state on editor close.
+        juce::int64 sourceWindowFirstFrame = -1;
+        juce::int64 sourceWindowEndFrame = -1;
         int thresholdStartFrame = 0;
         int thresholdEndFrame = 0;
         lsampler::SlotParameters parameters;
@@ -368,7 +374,8 @@ private:
     bool hostParametersReady = false;
     bool restoringHostState = false; // accessed under stateLock only
 
-    juce::ValueTree makeSlotState(int slotIndex, const juce::String& type) const;
+    juce::ValueTree makeSlotState(int slotIndex, const juce::String& type,
+                                  bool includeSampleHashes = true) const;
     bool restoreSlotState(int slotIndex, const juce::ValueTree& tree, juce::String& error,
                           std::function<void(double)> progress = {});
     bool writePreset(const juce::File& file, const juce::ValueTree& tree, juce::String& error) const;
@@ -376,6 +383,8 @@ private:
     bool materialiseSlotSample(int slotIndex, juce::String& error);
     bool materialiseSampleSetExtras(int slotIndex, juce::String& error);
     void updateThresholdWindow(int slotIndex);
+    // Pure snapshot preparation, safe to run on the file worker before taking stateLock.
+    lsampler::SlotAudioState buildPreparedSlotAudio(const SlotState&, double sampleRate, uint64_t revision) const;
     void markAudioStateDirty();
     void syncAudioStateFromSlots();
 
@@ -444,6 +453,29 @@ private:
     // Dirty flag and buffer index travel in the same lock-free atomic exchange.
     std::unique_ptr<std::array<AudioSnapshot,3>> snapshotStorage=std::make_unique<std::array<AudioSnapshot,3>>();
     std::array<AudioSnapshot,3>& snapshots=*snapshotStorage;
+    // TEST178: writer-only preparation cache. The 1 ms threshold detector
+    // scans all frames in applySampleSetGlobalWindow. Rebuilding every already
+    // loaded multi-minute slot when only one new slot changes holds stateLock
+    // for seconds and blocks REAPER/NVDA GUI queries despite fileWorker.
+    // Weak owners prevent cached snapshots from pinning old audio in RAM.
+    struct SlotPreparationCache
+    {
+        bool valid = false;
+        double rate = 0.0;
+        std::array<std::weak_ptr<SharedSample>, sampleSetSize> owners {};
+        lsampler::SlotParameters parameters;
+        lsampler::SliceState slice;
+        std::array<int, sampleSetSize> velocityLow {}, velocityHigh {};
+        std::array<double, sampleSetSize> pitchCents {}, octave {}, pan {}, volumeDb {}, delayMs {};
+        int variationMode = 0;
+        int thresholdStartFrame = 0, thresholdEndFrame = 0;
+        lsampler::SlotAudioState prepared;
+        bool matches(const SlotState&, double) const;
+        void remember(const SlotState&, double, const lsampler::SlotAudioState&);
+    };
+    std::unique_ptr<std::array<SlotPreparationCache, slotCount>> preparationCacheStorage =
+        std::make_unique<std::array<SlotPreparationCache, slotCount>>();
+    std::array<SlotPreparationCache, slotCount>& preparationCache = *preparationCacheStorage;
     std::atomic<int> middleSnapshot { 1 };
     int writerSnapshot = 2, readerSnapshot = 0;
     uint64_t nextRevision = 0;

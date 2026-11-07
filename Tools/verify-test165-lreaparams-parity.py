@@ -31,7 +31,7 @@ assert 'static const wchar_t* labels[] = {L"Velocity Low", L"Velocity High", L"P
 assert 'std::wstring(juce::String(' in fx
 assert 'parameterSearch.next(' in slice
 assert 'constexpr auto lsamplerVersion = "0.99.25"' in editor
-assert any(f'LSampler-24-Windows-VST3-{version}' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173','TEST174','TEST175','TEST176'))
+assert any(f'LSampler-24-Windows-VST3-{version}' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173','TEST174','TEST175','TEST176','TEST177','TEST178'))
 assert 'verify-test165-lreaparams-parity.py' in workflow
 assert 'project(LSampler24 VERSION 0.99.25 ' in (r/'CMakeLists.txt').read_text()
 assert 'add_test(NAME incremental-search COMMAND LSampler24SearchTests)' in (r/'CMakeLists.txt').read_text()

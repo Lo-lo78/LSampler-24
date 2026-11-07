@@ -496,6 +496,55 @@ std::shared_ptr<SharedSample> restoreEditedAudio(const juce::ValueTree& tree,con
     if(channels==1)sample->dc[1]=sample->dc[0];sample->peak=peak;return sample;
 }
 
+// TEST177: slice a source file on the file-worker or host-restore thread.
+// The whole-source SamplePool owner remains cached for all slices of one file.
+// Progress covers the per-chunk copy and peak/DC preparation, not just the slot count.
+std::shared_ptr<SharedSample> copySourceWindow(const std::shared_ptr<SharedSample>& source,
+                                               juce::int64 first, juce::int64 end,
+                                               juce::String& error,
+                                               const std::function<void(double)>& progress = {})
+{
+    if (!source || first < 0 || end <= first
+        || end > source->audio.getNumSamples() || end - first > std::numeric_limits<int>::max())
+    {
+        error = "Invalid REAPER source window (source file may have changed)";
+        return {};
+    }
+    const int channels = source->audio.getNumChannels();
+    const int frames = static_cast<int>(end - first);
+    if (channels < 1 || channels > 2 || frames < 2)
+    {
+        error = "Invalid or too short REAPER audio item";
+        return {};
+    }
+    auto sliced = std::make_shared<SharedSample>();
+    sliced->sourceSampleRate = source->sourceSampleRate;
+    sliced->sourceFile = source->sourceFile;
+    sliced->audio.setSize(channels, frames, false, false, true);
+    std::array<double, 2> sums {};
+    constexpr int chunkFrames = 262144;
+    for (int offset = 0; offset < frames; offset += chunkFrames)
+    {
+        const int count = juce::jmin(chunkFrames, frames - offset);
+        for (int ch = 0; ch < channels; ++ch)
+        {
+            sliced->audio.copyFrom(ch, offset, source->audio, ch,
+                                   static_cast<int>(first) + offset, count);
+            const float* samples = sliced->audio.getReadPointer(ch, offset);
+            for (int k = 0; k < count; ++k)
+            {
+                sums[static_cast<size_t>(ch)] += samples[k];
+                sliced->peak = std::max(sliced->peak, std::abs(double(samples[k])));
+            }
+        }
+        if (progress) progress(double(offset + count) / double(frames));
+    }
+    for (int ch = 0; ch < channels; ++ch)
+        sliced->dc[static_cast<size_t>(ch)] = sums[static_cast<size_t>(ch)] / frames;
+    if (channels == 1) sliced->dc[1] = sliced->dc[0];
+    return sliced;
+}
+
 // One unit per main sample (or empty slot), plus each referenced Sample Set
 // alternate. The same units are used for a standalone slot and the bank total.
 int slotLoadUnits(const juce::ValueTree& slot)
@@ -619,6 +668,93 @@ void LSampler24AudioProcessor::updateThresholdWindow(int slotIndex)
     slot.thresholdEndFrame = w.end;
 }
 
+// TEST178: Audio preparation is cached per slot, not per entire bank. Each
+// comparison is exact on its inputs; any changed Slice setting, threshold,
+// sample owner, rate, or Sample Set field invalidates that slot only.
+// The cache is written exclusively under stateLock, never by the audio thread.
+bool LSampler24AudioProcessor::SlotPreparationCache::matches(const SlotState& slot, double sampleRate) const
+{
+    if (!valid || rate != sampleRate || variationMode != slot.variationMode
+        || thresholdStartFrame != slot.thresholdStartFrame
+        || thresholdEndFrame != slot.thresholdEndFrame
+        || parameters.values != slot.parameters.values || parameters.loops != slot.parameters.loops
+        || velocityLow != slot.sampleVelocityLow || velocityHigh != slot.sampleVelocityHigh
+        || pitchCents != slot.samplePitchCents || octave != slot.sampleOctave
+        || pan != slot.samplePan || volumeDb != slot.sampleVolumeDb || delayMs != slot.sampleDelayMs
+        || slice.globals != slot.slice.globals || slice.boundaries != slot.slice.boundaries
+        || slice.zeroCrossing != slot.slice.zeroCrossing)
+        return false;
+    for (size_t step = 0; step < slice.steps.size(); ++step)
+        if (slice.steps[step].values != slot.slice.steps[step].values) return false;
+    for (int sampleIndex = 0; sampleIndex < sampleSetSize; ++sampleIndex)
+    {
+        const auto& owner = sampleIndex == 0 ? slot.sample : slot.alternateSamples[size_t(sampleIndex - 1)];
+        const auto& remembered = owners[size_t(sampleIndex)];
+        if (remembered.owner_before(owner) || owner.owner_before(remembered)) return false;
+    }
+    return true;
+}
+
+void LSampler24AudioProcessor::SlotPreparationCache::remember(
+    const SlotState& slot, double sampleRate, const lsampler::SlotAudioState& audio)
+{
+    // Keep only weak owner references. In particular, clearing a six-minute
+    // sample must not leave a hidden strong reference in this cache.
+    for (int sampleIndex = 0; sampleIndex < sampleSetSize; ++sampleIndex)
+        owners[size_t(sampleIndex)] = sampleIndex == 0
+            ? slot.sample : slot.alternateSamples[size_t(sampleIndex - 1)];
+    rate = sampleRate;
+    parameters = slot.parameters;
+    slice = slot.slice;
+    velocityLow = slot.sampleVelocityLow;
+    velocityHigh = slot.sampleVelocityHigh;
+    pitchCents = slot.samplePitchCents;
+    octave = slot.sampleOctave;
+    pan = slot.samplePan;
+    volumeDb = slot.sampleVolumeDb;
+    delayMs = slot.sampleDelayMs;
+    variationMode = slot.variationMode;
+    thresholdStartFrame = slot.thresholdStartFrame;
+    thresholdEndFrame = slot.thresholdEndFrame;
+    prepared = audio;
+    valid = true;
+}
+
+// TEST178: no mutable processor state is accessed here. A new REAPER clip can
+// be decoded AND have its 1 ms threshold envelope prepared entirely on the
+// background worker. The GUI lock is then held only for slot publication.
+lsampler::SlotAudioState LSampler24AudioProcessor::buildPreparedSlotAudio(
+    const SlotState& slot, double sampleRate, uint64_t revision) const
+{
+    auto state = prepareSlotAudioState(slot.parameters, slot.sample.get(), sampleRate, revision,
+                                      slot.thresholdStartFrame, slot.thresholdEndFrame);
+    state.sampleSet[0] = slot.sample.get();
+    state.playback[0] = prepareSamplePlaybackState(slot.parameters, slot.sample.get(), sampleRate,
+                                                   slot.thresholdStartFrame, slot.thresholdEndFrame);
+    for (int sampleIndex = 1; sampleIndex < sampleSetSize; ++sampleIndex)
+    {
+        const auto& owner = slot.alternateSamples[size_t(sampleIndex - 1)];
+        state.sampleSet[size_t(sampleIndex)] = owner.get();
+        state.playback[size_t(sampleIndex)] = prepareSamplePlaybackState(slot.parameters, owner.get(), sampleRate);
+    }
+    for (int sampleIndex = 0; sampleIndex < sampleSetSize; ++sampleIndex)
+    {
+        state.sampleVelocityLow[size_t(sampleIndex)] = static_cast<uint8_t>(juce::jlimit(1, 127, slot.sampleVelocityLow[size_t(sampleIndex)]));
+        state.sampleVelocityHigh[size_t(sampleIndex)] = static_cast<uint8_t>(juce::jlimit(1, 127, slot.sampleVelocityHigh[size_t(sampleIndex)]));
+        state.samplePitchCents[size_t(sampleIndex)] = slot.samplePitchCents[size_t(sampleIndex)];
+        state.sampleOctave[size_t(sampleIndex)] = slot.sampleOctave[size_t(sampleIndex)];
+        state.sampleDelayRawFrames[size_t(sampleIndex)] = state.sampleDelayFrames[size_t(sampleIndex)] =
+            int(std::round(slot.sampleDelayMs[size_t(sampleIndex)] * .001 * sampleRate));
+        state.samplePan[size_t(sampleIndex)] = slot.samplePan[size_t(sampleIndex)] * .01;
+        const double dB = slot.sampleVolumeDb[size_t(sampleIndex)];
+        state.sampleVolumeGain[size_t(sampleIndex)] = dB <= -120.0 ? 0.0 : std::pow(10.0, dB / 20.0);
+    }
+    state.variationMode = juce::jlimit<int>(variationOff, variationLayer, slot.variationMode);
+    applySampleSetGlobalWindow(state);
+    state.slice = prepareSliceAudio(slot.slice, state.length);
+    return state;
+}
+
 void LSampler24AudioProcessor::markAudioStateDirty()
 {
     const juce::ScopedLock lock(stateLock);
@@ -640,32 +776,27 @@ void LSampler24AudioProcessor::markAudioStateDirty()
             published = owner;
         };
         publishOwner(0, slot.sample);
-        state = prepareSlotAudioState(slot.parameters, slot.sample.get(), preparedSampleRate, ++nextRevision,
-                                      slot.thresholdStartFrame, slot.thresholdEndFrame);
-        state.sampleSet[0] = slot.sample.get();
-        state.playback[0] = prepareSamplePlaybackState(slot.parameters, slot.sample.get(), preparedSampleRate,
-                                                       slot.thresholdStartFrame, slot.thresholdEndFrame);
+        // The file worker changes only one slot per imported REAPER item.
+        // A bank-wide rescan under stateLock previously made every 6-minute
+        // source block REAPER's UI for the cumulative duration of the batch.
+        auto& cache = preparationCache[idx];
+        const bool unchanged = cache.matches(slot, preparedSampleRate);
+        if (unchanged)
+        {
+            state = cache.prepared;
+            state.revision = ++nextRevision;
+        }
+        else
+        {
+            state = buildPreparedSlotAudio(slot, preparedSampleRate, ++nextRevision);
+        }
         for (int sampleIndex = 1; sampleIndex < sampleSetSize; ++sampleIndex)
         {
             const auto& owner = slot.alternateSamples[size_t(sampleIndex - 1)];
             publishOwner(sampleIndex, owner);
-            state.sampleSet[size_t(sampleIndex)] = owner.get();
-            state.playback[size_t(sampleIndex)] = prepareSamplePlaybackState(slot.parameters, owner.get(), preparedSampleRate);
         }
-        for (int sampleIndex = 0; sampleIndex < sampleSetSize; ++sampleIndex)
-        {
-            state.sampleVelocityLow[size_t(sampleIndex)] = static_cast<uint8_t>(juce::jlimit(1, 127, slot.sampleVelocityLow[size_t(sampleIndex)]));
-            state.sampleVelocityHigh[size_t(sampleIndex)] = static_cast<uint8_t>(juce::jlimit(1, 127, slot.sampleVelocityHigh[size_t(sampleIndex)]));
-            state.samplePitchCents[size_t(sampleIndex)] = slot.samplePitchCents[size_t(sampleIndex)];
-            state.sampleOctave[size_t(sampleIndex)] = slot.sampleOctave[size_t(sampleIndex)];
-            state.sampleDelayRawFrames[size_t(sampleIndex)] = state.sampleDelayFrames[size_t(sampleIndex)] = int(std::round(slot.sampleDelayMs[size_t(sampleIndex)] * .001 * preparedSampleRate));
-            state.samplePan[size_t(sampleIndex)] = slot.samplePan[size_t(sampleIndex)] * .01;
-            const double dB = slot.sampleVolumeDb[size_t(sampleIndex)];
-            state.sampleVolumeGain[size_t(sampleIndex)] = dB <= -120.0 ? 0.0 : std::pow(10.0, dB / 20.0);
-        }
-        state.variationMode = juce::jlimit<int>(variationOff, variationLayer, slot.variationMode);
-        applySampleSetGlobalWindow(state);
-        state.slice = prepareSliceAudio(slot.slice,state.length);
+        if (!unchanged)
+            cache.remember(slot, preparedSampleRate, state);
     }
     writerSnapshot = middleSnapshot.exchange(writerSnapshot | 4, std::memory_order_acq_rel) & 3;
     // Sample references held by voices are intrusive counters: deletion always occurs here.
@@ -1602,11 +1733,23 @@ bool LSampler24AudioProcessor::isSlotOccupied(int slotIndex) const
 }
 
 bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int slotIndex, double startSeconds, double endSeconds,
-                                                    juce::String& error, int mappedMidiNote)
+                                                    juce::String& error, int mappedMidiNote,
+                                                    std::function<void(double)> progress,
+                                                    std::shared_ptr<SharedSample>* batchSourceCache)
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
-    auto loaded = SamplePool::instance().load(file, error);
-    if (!loaded) return false;
+    // Decode off the UI/audio thread. Keep one source pinned across consecutive
+    // cuts in the same REAPER batch so a 6-minute WAV is not decoded N times.
+    std::shared_ptr<SharedSample> loaded = batchSourceCache ? *batchSourceCache : nullptr;
+    if (loaded && progress) progress(0.80);
+    if (!loaded)
+    {
+        loaded = lsampler::loadSampleWithProgress(file, error,
+            progress ? lsampler::SampleLoadProgress([&](double fraction) { progress(fraction * 0.80); })
+                     : lsampler::SampleLoadProgress{});
+        if (!loaded) return false;
+        if (batchSourceCache) *batchSourceCache = loaded;
+    }
 
     const double sourceRate = loaded->sourceSampleRate > 0.0 ? loaded->sourceSampleRate : preparedSampleRate;
     const double totalSeconds = loaded->audio.getNumSamples() / juce::jmax(1.0, sourceRate);
@@ -1617,76 +1760,61 @@ bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int sl
     const bool hasSlice = endSeconds > startSeconds + 0.0005 && totalSeconds > 0.0
         && differentWindow;
 
+    juce::int64 sourceWindowFirstFrame = -1, sourceWindowEndFrame = -1;
     if (hasSlice)
     {
         startSeconds = juce::jlimit(0.0, totalSeconds, startSeconds);
         endSeconds = juce::jlimit(startSeconds + 0.0005, totalSeconds, endSeconds);
-
         const int totalSamples = loaded->audio.getNumSamples();
-        const int firstSample = juce::jlimit(0, totalSamples - 2,
+        sourceWindowFirstFrame = juce::jlimit(0, totalSamples - 2,
             static_cast<int>(std::floor(startSeconds * sourceRate)));
-        const int lastSample = juce::jlimit(firstSample + 1, totalSamples,
-            static_cast<int>(std::ceil(endSeconds * sourceRate)));
-        const int sliceSamples = lastSample - firstSample;
-
-        auto sliced = std::make_shared<SharedSample>();
-        sliced->audio.setSize(loaded->audio.getNumChannels(), sliceSamples, false, false, true);
-        for (int ch = 0; ch < loaded->audio.getNumChannels(); ++ch)
-            sliced->audio.copyFrom(ch, 0, loaded->audio, ch, firstSample, sliceSamples);
-        sliced->sourceSampleRate = loaded->sourceSampleRate;
-        sliced->sourceFile = loaded->sourceFile;
-
-        double peak = 0.0;
-        std::array<double, 2> dc {};
-        for (int ch = 0; ch < sliced->audio.getNumChannels(); ++ch)
-        {
-            const auto* data = sliced->audio.getReadPointer(ch);
-            double sum = 0.0;
-            for (int i = 0; i < sliceSamples; ++i)
-            {
-                peak = juce::jmax(peak, std::abs(double(data[i])));
-                sum += data[i];
-            }
-            if (ch < 2) dc[size_t(ch)] = sliceSamples > 0 ? sum / sliceSamples : 0.0;
-        }
-        if (sliced->audio.getNumChannels() == 1) dc[1] = dc[0];
-        sliced->peak = peak;
-        sliced->dc = dc;
-        loaded = std::move(sliced);
+        sourceWindowEndFrame = juce::jlimit(static_cast<int>(sourceWindowFirstFrame) + 1,
+            totalSamples, static_cast<int>(std::ceil(endSeconds * sourceRate)));
+        loaded = copySourceWindow(loaded, sourceWindowFirstFrame, sourceWindowEndFrame,
+            error, progress ? std::function<void(double)>([&](double fraction)
+                { progress(0.80 + 0.20 * fraction); }) : std::function<void(double)>{});
+        if (!loaded) return false;
     }
+    if (progress) progress(1.0);
+
+    // TEST178: prepare the default slot, its threshold window AND the
+    // complete derived DSP state before acquiring stateLock. In TEST177,
+    // applySampleSetGlobalWindow scanned every 1 ms peak (including a six-
+    // minute WAV) while the GUI and REAPER were waiting for the same lock.
+    SlotState incoming;
+    incoming.sample = std::move(loaded);
+    incoming.sampleFile = file;
+    incoming.slotName = file.getFileNameWithoutExtension();
+    incoming.sampleAudioModified = hasSlice;
+    incoming.sourceWindowFirstFrame = sourceWindowFirstFrame;
+    incoming.sourceWindowEndFrame = sourceWindowEndFrame;
+    // TEST176: Low Key, High Key and Original Pitch all track 60, 61 ...
+    incoming.parameters[lsampler::P::root] = mappedMidiNote >= 0
+        ? juce::jlimit(0, 127, mappedMidiNote) : 60.0;
+    incoming.parameters[lsampler::P::low] = mappedMidiNote >= 0
+        ? juce::jlimit(0, 127, mappedMidiNote) : 0.0;
+    incoming.parameters[lsampler::P::high] = mappedMidiNote >= 0
+        ? juce::jlimit(0, 127, mappedMidiNote) : 127.0;
+    incoming.parameters[lsampler::P::sample_start] = 0.0;
+    incoming.parameters[lsampler::P::sample_end] = 100.0;
+    incoming.parameters[lsampler::P::sample_play_start] = 0.0;
+    incoming.status = "Loaded: " + file.getFileName();
+    const auto window = lsampler::calculateThresholdWindow(incoming.parameters, incoming.sample.get());
+    incoming.thresholdStartFrame = window.start;
+    incoming.thresholdEndFrame = window.end;
+    double buildRate = 44100.0;
+    { const juce::ScopedLock lock(stateLock); buildRate = preparedSampleRate; }
+    auto audioState = buildPreparedSlotAudio(incoming, buildRate, 0);
 
     {
-        const juce::ScopedLock lock(stateLock); absorbHostValuesLocked();
+        const juce::ScopedLock lock(stateLock);
+        absorbHostValuesLocked();
         auto& slot = slots[static_cast<size_t>(slotIndex)];
-        slot.sample = std::move(loaded);
-        slot.sampleFile = file;
-        slot.alternateSamples = {};
-        slot.alternateSampleFiles = {};
-        slot.sampleVelocityLow.fill(1);
-        slot.sampleVelocityHigh.fill(127);
-        slot.samplePitchCents.fill(0); slot.sampleOctave.fill(0); slot.samplePan.fill(0); slot.sampleVolumeDb.fill(0); slot.sampleDelayMs.fill(0);
-        slot.variationMode = variationOff;
-        slot.slotName = file.getFileNameWithoutExtension();
-        slot.presetFile = {};
-        slot.sampleAudioModified = hasSlice;
-        slot.slice = SliceState{};
-        slot.parameters = lsampler::SlotParameters{};
-        // TEST176: Low Key, High Key AND Original Pitch match for each
-        // REAPER item (60, 61, 62, ...), preventing accidental transposition.
-        // No other import passes mappedMidiNote: default root stays at 60.
-        slot.parameters[lsampler::P::root] = mappedMidiNote >= 0
-            ? juce::jlimit(0, 127, mappedMidiNote) : 60.0;
-        slot.parameters[lsampler::P::low] = mappedMidiNote >= 0
-            ? juce::jlimit(0, 127, mappedMidiNote) : 0.0;
-        slot.parameters[lsampler::P::high] = mappedMidiNote >= 0
-            ? juce::jlimit(0, 127, mappedMidiNote) : 127.0;
-        // Alt+O slices are already real trimmed audio when they reach a slot.
-        // Slot editing therefore always begins from a clean full 0..100 % window.
-        slot.parameters[lsampler::P::sample_start] = 0.0;
-        slot.parameters[lsampler::P::sample_end] = 100.0;
-        slot.parameters[lsampler::P::sample_play_start] = 0.0;
-        slot.status = "Loaded: " + file.getFileName();
-        updateThresholdWindow(slotIndex);
+        slot = std::move(incoming);
+        // Do not reuse a DSP snapshot if REAPER changed the sample rate
+        // during this background decode. The normal preparation remains safe.
+        if (preparedSampleRate == buildRate)
+            preparationCache[size_t(slotIndex)].remember(slot, buildRate, audioState);
         markAudioStateDirty();
     }
     return true;
@@ -2054,6 +2182,9 @@ void LSampler24AudioProcessor::applyZeroCrossing(bool loopWindow,int loopIndex) 
         slot.slice.sanitise();
         slot.sample = std::move(trimmed);
         slot.sampleAudioModified = true;
+        // A later destructive trim is no longer the original REAPER source window.
+        slot.sourceWindowFirstFrame = -1;
+        slot.sourceWindowEndFrame = -1;
         p[P::sample_start] = 0.0;
         p[P::sample_end] = 100.0;
         p[P::sample_play_start] = 0.0;
@@ -2378,7 +2509,8 @@ juce::String LSampler24AudioProcessor::getSampleStatus() const
     return slots[static_cast<size_t>(currentSlot.load())].status;
 }
 
-juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slotIndex, const juce::String& type) const
+juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slotIndex, const juce::String& type,
+                                                            bool includeSampleHashes) const
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
     SlotState s;
@@ -2389,7 +2521,10 @@ juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slotIndex, const juc
     tree.setProperty("index", slotIndex, nullptr);
     tree.setProperty("slotName", s.slotName.isNotEmpty() ? s.slotName : s.sampleFile.getFileNameWithoutExtension(), nullptr);
     tree.setProperty("sampleReference", library.makeSampleReference(s.sampleFile), nullptr);
-    tree.setProperty("sampleHash", library.makeSampleHash(s.sampleFile), nullptr);
+    // REAPER requests host state synchronously, including when closing the FX UI.
+    // SHA-256 of multi-minute recordings must not run on REAPER's UI thread.
+    if (includeSampleHashes)
+        tree.setProperty("sampleHash", library.makeSampleHash(s.sampleFile), nullptr);
     // Keep version-2 aliases for the existing state contract. Canonical values live in Parameters.
     tree.setProperty("lowKey", s.parameters[P::low], nullptr);
     tree.setProperty("highKey", s.parameters[P::high], nullptr);
@@ -2425,13 +2560,24 @@ juce::ValueTree LSampler24AudioProcessor::makeSlotState(int slotIndex, const juc
         const bool loaded=sampleIndex==0?bool(s.sample):bool(s.alternateSamples[size_t(sampleIndex-1)]);
         if(loaded||file.getFullPathName().isNotEmpty()) {
             entry.setProperty("sampleReference",library.makeSampleReference(file),nullptr);
-            entry.setProperty("sampleHash",library.makeSampleHash(file),nullptr);
+            if (includeSampleHashes)
+                entry.setProperty("sampleHash",library.makeSampleHash(file),nullptr);
         }
         sampleSet.addChild(entry,-1,nullptr);
     }
     tree.addChild(sampleSet,-1,nullptr);
     tree.addChild(s.slice.toTree(),-1,nullptr);
-    if(s.sampleAudioModified&&s.sample)tree.addChild(storeEditedAudio(*s.sample),-1,nullptr);
+    if (s.sourceWindowFirstFrame >= 0 && s.sourceWindowEndFrame > s.sourceWindowFirstFrame)
+    {
+        // REAPER item imports are reproducible, not destructive edits.
+        // Never encode huge audio buffers into the project/undo VST3 state.
+        juce::ValueTree window("SourceWindow");
+        window.setProperty("firstFrame", s.sourceWindowFirstFrame, nullptr);
+        window.setProperty("endFrame", s.sourceWindowEndFrame, nullptr);
+        tree.addChild(window, -1, nullptr);
+    }
+    else if (s.sampleAudioModified && s.sample)
+        tree.addChild(storeEditedAudio(*s.sample), -1, nullptr);
     return tree;
 }
 
@@ -2481,6 +2627,11 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
     bool ok = true;
 
     const auto editedAudio=tree.getChildWithName("EditedAudio");
+    const auto sourceWindow=tree.getChildWithName("SourceWindow");
+    const auto firstFrame=sourceWindow.isValid()
+        ? static_cast<juce::int64>(sourceWindow.getProperty("firstFrame", juce::int64(-1))) : juce::int64(-1);
+    const auto endFrame=sourceWindow.isValid()
+        ? static_cast<juce::int64>(sourceWindow.getProperty("endFrame", juce::int64(-1))) : juce::int64(-1);
     if(editedAudio.isValid()) {
         loaded=restoreEditedAudio(editedAudio,file,error);ok=bool(loaded);
         statusText=ok?"Loaded edited slot audio":error;
@@ -2496,12 +2647,23 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
         else
         {
             loaded = lsampler::loadSampleWithProgress(file, error,
-                progress ? lsampler::SampleLoadProgress([&](double fraction) { reportPart(fraction); })
+                progress ? lsampler::SampleLoadProgress([&](double fraction)
+                    { reportPart(sourceWindow.isValid() ? fraction * 0.80 : fraction); })
                          : lsampler::SampleLoadProgress{});
             if (!loaded)
             {
                 statusText = error;
                 ok = false;
+            }
+            else if (sourceWindow.isValid())
+            {
+                // Restoration happens outside real-time rendering; reuse the
+                // original file and apply the same frame-exact crop on reload.
+                loaded = copySourceWindow(loaded, firstFrame, endFrame, error,
+                    progress ? std::function<void(double)>([&](double fraction)
+                        { reportPart(0.80 + fraction * 0.20); }) : std::function<void(double)>{});
+                if (!loaded) { statusText = error; ok = false; }
+                else statusText = "Loaded REAPER item: " + file.getFileName();
             }
             else
             {
@@ -2570,7 +2732,12 @@ bool LSampler24AudioProcessor::restoreSlotState(int slotIndex, const juce::Value
         slot.sample = std::move(loaded);
         slot.sampleFile = file;
         slot.slotName = tree.getProperty("slotName").toString().trim();
-        slot.sampleAudioModified = editedAudio.isValid()&&bool(slot.sample);
+        slot.sampleAudioModified = (editedAudio.isValid() || sourceWindow.isValid()) && bool(slot.sample);
+        if (sourceWindow.isValid() && !editedAudio.isValid())
+        {
+            slot.sourceWindowFirstFrame = firstFrame;
+            slot.sourceWindowEndFrame = endFrame;
+        }
         slot.status = statusText;
         const auto window = lsampler::calculateThresholdWindow(slot.parameters, slot.sample.get());
         slot.thresholdStartFrame = window.start; slot.thresholdEndFrame = window.end;
@@ -2640,6 +2807,8 @@ bool LSampler24AudioProcessor::materialiseSlotSample(int slotIndex, juce::String
         slot.sample = std::move(aliased);
         slot.sampleFile = local;
         slot.sampleAudioModified = false;
+        slot.sourceWindowFirstFrame = -1;
+        slot.sourceWindowEndFrame = -1;
         slot.status = "Loaded: " + local.getFileName();
         markAudioStateDirty();
         return true;
@@ -2666,6 +2835,8 @@ bool LSampler24AudioProcessor::materialiseSlotSample(int slotIndex, juce::String
         slot.sample = std::move(loaded);
         slot.sampleFile = local;
         slot.sampleAudioModified = false;
+        slot.sourceWindowFirstFrame = -1;
+        slot.sourceWindowEndFrame = -1;
         slot.status = "Loaded: " + local.getFileName();
         markAudioStateDirty();
     }
@@ -3791,7 +3962,7 @@ void LSampler24AudioProcessor::getStateInformation(juce::MemoryBlock& destData)
         state.setProperty(globalParameters[size_t(i)].key,
                           getGlobalOutputParameter(static_cast<GlobalP>(i)), nullptr);
     for (int i = 0; i < slotCount; ++i)
-        state.addChild(makeSlotState(i, "Slot"), -1, nullptr);
+        state.addChild(makeSlotState(i, "Slot", false), -1, nullptr);
     saveBankMacroState(state);
     saveFXState(state);
     state.setProperty("fx_ui_cursor", getFXGridCursor(), nullptr);

@@ -48,12 +48,12 @@ for key in ('hasKeyboardFocus(true)', 'parameterPage', 'globalOpen', 'bankMacroO
 # Destination slot sequence is unaffected; MIDI note starts at 60 each import.
 assert 'const int firstSlot = processor.getCurrentSlot();' in e
 assert 'if (processor.isSlotOccupied(firstSlot + i)) ++overwritten;' in e
-assert re.search(r'importSampleToSlot\(item.file, firstSlot \+ i,\s*item.startSeconds, item.endSeconds, error, 60 \+ i\)', e)
+assert re.search(r'importSampleToSlot\(item.file, firstSlot \+ i,\s*item.startSeconds, item.endSeconds, error, 60 \+ i(?:\)|,)', e)
 assert re.search(r'juce::String\(59 \+ r.count\)', e)
 assert 'int mappedMidiNote = -1' in h
-assert 'slot.parameters[lsampler::P::low] = mappedMidiNote >= 0' in p
-assert 'slot.parameters[lsampler::P::high] = mappedMidiNote >= 0' in p
-assert 'slot.parameters[lsampler::P::root] = mappedMidiNote >= 0' in p
+assert ('slot.parameters[lsampler::P::low] = mappedMidiNote >= 0' in p or 'incoming.parameters[lsampler::P::low] = mappedMidiNote >= 0' in p)
+assert ('slot.parameters[lsampler::P::high] = mappedMidiNote >= 0' in p or 'incoming.parameters[lsampler::P::high] = mappedMidiNote >= 0' in p)
+assert ('slot.parameters[lsampler::P::root] = mappedMidiNote >= 0' in p or 'incoming.parameters[lsampler::P::root] = mappedMidiNote >= 0' in p)
 assert '? juce::jlimit(0, 127, mappedMidiNote) : 60.0;' in p
 assert p.count('int mappedMidiNote') == 1
 assert e.count('error, 60 + i') == 1
@@ -71,6 +71,7 @@ for start in (0, 4, 23):
         assert [x[1] for x in mapping] == list(range(60, 60 + inserted))
 assert 60 + 23 == 83
 assert 'verify-test175-midi-learn-sws-mapping.py' in w
-assert 'LSampler-24-Windows-VST3-TEST176.zip' in w
-assert 'BUILD_TEST176.txt' in w
+assert ('LSampler-24-Windows-VST3-TEST176.zip' in w
+        or 'LSampler-24-Windows-VST3-TEST177.zip' in w or 'LSampler-24-Windows-VST3-TEST178.zip' in w)
+assert ('BUILD_TEST176.txt' in w or 'BUILD_TEST177.txt' in w or 'BUILD_TEST178.txt' in w)
 print('PASS TEST175+176: focused Low/High MIDI learn, RT safety, REAPER note sequence 60..83 with matching Original Pitch, CI artifact')

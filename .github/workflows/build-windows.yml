@@ -122,14 +122,26 @@ jobs:
           python Tools/verify-test176-selected-reaper-items.py
           if ($LASTEXITCODE -ne 0) { throw "TEST176 REAPER direct item import verification failed." }
 
-      - name: Package TEST176 VST3 after audio comparison passes
+      - name: Verify TEST177 background source window and compact host state
+        shell: powershell
+        run: |
+          python Tools/verify-test177-background-source-window.py
+          if ($LASTEXITCODE -ne 0) { throw "TEST177 compact async REAPER import verification failed." }
+
+      - name: Verify TEST178 nonblocking REAPER item import and NVDA focus
+        shell: powershell
+        run: |
+          python Tools/verify-test178-nonblocking-import.py
+          if ($LASTEXITCODE -ne 0) { throw "TEST178 nonblocking import verification failed." }
+
+      - name: Package TEST178 VST3 after audio comparison passes
         if: success() && steps.compare.outcome == 'success'
         shell: powershell
         run: |
           $vst3 = "build\make-release\LSampler24_artefacts\Release\VST3\LSampler-24.vst3"
           if (-not (Test-Path -LiteralPath $vst3)) { throw "VST3 bundle not found: $vst3" }
           @(
-            "LSampler-24 v0.99.25 TEST176 - Windows x64 VST3.",
+            "LSampler-24 v0.99.25 TEST178 - Windows x64 VST3.",
             "Release date: 7 November 2026.",
             "24-slot sampler with Sample Sets, accessible Help (8 languages) and About.",
             "TEST166: 3 ms voice de-click, 1 ms legato pitch transition and bounded Sample Start/End.",
@@ -140,16 +152,21 @@ jobs:
             "TEST175: focused MIDI Low/High Key learn; REAPER/SWS imports map notes chromatically from 60.",
             "TEST176: Alt+V imports selected REAPER items directly without Ctrl+C or SWS, preserving ordinary take trims.",
             "TEST176: Original Pitch also follows 60, 61, 62, etc. with Low/High Key; complex transforms are skipped.",
+            "TEST177: direct item import decodes audio on file worker with per-chunk accessible progress.",
+            "TEST177: consecutive cuts of the same file share one temporary source decode.",
+            "TEST177: source-window metadata replaces huge embedded audio in VST3 project snapshots; host snapshots skip sync SHA.",
+            "TEST178: background preparation of threshold/DSP for REAPER items; per-slot snapshot cache avoids repeated bank rescans.",
+            "TEST178: no forced NVDA Status focus on REAPER Alt+V; accessible progress and Escape preserved.",
             "Commit: $env:GITHUB_SHA",
             "Audio parity with TEST59 passed for the automated test scenarios.",
             "Performance measurements are in LSampler-24-TEST62-Reports."
-          ) | Set-Content -LiteralPath "BUILD_TEST176.txt" -Encoding UTF8
-          Compress-Archive -Path $vst3, "BUILD_TEST176.txt", "TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt", "TEST170_FREE_LFO_HOST_PLAY_NOTE_IT.txt", "RELEASE_TEST176.md" -DestinationPath "LSampler-24-Windows-VST3-TEST176.zip" -Force
+          ) | Set-Content -LiteralPath "BUILD_TEST178.txt" -Encoding UTF8
+          Compress-Archive -Path $vst3, "BUILD_TEST178.txt", "TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt", "TEST170_FREE_LFO_HOST_PLAY_NOTE_IT.txt", "RELEASE_TEST176.md", "RELEASE_TEST177.md", "RELEASE_TEST178.md" -DestinationPath "LSampler-24-Windows-VST3-TEST178.zip" -Force
 
-      - name: Upload TEST175 VST3
+      - name: Upload TEST178 VST3
         if: success() && steps.compare.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: LSampler-24-Windows-VST3-TEST176
-          path: LSampler-24-Windows-VST3-TEST176.zip
+          name: LSampler-24-Windows-VST3-TEST178
+          path: LSampler-24-Windows-VST3-TEST178.zip
           if-no-files-found: error

@@ -1,3 +1,11 @@
+## TEST178 (7 novembre 2026) — Importazione REAPER non bloccante e focus NVDA
+
+Alt+V usa sempre gli item selezionati. Il calcolo delle soglie e degli stati DSP dello slot in arrivo avviene ora sul worker prima del lock; una cache per slot evita di riscandire tutte le sorgenti già caricate a ogni item. Durante l'importazione il focus resta sulla griglia anziché essere trasferito a Status, pur mantenendo l'annuncio accessibile della percentuale. Vedi `RELEASE_TEST178.md`. Verifica runtime in REAPER/NVDA e build Windows ancora necessarie.
+
+## TEST177 (7 novembre 2026) — Importazione in background, avanzamento e chiusura rapida
+
+Gli item selezionati di REAPER si importano sempre con Alt+V, senza Ctrl+C o SWS. La decodifica e la creazione dei tagli avvengono sul worker file con percentuale accessibile; gli item consecutivi dello stesso file condividono temporaneamente la decodifica. Per ogni taglio il progetto conserva unicamente percorso e frame iniziale/finale invece di ricodificare i minuti di audio nello stato VST3. Gli snapshot host evitano anche lo SHA-256 sincrono. Questo elimina le principali operazioni pesanti che potevano bloccare Esc/ritorno al TCP. Prova in REAPER necessaria; per convertire stati di clip importati con TEST176 reimportare gli item. Vedi `RELEASE_TEST177.md`.
+
 ## TEST176 (7 novembre 2026) — Importazione diretta degli item selezionati REAPER
 
 Seleziona uno o più item audio nella timeline di REAPER. Apri LSampler-24, seleziona lo slot iniziale nella griglia degli slot e premi **Alt+V**. Non occorrono Ctrl+C, SWS o Lua. Il plug-in usa le API VST3 ufficiali di REAPER per recuperare il file sorgente, l'offset iniziale e la durata di ogni take attivo. Gli item sono disposti per posizione crescente nella timeline; anche più item ricavati dallo stesso file ottengono i propri tagli audio. Ogni importazione assegna **Low Key = High Key = Original Pitch** da 60 (C4) a 61 (C#4), 62 (D4) e così via, indipendentemente dallo slot iniziale. Gli slot già occupati richiedono conferma. L'importazione SWS via clipboard e la copia-incolla di slot restano alternative.
