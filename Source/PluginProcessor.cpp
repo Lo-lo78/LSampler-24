@@ -2,7 +2,9 @@
 #include "PluginEditor.h"
 #include "HostSlicePreparation.h"
 #include "ReaperNativeClipboard.h"
+#include "ReaperItemWindow.h"
 #include "SamplePoolProgress.h"
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <set>
@@ -97,6 +99,122 @@ public:
         }
         if (items.empty()) error = "Clipboard paths contain no supported audio files";
         return true;
+       #else
+        return false;
+       #endif
+    }
+
+    // TEST176: inspect the selected items from this plug-in's REAPER project,
+    // without touching the Windows clipboard and without using SWS or Lua.
+    // Returns false when no items are selected, preserving Alt+V fallbacks.
+    // Returns true with an error when a selection exists but is unsupported,
+    // so a stale clipboard is never imported instead.
+    bool readSelectedItems(std::vector<LSampler24AudioProcessor::ReaperCopiedItem>& items,
+                           juce::String& error, int& skipped) const
+    {
+        items.clear();
+        error.clear();
+        skipped = 0;
+        if (host == nullptr) return false;
+
+        const auto countItems = getApi<int (*)(void*)>("CountSelectedMediaItems");
+        const auto selectedItem = getApi<void* (*)(void*, int)>("GetSelectedMediaItem");
+        const auto activeTake = getApi<void* (*)(void*)>("GetActiveTake");
+        const auto takeSource = getApi<void* (*)(void*)>("GetMediaItemTake_Source");
+        const auto sourceParent = getApi<void* (*)(void*)>("GetMediaSourceParent");
+        const auto sourceFilename = getApi<void (*)(void*, char*, int)>("GetMediaSourceFileName");
+        const auto sourceLength = getApi<double (*)(void*, bool*)>("GetMediaSourceLength");
+        const auto itemValue = getApi<double (*)(void*, const char*)>("GetMediaItemInfo_Value");
+        const auto takeValue = getApi<double (*)(void*, const char*)>("GetMediaItemTakeInfo_Value");
+        const auto stretchCount = getApi<int (*)(void*)>("GetTakeNumStretchMarkers");
+        const auto takeName = getApi<const char* (*)(void*)>("GetTakeName");
+        // getReaperParent(3) identifies the project that OWNS this VST3,
+        // preventing imports from an unrelated open REAPER project tab.
+        auto* project = host->getReaperParent(3);
+        if (project == nullptr || !countItems) return false;
+        const int count = countItems(project);
+        if (count <= 0) return false;
+        if (!selectedItem || !activeTake || !takeSource || !sourceParent
+            || !sourceFilename || !sourceLength || !itemValue || !takeValue
+            || !stretchCount || !takeName)
+        {
+            error = "REAPER does not expose the item APIs required for direct import";
+            return true; // Selected items exist: do not paste a stale clipboard.
+        }
+
+        struct Candidate
+        {
+            LSampler24AudioProcessor::ReaperCopiedItem data;
+            double timelinePosition = 0.0;
+            int originalIndex = 0;
+        };
+        std::vector<Candidate> candidates;
+        candidates.reserve(static_cast<size_t>(juce::jmin(count, LSampler24AudioProcessor::slotCount)));
+        for (int index = 0; index < count; ++index)
+        {
+            auto* item = selectedItem(project, index);
+            auto* take = item != nullptr ? activeTake(item) : nullptr;
+            auto* source = take != nullptr ? takeSource(take) : nullptr;
+            if (source == nullptr) { ++skipped; continue; }
+
+            char path[8192] = {};
+            sourceFilename(source, path, static_cast<int>(sizeof(path)));
+            if (path[0] == '\0') { ++skipped; continue; }
+            const juce::File file(juce::String::fromUTF8(path));
+            if (!file.existsAsFile() || !SamplePool::instance().hasSupportedExtension(file))
+            {
+                ++skipped;
+                continue;
+            }
+
+            bool lengthIsQN = false;
+            const double total = sourceLength(source, &lengthIsQN);
+            lsampler_reaper_item::Window range;
+            if (lengthIsQN || !lsampler_reaper_item::computeUnprocessedWindow(
+                    takeValue(take, "D_STARTOFFS"), itemValue(item, "D_LENGTH"),
+                    total, takeValue(take, "D_PLAYRATE"),
+                    takeValue(take, "D_PITCH"), stretchCount(take),
+                    sourceParent(source) != nullptr,
+                    static_cast<int>(takeValue(take, "I_CHANMODE")), range))
+            {
+                ++skipped;
+                continue;
+            }
+            const char* name = takeName(take);
+            LSampler24AudioProcessor::ReaperCopiedItem entry;
+            entry.file = file;
+            entry.takeName = name != nullptr ? juce::String::fromUTF8(name) : juce::String{};
+            entry.startSeconds = range.startSeconds;
+            entry.endSeconds = range.endSeconds;
+            const double timelinePosition = itemValue(item, "D_POSITION");
+            if (!std::isfinite(timelinePosition)) { ++skipped; continue; }
+            candidates.push_back({ std::move(entry), timelinePosition, index });
+        }
+        // Deterministic note order: left to right along the REAPER timeline,
+        // and REAPER's selected-item enumeration order for identical positions.
+        std::stable_sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b)
+        {
+            if (a.timelinePosition == b.timelinePosition) return a.originalIndex < b.originalIndex;
+            return a.timelinePosition < b.timelinePosition;
+        });
+        for (auto& candidate : candidates)
+        {
+            if (static_cast<int>(items.size()) < LSampler24AudioProcessor::slotCount)
+                items.push_back(std::move(candidate.data));
+            else ++skipped;
+        }
+        if (items.empty())
+            error = "No compatible selected REAPER audio items. Normal trims only: "
+                    "no stretch, reverse, pitch/rate changes or loop beyond source end";
+        return true;
+    }
+
+    // An explicit internal Alt+C/Alt+X must continue to win over the REAPER
+    // item selection, until the OS clipboard changes. Preserves Slot Paste.
+    bool internalSlotCopyHasPriority() const noexcept
+    {
+       #if JUCE_WINDOWS
+        return slotCopyIsLatest && GetClipboardSequenceNumber() == slotCopySequence;
        #else
         return false;
        #endif
@@ -267,6 +385,18 @@ private:
 juce::VST3ClientExtensions* LSampler24AudioProcessor::getVST3ClientExtensions()
 {
     return reaperHostExtension.get();
+}
+bool LSampler24AudioProcessor::getReaperSelectedItems(
+    std::vector<ReaperCopiedItem>& result, juce::String& error, int& skipped) const
+{
+    result.clear();
+    skipped = 0;
+    return reaperHostExtension != nullptr
+        && reaperHostExtension->readSelectedItems(result, error, skipped);
+}
+bool LSampler24AudioProcessor::shouldPreferInternalSlotPaste() const noexcept
+{
+    return reaperHostExtension != nullptr && reaperHostExtension->internalSlotCopyHasPriority();
 }
 bool LSampler24AudioProcessor::getReaperCopiedItems(
     std::vector<ReaperCopiedItem>& result, juce::String& error, int& truncated) const
@@ -1541,10 +1671,11 @@ bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int sl
         slot.sampleAudioModified = hasSlice;
         slot.slice = SliceState{};
         slot.parameters = lsampler::SlotParameters{};
-        slot.parameters[lsampler::P::root] = 60.0;
-        // TEST175: only SWS/REAPER Alt+V passes a note. Map one sample per
-        // semitone, leaving Original Pitch at its normal 60 and the remaining
-        // slot/sample/loop logic untouched. No map changes for other imports.
+        // TEST176: Low Key, High Key AND Original Pitch match for each
+        // REAPER item (60, 61, 62, ...), preventing accidental transposition.
+        // No other import passes mappedMidiNote: default root stays at 60.
+        slot.parameters[lsampler::P::root] = mappedMidiNote >= 0
+            ? juce::jlimit(0, 127, mappedMidiNote) : 60.0;
         slot.parameters[lsampler::P::low] = mappedMidiNote >= 0
             ? juce::jlimit(0, 127, mappedMidiNote) : 0.0;
         slot.parameters[lsampler::P::high] = mappedMidiNote >= 0

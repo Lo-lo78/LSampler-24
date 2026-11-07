@@ -1,3 +1,9 @@
+## TEST176 (7 novembre 2026) — Importazione diretta degli item selezionati REAPER
+
+Seleziona uno o più item audio nella timeline di REAPER. Apri LSampler-24, seleziona lo slot iniziale nella griglia degli slot e premi **Alt+V**. Non occorrono Ctrl+C, SWS o Lua. Il plug-in usa le API VST3 ufficiali di REAPER per recuperare il file sorgente, l'offset iniziale e la durata di ogni take attivo. Gli item sono disposti per posizione crescente nella timeline; anche più item ricavati dallo stesso file ottengono i propri tagli audio. Ogni importazione assegna **Low Key = High Key = Original Pitch** da 60 (C4) a 61 (C#4), 62 (D4) e così via, indipendentemente dallo slot iniziale. Gli slot già occupati richiedono conferma. L'importazione SWS via clipboard e la copia-incolla di slot restano alternative.
+
+**Limiti dichiarati:** i tagli semplici sono precisi; non vengono renderizzati né riprodotti le trasformazioni di un item (stretch marker, riproduzione al contrario, variazioni di velocità/intonazione, media section o loop oltre la sorgente). Questi item vengono saltati e conteggiati, senza importazioni musicalmente sbagliate. Fade, gain, FX di item/take e inviluppi non sono stampati nell'audio importato. Per tali casi renderizzare il take in un file prima di importarlo. La build VST3 Windows deve essere verificata con GitHub Actions e REAPER/OSARA.
+
 ## TEST175 (7 novembre 2026)
 
 Apprendimento MIDI immediato di Low Key/High Key nella griglia dello slot; importazione REAPER/SWS tramite Alt+V mappata automaticamente su singoli semitoni consecutivi, da MIDI 60 in avanti. Il resto delle importazioni non cambia. Leggi `RELEASE_TEST175.md`.

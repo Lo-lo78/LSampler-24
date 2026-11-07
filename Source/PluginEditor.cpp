@@ -3805,7 +3805,12 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             std::vector<LSampler24AudioProcessor::ReaperCopiedItem> reaperItems;
             juce::String reaperError;
             int overflow = 0;
-            if (processor.getReaperCopiedItems(reaperItems, reaperError, overflow))
+            // TEST176: item selection in this REAPER project is the primary
+            // import source. No Ctrl+C, SWS or Lua is needed. Explicitly
+            // copied internal slots still have priority for slot-to-slot paste.
+            if (!processor.shouldPreferInternalSlotPaste()
+                && (processor.getReaperSelectedItems(reaperItems, reaperError, overflow)
+                    || processor.getReaperCopiedItems(reaperItems, reaperError, overflow)))
             {
                 if (reaperError.isNotEmpty())
                     lsampler::announceToActiveScreenReader(status, reaperError);
@@ -4209,7 +4214,7 @@ void LSampler24AudioProcessorEditor::enterSampleSetEditor()
 // The dialog is a genuine modal accessible window. Y, N and Escape have
 // independent native accelerators so confirmation never relies on a speech-only
 // prompt or an invisible key handler on REAPER's FX Chain.
-// TEST169: batch import from REAPER/SWS audio-source paths (or supported native items).
+// TEST176: batch import from REAPER selection, SWS paths, or supported native items.
 // Read and validate only at Alt+V on the UI thread; heavy file decoding
 // and audio imports use the existing file worker.
 void LSampler24AudioProcessorEditor::pasteCopiedReaperItems(
@@ -4238,7 +4243,7 @@ void LSampler24AudioProcessorEditor::pasteCopiedReaperItems(
                     items = std::move(items), firstSlot, skipped]() mutable
     {
         if (safe == nullptr) return;
-        safe->runFileTask("Pasting REAPER items", [items = std::move(items), firstSlot, skipped]
+        safe->runFileTask("Importing REAPER items", [items = std::move(items), firstSlot, skipped]
             (LSampler24AudioProcessor& p) -> FileTaskResult
         {
             FileTaskResult r;
@@ -4254,8 +4259,8 @@ void LSampler24AudioProcessorEditor::pasteCopiedReaperItems(
                 }
                 const auto& item = items[size_t(i)];
                 juce::String error;
-                // SWS/REAPER Alt+V only: consecutive single-note zones from
-                // MIDI 60 (C4), independent of the destination slot number.
+                // REAPER Alt+V imports: Low/High/Original Pitch at consecutive
+                // notes from 60 (C4), independent of the destination slot.
                 if (!p.importSampleToSlot(item.file, firstSlot + i,
                                           item.startSeconds, item.endSeconds, error, 60 + i))
                 {
@@ -4269,7 +4274,7 @@ void LSampler24AudioProcessorEditor::pasteCopiedReaperItems(
                 r.slot = firstSlot + i;
                 p.setFileTaskProgress(double(i + 1) / double(items.size()));
             }
-            r.message = "Pasted " + juce::String(r.count) + " REAPER audio "
+            r.message = "Imported " + juce::String(r.count) + " REAPER audio "
                 + (r.count == 1 ? "item" : "items") + " into slots "
                 + juce::String(firstSlot + 1) + " to " + juce::String(firstSlot + r.count)
                 + (r.count > 0 ? ". MIDI notes 60 to " + juce::String(59 + r.count) : juce::String{})

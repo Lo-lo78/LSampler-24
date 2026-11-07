@@ -51,6 +51,10 @@ public:
         double startSeconds = 0.0;
         double endSeconds = 0.0;
     };
+    // TEST176: REAPER selected items, independent of clipboard/SWS.
+    bool getReaperSelectedItems(std::vector<ReaperCopiedItem>& result,
+                               juce::String& error, int& skipped) const;
+    bool shouldPreferInternalSlotPaste() const noexcept;
     bool getReaperCopiedItems(std::vector<ReaperCopiedItem>& result,
                               juce::String& error, int& truncated) const;
     void markReaperClipboardAsSlot() const;
@@ -99,7 +103,7 @@ public:
     int getVariationMode(int slot) const;
     void setVariationMode(int slot, int mode);
     static juce::String variationModeName(int mode);
-    // mappedMidiNote is ONLY supplied by the REAPER/SWS Alt+V batch import.
+    // mappedMidiNote is ONLY supplied by REAPER Alt+V batch imports.
     // -1 preserves the existing full-keyboard mapping for every other import.
     bool importSampleToSlot(const juce::File& file, int slotIndex, double startSeconds, double endSeconds,
                             juce::String& error, int mappedMidiNote = -1);

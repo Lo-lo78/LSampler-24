@@ -54,6 +54,7 @@ target_sources(LSampler24 PRIVATE
     Source/SamplePool.cpp
     Source/SamplePool.h
     Source/Parameters.h
+    Source/ReaperItemWindow.h
     Source/SlotAudioState.h
     Source/SlotAudioState.cpp
     Source/SamplerVoice.cpp
@@ -140,4 +141,9 @@ if(LSAMPLER_BUILD_FILTER_TESTS)
     add_executable(LSampler24FreeLfoTests Tests/FreeLfoTransportTests.cpp)
     target_compile_features(LSampler24FreeLfoTests PRIVATE cxx_std_17)
     add_test(NAME free-lfo-transport COMMAND LSampler24FreeLfoTests)
+
+    # TEST176: validate the source-offset/length trim geometry without REAPER.
+    add_executable(LSampler24ReaperItemWindowTests Tests/ReaperItemWindowTests.cpp)
+    target_compile_features(LSampler24ReaperItemWindowTests PRIVATE cxx_std_17)
+    add_test(NAME reaper-item-window COMMAND LSampler24ReaperItemWindowTests)
 endif()
