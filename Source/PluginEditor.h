@@ -391,6 +391,9 @@ private:
     int categoryEnd(int index) const;
 
     void timerCallback() override;
+    int activeMidiKeyLearnContext() const noexcept;
+    void refreshMidiKeyLearnContext() noexcept;
+    void applyCapturedMidiKey();
     using FileTaskResult = LSampler24AudioProcessor::FileTaskResult;
     void runFileTask(const juce::String&, LSampler24AudioProcessor::FileTask,
                      std::function<void(const FileTaskResult&, bool)> completion = {});

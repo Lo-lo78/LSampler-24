@@ -110,31 +110,38 @@ jobs:
           python Tools/verify-test174-threshold-window.py
           if ($LASTEXITCODE -ne 0) { throw "TEST174 threshold verification failed." }
 
-      - name: Package TEST174 VST3 after audio comparison passes
+      - name: Verify TEST175 MIDI learn and SWS chromatic note mapping
+        shell: powershell
+        run: |
+          python Tools/verify-test175-midi-learn-sws-mapping.py
+          if ($LASTEXITCODE -ne 0) { throw "TEST175 MIDI learn and SWS mapping verification failed." }
+
+      - name: Package TEST175 VST3 after audio comparison passes
         if: success() && steps.compare.outcome == 'success'
         shell: powershell
         run: |
           $vst3 = "build\make-release\LSampler24_artefacts\Release\VST3\LSampler-24.vst3"
           if (-not (Test-Path -LiteralPath $vst3)) { throw "VST3 bundle not found: $vst3" }
           @(
-            "LSampler-24 v0.99.25 TEST174 - Windows x64 VST3.",
-            "Release date: 6 November 2026.",
+            "LSampler-24 v0.99.25 TEST175 - Windows x64 VST3.",
+            "Release date: 7 November 2026.",
             "24-slot sampler with Sample Sets, accessible Help (8 languages) and About.",
             "TEST166: 3 ms voice de-click, 1 ms legato pitch transition and bounded Sample Start/End.",
             "TEST169: SWS/BR audio source paths copied to clipboard, import full files with slot-grid Alt+V.",
             "TEST170: Free LFO 1/2 restart on DAW Play in Mono/Poly with repeatable Sample & Hold; Triggered unchanged.",
             "TEST165: LReaParams-compatible keyboard search and TEST163 MIDI routing preserved.",
             "TEST174: apply Start/End Threshold to the combined Sample Set timeline.",
+            "TEST175: MIDI Low/High Key learn in the focused slot grid; SWS item import chromatic mapping from MIDI 60.",
             "Commit: $env:GITHUB_SHA",
             "Audio parity with TEST59 passed for the automated test scenarios.",
             "Performance measurements are in LSampler-24-TEST62-Reports."
-          ) | Set-Content -LiteralPath "BUILD_TEST174.txt" -Encoding UTF8
-          Compress-Archive -Path $vst3, "BUILD_TEST174.txt", "TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt", "TEST170_FREE_LFO_HOST_PLAY_NOTE_IT.txt" -DestinationPath "LSampler-24-Windows-VST3-TEST174.zip" -Force
+          ) | Set-Content -LiteralPath "BUILD_TEST175.txt" -Encoding UTF8
+          Compress-Archive -Path $vst3, "BUILD_TEST175.txt", "TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt", "TEST170_FREE_LFO_HOST_PLAY_NOTE_IT.txt", "RELEASE_TEST175.md" -DestinationPath "LSampler-24-Windows-VST3-TEST175.zip" -Force
 
-      - name: Upload TEST174 VST3
+      - name: Upload TEST175 VST3
         if: success() && steps.compare.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: LSampler-24-Windows-VST3-TEST174
-          path: LSampler-24-Windows-VST3-TEST174.zip
+          name: LSampler-24-Windows-VST3-TEST175
+          path: LSampler-24-Windows-VST3-TEST175.zip
           if-no-files-found: error

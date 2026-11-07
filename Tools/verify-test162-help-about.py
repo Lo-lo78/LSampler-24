@@ -12,7 +12,7 @@ workflow = (root / '.github/workflows/build-windows.yml').read_text(encoding='ut
 parameters = (root / 'Source/Parameters.h').read_text(encoding='utf-8')
 
 assert 'constexpr auto lsamplerVersion = "0.99.25";' in editor
-assert any(f'constexpr auto lsamplerReleaseDate = "{date}";' in editor for date in ('4 November 2026','5 November 2026'))
+assert any(f'constexpr auto lsamplerReleaseDate = "{date}";' in editor for date in ('4 November 2026','5 November 2026','7 November 2026'))
 assert 'project(LSampler24 VERSION 0.99.25 LANGUAGES C CXX)' in cmake
 assert 'aboutInfo.setTitle("About LSampler-24")' in editor
 assert 'aboutInfo.copyToClipboard();' in editor
@@ -21,8 +21,8 @@ assert 'void LSampler24AudioProcessorEditor::openAbout()' in editor
 assert 'void LSampler24AudioProcessorEditor::showHelpLanguageMenu()' in editor
 assert 'void LSampler24AudioProcessorEditor::openHelp(' in editor
 assert 'LB-303' not in help_html
-assert any(f'LSampler-24-Windows-VST3-{version}.zip' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173','TEST174'))
-assert any(f'BUILD_{version}.txt' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173','TEST174'))
+assert any(f'LSampler-24-Windows-VST3-{version}.zip' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173','TEST174','TEST175'))
+assert any(f'BUILD_{version}.txt' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173','TEST174','TEST175'))
 assert 'FILTER_TEST62_REPORT.txt' in workflow, 'Do not change historical TEST62 audio gate'
 
 languages = ('en', 'it', 'es', 'pt', 'fr', 'ru', 'zh', 'ja')

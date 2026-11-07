@@ -99,7 +99,17 @@ public:
     int getVariationMode(int slot) const;
     void setVariationMode(int slot, int mode);
     static juce::String variationModeName(int mode);
-    bool importSampleToSlot(const juce::File& file, int slotIndex, double startSeconds, double endSeconds, juce::String& error);
+    // mappedMidiNote is ONLY supplied by the REAPER/SWS Alt+V batch import.
+    // -1 preserves the existing full-keyboard mapping for every other import.
+    bool importSampleToSlot(const juce::File& file, int slotIndex, double startSeconds, double endSeconds,
+                            juce::String& error, int mappedMidiNote = -1);
+
+    // TEST175: MIDI note learning for the focused Low Key / High Key grid field.
+    // Producer (audio thread) writes only atomics; UI thread owns state and host updates.
+    // boundary: 0 = Low Key, 1 = High Key, -1 = disabled.
+    void setMidiKeyLearnContext(int slotIndex, int boundary) noexcept;
+    int consumeMidiKeyLearnEvent() noexcept;
+    void setSlotKeyBoundary(int slotIndex, bool isLow, int midiNote);
     bool isSlotOccupied(int slotIndex) const;
     bool prepareImportPreview(const juce::File& file, juce::String& error);
     void requestImportPreviewToggle() noexcept { importPreviewToggleRequested.store(true); }
@@ -376,6 +386,10 @@ private:
     std::unique_ptr<std::array<SlotState,slotCount>> slotStorage=std::make_unique<std::array<SlotState,slotCount>>();
     std::array<SlotState,slotCount>& slots=*slotStorage;
     std::atomic<int> currentSlot { 0 };
+    // Context = slot * 2 + boundary. Event = context * 128 + MIDI note.
+    // -1 means inactive/empty. No locks, allocation or host notifications on RT.
+    std::atomic<int> midiKeyLearnContext { -1 };
+    std::atomic<int> midiKeyLearnEvent { -1 };
     // UI working memory only. Deliberately excluded from plugin/project/preset state.
     std::atomic<int> slotGridPosition { 0 };
     std::atomic<bool> previewToggleRequested { false };

@@ -14,7 +14,7 @@ namespace
 constexpr std::array<int, 5> stepWidths { 1, 5, 10, 15, 20 };
 constexpr int valuePageStep = 40;
 constexpr auto lsamplerVersion = "0.99.25";
-constexpr auto lsamplerReleaseDate = "5 November 2026";
+constexpr auto lsamplerReleaseDate = "7 November 2026";
 constexpr auto lsamplerProjectUrl = "https://github.com/Lo-lo78/LSampler-24";
 constexpr auto lsamplerContactEmail = "vmanolo301@gmail.com";
 
@@ -381,6 +381,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
                               : globalOpen ? normalGridSize + index : index;
             syncSelectedAutomationIndicator();
             configureValueForSelectedParameter();
+            refreshMidiKeyLearnContext();
             if (bankMacroOpen) refreshVisuals();
         }
     };
@@ -530,6 +531,8 @@ void LSampler24AudioProcessorEditor::closeFX()
 
 LSampler24AudioProcessorEditor::~LSampler24AudioProcessorEditor()
 {
+    processor.setMidiKeyLearnContext(-1, -1);
+    processor.consumeMidiKeyLearnEvent();
     processor.requestPreviewStop();
     processor.requestImportPreviewStop();
     processor.requestLibraryPreviewStop();
@@ -1578,6 +1581,7 @@ void LSampler24AudioProcessorEditor::selectParameter(int index, bool announce)
         announce ? juce::sendNotificationSync : juce::dontSendNotification);
     syncSelectedAutomationIndicator();
     configureValueForSelectedParameter();
+    refreshMidiKeyLearnContext();
 }
 
 void LSampler24AudioProcessorEditor::focusValue()
@@ -1586,6 +1590,7 @@ void LSampler24AudioProcessorEditor::focusValue()
     configureValueForSelectedParameter();
     parameterValue.setEntryAccessibility();
     parameterValue.grabKeyboardFocus();
+    refreshMidiKeyLearnContext();
 }
 
 void LSampler24AudioProcessorEditor::focusParameterGrid()
@@ -4001,8 +4006,55 @@ void LSampler24AudioProcessorEditor::refreshMeters()
     if (changed) masterOutput.repaint();
 }
 
+int LSampler24AudioProcessorEditor::activeMidiKeyLearnContext() const noexcept
+{
+    // Only the actual Slot parameter grid/value can enter note-learning mode.
+    // Ignore global params, Bank Macro, FX, modal editors, browser and lost focus.
+    if (!isShowing() || !hasKeyboardFocus(true) || !parameterPage || globalOpen
+        || bankMacroOpen || fxOpen || aboutOpen || propertiesOpen || sampleSetActive
+        || importBrowserActive || slotLibraryActive || sliceEditor != nullptr
+        || fileUiBusy || processor.isFileTaskRunning()
+        || (!parameterSelector.hasKeyboardFocus(true) && !parameterValue.hasKeyboardFocus(true))
+        || isSlotBankSend(selectedParameter) || isBankFXSend(selectedParameter)
+        || !juce::isPositiveAndBelow(selectedParameter, static_cast<int>(lsampler::grid.size())))
+        return -1;
+
+    const auto parameter = selectedEntry().parameter;
+    const int boundary = parameter == int(lsampler::P::low) ? 0
+                       : parameter == int(lsampler::P::high) ? 1 : -1;
+    return boundary < 0 ? -1 : processor.getCurrentSlot() * 2 + boundary;
+}
+
+void LSampler24AudioProcessorEditor::refreshMidiKeyLearnContext() noexcept
+{
+    const int context = activeMidiKeyLearnContext();
+    processor.setMidiKeyLearnContext(context < 0 ? -1 : context / 2,
+                                     context < 0 ? -1 : context % 2);
+}
+
+void LSampler24AudioProcessorEditor::applyCapturedMidiKey()
+{
+    const int captured = processor.consumeMidiKeyLearnEvent();
+    if (captured < 0) return;
+    const int context = captured / 128;
+    const int note = captured % 128;
+    // Never apply a pending note to a different slot/field after navigation.
+    if (context != activeMidiKeyLearnContext()) return;
+    const bool low = (context % 2) == 0;
+    processor.setSlotKeyBoundary(context / 2, low, note);
+    refreshParameterGrid();
+    const auto message = juce::String(low ? "Low Key, " : "High Key, ")
+        + juce::String(note) + " " + juce::MidiMessage::getMidiNoteName(note, true, true, 4);
+    auto& focus = parameterValue.hasKeyboardFocus(true)
+        ? static_cast<juce::Component&>(parameterValue)
+        : static_cast<juce::Component&>(parameterSelector);
+    lsampler::announceToActiveScreenReader(focus, message);
+}
+
 void LSampler24AudioProcessorEditor::timerCallback()
 {
+    refreshMidiKeyLearnContext();
+    applyCapturedMidiKey();
     if (fxOpen) fxPanel.refreshIfAutomated();
 
     if (processor.isFileTaskRunning()) {
@@ -4202,8 +4254,10 @@ void LSampler24AudioProcessorEditor::pasteCopiedReaperItems(
                 }
                 const auto& item = items[size_t(i)];
                 juce::String error;
+                // SWS/REAPER Alt+V only: consecutive single-note zones from
+                // MIDI 60 (C4), independent of the destination slot number.
                 if (!p.importSampleToSlot(item.file, firstSlot + i,
-                                          item.startSeconds, item.endSeconds, error))
+                                          item.startSeconds, item.endSeconds, error, 60 + i))
                 {
                     r.ok = false;
                     r.message = "Slot " + juce::String(firstSlot + i + 1) + ": " + error;
@@ -4218,6 +4272,7 @@ void LSampler24AudioProcessorEditor::pasteCopiedReaperItems(
             r.message = "Pasted " + juce::String(r.count) + " REAPER audio "
                 + (r.count == 1 ? "item" : "items") + " into slots "
                 + juce::String(firstSlot + 1) + " to " + juce::String(firstSlot + r.count)
+                + (r.count > 0 ? ". MIDI notes 60 to " + juce::String(59 + r.count) : juce::String{})
                 + (r.skipped ? ". " + juce::String(r.skipped) + " items skipped (unsupported or beyond slot 24)" : juce::String{})
                 + (r.ok ? juce::String{} : ". " + r.message);
             return r;

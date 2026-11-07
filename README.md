@@ -1,3 +1,7 @@
+## TEST175 (7 novembre 2026)
+
+Apprendimento MIDI immediato di Low Key/High Key nella griglia dello slot; importazione REAPER/SWS tramite Alt+V mappata automaticamente su singoli semitoni consecutivi, da MIDI 60 in avanti. Il resto delle importazioni non cambia. Leggi `RELEASE_TEST175.md`.
+
 ## TEST173 (6 novembre 2026)
 
 Alt+M F2: automazione per Pitch, Octave, Pan, Volume e Delay di ogni campione. Nuovi Octave (-4/+4) e Delay (0–1000 ms). Start/End dello slot definiti sulla durata complessiva del Sample Set, includendo i ritardi. Dettagli in `RELEASE_TEST173.md`.

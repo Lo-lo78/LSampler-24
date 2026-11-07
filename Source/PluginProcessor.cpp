@@ -1006,6 +1006,15 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         const int command = d[0] & 0xf0, channel = d[0] & 0x0f;
         if (event.numBytes >= 3 && command == 0x90 && d[2] != 0) {
             const int note = d[1] & 127, velocity = d[2] & 127;
+            // TEST175: intercept Note On only while a Low/High Key field is
+            // focused. Do not trigger a sample or allocate on the audio thread.
+            // Note Off still reaches voicePool to release any earlier notes.
+            const int learnContext = midiKeyLearnContext.load(std::memory_order_acquire);
+            if (learnContext >= 0)
+            {
+                midiKeyLearnEvent.store(learnContext * 128 + note, std::memory_order_release);
+                continue;
+            }
             voicePool.choke(note, channel);
 
             // Match the final LBPMCaptureSample.jsfx Slice MIDI Map priority.
@@ -1146,6 +1155,27 @@ void LSampler24AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 juce::AudioProcessorEditor* LSampler24AudioProcessor::createEditor()
 {
     return new LSampler24AudioProcessorEditor(*this);
+}
+
+void LSampler24AudioProcessor::setMidiKeyLearnContext(int slotIndex, int boundary) noexcept
+{
+    const int context = (slotIndex >= 0 && slotIndex < slotCount && (boundary == 0 || boundary == 1))
+        ? slotIndex * 2 + boundary : -1;
+    midiKeyLearnContext.store(context, std::memory_order_release);
+}
+
+int LSampler24AudioProcessor::consumeMidiKeyLearnEvent() noexcept
+{
+    return midiKeyLearnEvent.exchange(-1, std::memory_order_acq_rel);
+}
+
+void LSampler24AudioProcessor::setSlotKeyBoundary(int slotIndex, bool isLow, int midiNote)
+{
+    if (slotIndex < 0 || slotIndex >= slotCount || midiNote < 0 || midiNote > 127) return;
+    const juce::ScopedLock lock(stateLock);
+    absorbHostValuesLocked();
+    slots[size_t(slotIndex)].parameters[isLow ? P::low : P::high] = midiNote;
+    markAudioStateDirty(); // Includes the VST3 host parameter and DSP snapshot.
 }
 
 void LSampler24AudioProcessor::setCurrentSlot(int slotIndex)
@@ -1441,7 +1471,8 @@ bool LSampler24AudioProcessor::isSlotOccupied(int slotIndex) const
     return std::any_of(slot.alternateSamples.begin(), slot.alternateSamples.end(), [](const auto& sample) { return sample != nullptr; });
 }
 
-bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int slotIndex, double startSeconds, double endSeconds, juce::String& error)
+bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int slotIndex, double startSeconds, double endSeconds,
+                                                    juce::String& error, int mappedMidiNote)
 {
     slotIndex = juce::jlimit(0, slotCount - 1, slotIndex);
     auto loaded = SamplePool::instance().load(file, error);
@@ -1511,8 +1542,13 @@ bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int sl
         slot.slice = SliceState{};
         slot.parameters = lsampler::SlotParameters{};
         slot.parameters[lsampler::P::root] = 60.0;
-        slot.parameters[lsampler::P::low] = 0.0;
-        slot.parameters[lsampler::P::high] = 127.0;
+        // TEST175: only SWS/REAPER Alt+V passes a note. Map one sample per
+        // semitone, leaving Original Pitch at its normal 60 and the remaining
+        // slot/sample/loop logic untouched. No map changes for other imports.
+        slot.parameters[lsampler::P::low] = mappedMidiNote >= 0
+            ? juce::jlimit(0, 127, mappedMidiNote) : 0.0;
+        slot.parameters[lsampler::P::high] = mappedMidiNote >= 0
+            ? juce::jlimit(0, 127, mappedMidiNote) : 127.0;
         // Alt+O slices are already real trimmed audio when they reach a slot.
         // Slot editing therefore always begins from a clean full 0..100 % window.
         slot.parameters[lsampler::P::sample_start] = 0.0;
