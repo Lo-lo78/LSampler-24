@@ -45,6 +45,6 @@ assert 'std::isfinite' in helper
 assert 'LSampler24ChromaticPasteTests' in cm and 'chromatic-paste' in cm
 assert 'LSampler24ChromaticPasteTests' in script and 'chromatic-paste' in script
 assert 'verify-test180-chromatic-paste.py' in work
-assert 'LSampler-24-Windows-VST3-TEST185.zip' in work
+assert 'LSampler-24.0.99.26.vst3.zip' in work
 assert (r/'RELEASE_TEST180.md').exists()
 print('PASS TEST180+181: deterministic notes, per-slot overwrite, relocation, async loading, CI tests')

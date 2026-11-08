@@ -44,11 +44,11 @@ assert 'v.channel==channel' in voices.split('void GlobalVoicePool::choke(',1)[1]
 assert 'if (!p.acceptsMidiChannel(ch)) continue;' in voices
 
 # Exposed version and new localized documentation must correspond to the artifact.
-assert 'constexpr auto lsamplerVersion = "0.99.25";' in editor
-assert any(f'constexpr auto lsamplerReleaseDate = "{date}";' in editor for date in ('4 November 2026','5 November 2026','7 November 2026'))
-assert 'project(LSampler24 VERSION 0.99.25' in (root/'CMakeLists.txt').read_text()
-assert any(f'LSampler-24-Windows-VST3-{version}.zip' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173','TEST174','TEST175','TEST176','TEST177','TEST178','TEST180','TEST182','TEST183','TEST185'))
-assert any(f'BUILD_{version}.txt' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173','TEST174','TEST175','TEST176','TEST177','TEST178','TEST180','TEST182','TEST183','TEST185'))
+assert 'constexpr auto lsamplerVersion = "0.99.26";' in editor
+assert any(f'constexpr auto lsamplerReleaseDate = "{date}";' in editor for date in ('8 November 2026',))
+assert 'project(LSampler24 VERSION 0.99.26' in (root/'CMakeLists.txt').read_text()
+assert 'LSampler-24.0.99.26.vst3.zip' in workflow
+assert 'BUILD_0.99.26.txt' in workflow
 assert 'FILTER_TEST62_REPORT.txt' in workflow
 assert 'python Tools/verify-test163-midi-routing.py' in workflow
 for lang in ('en','it','es','pt','fr','ru','zh','ja'):

@@ -1,3 +1,40 @@
+# LSampler-24 — Versione 0.99.26
+
+**Release date: 8 November 2026 · Windows x64 VST3 · REAPER / OSARA / NVDA**
+
+Questa è la release pubblica successiva alla 0.99.25, basata sul sorgente TEST185
+provato in REAPER. Nessuna modifica al DSP o alla logica del caricamento rispetto
+alla TEST185: aggiornati versione, About, Help nelle 8 lingue e documentazione
+per GitHub. Leggi `RELEASE_0.99.26.md` per la descrizione completa.
+
+## Novità principali della 0.99.26
+
+- **Alt+V da REAPER:** importa direttamente gli item audio selezionati dalla timeline,
+  rispettando i tagli semplici e senza doverli prima copiare negli appunti.
+- **Alt+V da Esplora file Windows:** importa i file audio copiati con Ctrl+C, inclusi
+  i file AAC e l'audio della prima traccia dei video supportati dai decoder Windows.
+- **Audio multicanale:** divide i canali in coppie stereo consecutive senza mixdown
+  (16 canali = 8 Slot); il canale dispari finale resta mono. I campioni del file
+  successivo continuano dagli Slot rimasti disponibili.
+- **Mappatura cromatica deterministica:** prosegue dalle zone/note MIDI già assegnate
+  agli Slot invece di tornare sempre a 60. Sugli Slot occupati Y sovrascrive, N
+  conserva e sposta lo stesso campione al prossimo Slot libero; Escape annulla.
+- **Importazione non bloccante:** elaborazione sul file worker, avanzamento NVDA,
+  focus conservato e riapertura veloce delle finestre REAPER.
+- **Alt+T / Advanced:** Open Extracted Audio Cache Folder e Clear Extracted Audio
+  Cache... (conferma). La pulizia evita i WAV utilizzati dalle istanze aperte,
+  ma i progetti REAPER chiusi potrebbero ancora richiamarli. Conserva i campioni
+  necessari prima di svuotare la cache. Library/Samples e i file originali
+  non vengono eliminati.
+
+**Nota sulla persistenza:** i normali sorgenti audio restano ai percorsi originali;
+le estrazioni da video e multicanale producono WAV persistenti in
+`%APPDATA%\Lo-lo78\LSampler-24\ExtractedAudio`. Per un banco consolidato
+usa Save Slot / Save Bank; per trasferire progetti che usano WAV estratti, porta
+con te anche tali WAV fino al consolidamento.
+
+## Cronologia tecnica delle versioni TEST
+
 ## TEST185 — controllo UTF-8 Windows / completamento GitHub Actions
 
 La TEST184 ha compilato il VST3 con MSVC e superato i test audio/C++, ma il workflow si è fermato in `verify-test183-cache-cleanup.py` per un `UnicodeDecodeError` causato dalla codifica predefinita cp1252 su Windows. La TEST185 corregge le sei letture usando UTF-8, imposta `PYTHONUTF8=1` per i test in CI, e verifica tutto prima della compilazione. Nessuna modifica al plugin rispetto alla TEST184. Vedi `RELEASE_TEST185.md`.
@@ -43,7 +80,7 @@ Gli item selezionati di REAPER si importano sempre con Alt+V, senza Ctrl+C o SWS
 
 ## TEST176 (7 novembre 2026) — Importazione diretta degli item selezionati REAPER
 
-Seleziona uno o più item audio nella timeline di REAPER. Apri LSampler-24, seleziona lo slot iniziale nella griglia degli slot e premi **Alt+V**. Non occorrono Ctrl+C, SWS o Lua. Il plug-in usa le API VST3 ufficiali di REAPER per recuperare il file sorgente, l'offset iniziale e la durata di ogni take attivo. Gli item sono disposti per posizione crescente nella timeline; anche più item ricavati dallo stesso file ottengono i propri tagli audio. Ogni importazione assegna **Low Key = High Key = Original Pitch** da 60 (C4) a 61 (C#4), 62 (D4) e così via, indipendentemente dallo slot iniziale. Gli slot già occupati richiedono conferma. L'importazione SWS via clipboard e la copia-incolla di slot restano alternative.
+Seleziona uno o più item audio nella timeline di REAPER. Apri LSampler-24, seleziona lo slot iniziale nella griglia degli slot e premi **Alt+V**. Non occorrono Ctrl+C, SWS o Lua. Il plug-in usa le API VST3 ufficiali di REAPER per recuperare il file sorgente, l'offset iniziale e la durata di ogni take attivo. Gli item sono disposti per posizione crescente nella timeline; anche più item ricavati dallo stesso file ottengono i propri tagli audio. Nota storica TEST176: inizialmente assegnava **Low Key = High Key = Original Pitch** partendo da MIDI 60 a ogni incolla. **Nella release 0.99.26** la mappatura continua invece dalle note esistenti ed evita le sovrapposizioni; ogni Slot occupato chiede conferma Y/N. L'importazione SWS via clipboard e la copia-incolla di slot restano alternative.
 
 **Limiti dichiarati:** i tagli semplici sono precisi; non vengono renderizzati né riprodotti le trasformazioni di un item (stretch marker, riproduzione al contrario, variazioni di velocità/intonazione, media section o loop oltre la sorgente). Questi item vengono saltati e conteggiati, senza importazioni musicalmente sbagliate. Fade, gain, FX di item/take e inviluppi non sono stampati nell'audio importato. Per tali casi renderizzare il take in un file prima di importarlo. La build VST3 Windows deve essere verificata con GitHub Actions e REAPER/OSARA.
 
@@ -55,9 +92,9 @@ Apprendimento MIDI immediato di Low Key/High Key nella griglia dello slot; impor
 
 Alt+M F2: automazione per Pitch, Octave, Pan, Volume e Delay di ogni campione. Nuovi Octave (-4/+4) e Delay (0–1000 ms). Start/End dello slot definiti sulla durata complessiva del Sample Set, includendo i ritardi. Dettagli in `RELEASE_TEST173.md`.
 
-# LSampler-24
+## Archivio TEST171 e versioni precedenti
 
-**Versione di prova 0.99.25 — 6 novembre 2026 (TEST171)**
+**Nota storica: versione di prova 0.99.25 — 6 novembre 2026 (TEST171)**
 
 ## TEST171 — Sample Set: Pitch, Pan, Volume, Layer e scorciatoie Rack
 

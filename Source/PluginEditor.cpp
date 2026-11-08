@@ -14,8 +14,8 @@ namespace
 {
 constexpr std::array<int, 5> stepWidths { 1, 5, 10, 15, 20 };
 constexpr int valuePageStep = 40;
-constexpr auto lsamplerVersion = "0.99.25";
-constexpr auto lsamplerReleaseDate = "7 November 2026";
+constexpr auto lsamplerVersion = "0.99.26";
+constexpr auto lsamplerReleaseDate = "8 November 2026";
 constexpr auto lsamplerProjectUrl = "https://github.com/Lo-lo78/LSampler-24";
 constexpr auto lsamplerContactEmail = "vmanolo301@gmail.com";
 
@@ -295,7 +295,9 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
 
     const auto aboutText = juce::String("LSampler-24\nVersion: ") + lsamplerVersion
         + "\nRelease date: " + lsamplerReleaseDate
-        + "\nNew: LReaParams-style incremental search: word prefixes, one-second timeout, Shift reverse including digits."
+        + "\nNew in 0.99.26: Alt+V imports REAPER items, Explorer audio and supported video/AAC."
+        + "\nMultichannel files: consecutive stereo pairs, deterministic MIDI mapping and Y/N slot overwrite."
+        + "\nAdvanced (Alt+T): open or clear the extracted audio cache with confirmation."
         + "\nProject: " + lsamplerProjectUrl
         + "\nContact: " + lsamplerContactEmail;
     aboutInfo.setTitle("About LSampler-24");

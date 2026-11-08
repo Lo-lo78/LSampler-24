@@ -23,6 +23,6 @@ assert 'getApi<const char* (*)(const char*, const char*)>("GetExtState")' not in
 assert 'Tools/LSampler-24 - Copy REAPER items to slots.lua' not in w
 assert ('LSampler-24-Windows-VST3-TEST168.zip' in w
         or 'LSampler-24-Windows-VST3-TEST169.zip' in w
-        or 'LSampler-24-Windows-VST3-TEST170.zip' in w or 'LSampler-24-Windows-VST3-TEST173.zip' in w or 'LSampler-24-Windows-VST3-TEST174.zip' in w or 'LSampler-24-Windows-VST3-TEST175.zip' in w or 'LSampler-24-Windows-VST3-TEST176.zip' in w or 'LSampler-24-Windows-VST3-TEST177.zip' in w or 'LSampler-24-Windows-VST3-TEST178.zip' in w or 'LSampler-24-Windows-VST3-TEST185.zip' in w)
+        or 'LSampler-24-Windows-VST3-TEST170.zip' in w or 'LSampler-24-Windows-VST3-TEST173.zip' in w or 'LSampler-24-Windows-VST3-TEST174.zip' in w or 'LSampler-24-Windows-VST3-TEST175.zip' in w or 'LSampler-24-Windows-VST3-TEST176.zip' in w or 'LSampler-24-Windows-VST3-TEST177.zip' in w or 'LSampler-24-Windows-VST3-TEST178.zip' in w or 'LSampler-24.0.99.26.vst3.zip' in w)
 assert not (root/'Tools/LSampler-24 - Copy REAPER items to slots.lua').exists()
 print('TEST168 native REAPER clipboard structural check passed')

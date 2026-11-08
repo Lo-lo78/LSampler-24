@@ -11,9 +11,9 @@ cmake = (root / 'CMakeLists.txt').read_text(encoding='utf-8')
 workflow = (root / '.github/workflows/build-windows.yml').read_text(encoding='utf-8')
 parameters = (root / 'Source/Parameters.h').read_text(encoding='utf-8')
 
-assert 'constexpr auto lsamplerVersion = "0.99.25";' in editor
-assert any(f'constexpr auto lsamplerReleaseDate = "{date}";' in editor for date in ('4 November 2026','5 November 2026','7 November 2026'))
-assert 'project(LSampler24 VERSION 0.99.25 LANGUAGES C CXX)' in cmake
+assert 'constexpr auto lsamplerVersion = "0.99.26";' in editor
+assert any(f'constexpr auto lsamplerReleaseDate = "{date}";' in editor for date in ('8 November 2026',))
+assert 'project(LSampler24 VERSION 0.99.26 LANGUAGES C CXX)' in cmake
 assert 'aboutInfo.setTitle("About LSampler-24")' in editor
 assert 'aboutInfo.copyToClipboard();' in editor
 assert 'aboutInfo.setReadOnly(true);' in editor
@@ -21,8 +21,8 @@ assert 'void LSampler24AudioProcessorEditor::openAbout()' in editor
 assert 'void LSampler24AudioProcessorEditor::showHelpLanguageMenu()' in editor
 assert 'void LSampler24AudioProcessorEditor::openHelp(' in editor
 assert 'LB-303' not in help_html
-assert any(f'LSampler-24-Windows-VST3-{version}.zip' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173','TEST174','TEST175','TEST176','TEST178','TEST180','TEST182','TEST183','TEST184'))
-assert any(f'BUILD_{version}.txt' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173','TEST174','TEST175','TEST176','TEST178','TEST180','TEST182','TEST183','TEST184'))
+assert 'LSampler-24.0.99.26.vst3.zip' in workflow
+assert 'BUILD_0.99.26.txt' in workflow
 assert 'FILTER_TEST62_REPORT.txt' in workflow, 'Do not change historical TEST62 audio gate'
 
 languages = ('en', 'it', 'es', 'pt', 'fr', 'ru', 'zh', 'ja')
@@ -37,7 +37,7 @@ for lang in languages:
     assert all(token in block for token in (
         'One Shot Percent', 'Phase', 'Env Rate', 'Square PWM', 'Upper Squash', 'Lower Squash', 'Cross Rate',
         'Mono', 'Poly', 'Alt+H', 'Alt+A', 'Ctrl+A', 'Ctrl+C')), lang
-    assert '0.99.25' in re.findall(r'<h1>(.*?)</h1>',block,re.S)[0], lang
+    assert '0.99.26' in re.findall(r'<h1>(.*?)</h1>',block,re.S)[0], lang
     assert re.findall(r'<h2>About</h2>',block) == ['<h2>About</h2>'],lang
     assert ('4 November 2026' in block or '4 novembre 2026' in block or lang not in ('en','it')),lang
     assert re.search(r'<h2>.*?0\.99\.20.*?</h2>',block), f'history missing {lang}'

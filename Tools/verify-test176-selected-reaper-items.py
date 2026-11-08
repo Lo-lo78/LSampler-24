@@ -39,5 +39,5 @@ assert 'ReaperItemWindow.h' in cm
 assert 'Tests/ReaperItemWindowTests.cpp' in cm
 assert 'verify-test176-selected-reaper-items.py' in w
 assert ('LSampler-24-Windows-VST3-TEST176' in w
-        or 'LSampler-24-Windows-VST3-TEST177' in w or 'LSampler-24-Windows-VST3-TEST178' in w or 'LSampler-24-Windows-VST3-TEST185' in w)
+        or 'LSampler-24-Windows-VST3-TEST177' in w or 'LSampler-24-Windows-VST3-TEST178' in w or 'LSampler-24.0.99.26.vst3.zip' in w)
 print('PASS TEST176: REAPER selected-item source windows, stable ordering, clipboard fallbacks, three matching MIDI notes')

@@ -31,12 +31,12 @@ assert 'displayedGridParameterName(lsampler::grid[size_t(next)])' in editor
 assert 'std::wstring(bankEntryName(bankMacroEntries[size_t(cursor)]).toWideCharPointer())' in editor
 assert 'parameterSearch.reset();' in slice_cpp and 'parameterSearch.reset();' in fx
 assert 'mainParameterSearch.reset();' in editor and 'bankMacroParameterSearch.reset();' in editor
-assert 'constexpr auto lsamplerVersion = "0.99.25";' in editor
-assert 'LReaParams-style incremental search:' in editor
-assert 'project(LSampler24 VERSION 0.99.25 LANGUAGES C CXX)' in (root/'CMakeLists.txt').read_text()
-assert any(f'LSampler-24-Windows-VST3-{version}.zip' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173','TEST174','TEST175','TEST176','TEST177','TEST178','TEST180','TEST182','TEST183','TEST185'))
-assert any(f'name: LSampler-24-Windows-VST3-{version}' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173','TEST174','TEST175','TEST176','TEST177','TEST178','TEST180','TEST182','TEST183','TEST185'))
-assert any(f'BUILD_{version}.txt' in workflow for version in ('TEST166','TEST167','TEST168','TEST169','TEST170','TEST173','TEST174','TEST175','TEST176','TEST177','TEST178','TEST180','TEST182','TEST183','TEST185'))
+assert 'constexpr auto lsamplerVersion = "0.99.26";' in editor
+assert 'LReaParams-style search' in help_html
+assert 'project(LSampler24 VERSION 0.99.26 LANGUAGES C CXX)' in (root/'CMakeLists.txt').read_text()
+assert 'LSampler-24.0.99.26.vst3.zip' in workflow
+assert 'name: LSampler-24.0.99.26.vst3' in workflow
+assert 'BUILD_0.99.26.txt' in workflow
 assert 'python Tools/verify-test164-incremental-search.py' in workflow
 assert 'python Tools/verify-test163-midi-routing.py' in workflow
 assert 'FILTER_TEST62_REPORT.txt' in workflow
