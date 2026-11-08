@@ -15,6 +15,7 @@
   #define NOMINMAX
  #endif
  #include <windows.h>
+ #include <shellapi.h>
 #endif
 
 namespace lsampler_reaper_clipboard {
@@ -278,6 +279,35 @@ inline juce::String readText(UINT format)
     GlobalUnlock(h);
     return result;
 }
+// Windows Explorer Ctrl+C publishes CF_HDROP, not a text path list.
+// Preserve the shell file ordering; every supported audio file gets one slot.
+// Do not decode or read the files while the Windows clipboard is open.
+inline Result readExplorerFileDrop()
+{
+    Result result;
+    if (!IsClipboardFormatAvailable(CF_HDROP)) return result;
+    if (!OpenClipboard(nullptr)) return result;
+    struct AutoClose { ~AutoClose() { CloseClipboard(); } } autoClose;
+    if (!IsClipboardFormatAvailable(CF_HDROP)) return result;
+    const auto drop = reinterpret_cast<HDROP>(GetClipboardData(CF_HDROP));
+    if (drop == nullptr) return result;
+    result.recognised = true;
+    const UINT count = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
+    for (UINT i = 0; i < count; ++i)
+    {
+        const UINT characters = DragQueryFileW(drop, i, nullptr, 0);
+        if (characters == 0 || characters > 32767) { ++result.skipped; continue; }
+        std::wstring path(static_cast<size_t>(characters) + 1, L'\0');
+        if (DragQueryFileW(drop, i, path.data(), characters + 1) == 0)
+        { ++result.skipped; continue; }
+        const juce::File file(juce::String(path.c_str()));
+        if (!file.existsAsFile()) { ++result.skipped; continue; }
+        if (result.items.size() >= 1024) { ++result.skipped; continue; }
+        result.items.push_back({ file, file.getFileNameWithoutExtension(), 0.0, 0.0 });
+    }
+    if (result.items.empty()) result.error = "No audio files in Windows Explorer clipboard";
+    return result;
+}
 inline Result readNativeReaperAudioItems()
 {
     Result result;
@@ -319,5 +349,6 @@ inline Result readNativeReaperAudioItems()
 }
 #else
 inline Result readNativeReaperAudioItems() { return {}; }
+inline Result readExplorerFileDrop() { return {}; }
 #endif
 } // namespace lsampler_reaper_clipboard

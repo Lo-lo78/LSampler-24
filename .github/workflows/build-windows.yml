@@ -134,39 +134,56 @@ jobs:
           python Tools/verify-test178-nonblocking-import.py
           if ($LASTEXITCODE -ne 0) { throw "TEST178 nonblocking import verification failed." }
 
-      - name: Package TEST178 VST3 after audio comparison passes
+      - name: Verify TEST180 deterministic cross-session chromatic paste
+        shell: powershell
+        run: |
+          python Tools/verify-test180-chromatic-paste.py
+          if ($LASTEXITCODE -ne 0) { throw "TEST180 deterministic paste verification failed." }
+
+      - name: Verify TEST181 occupied-slot overwrite decisions and relocation
+        shell: powershell
+        run: |
+          python Tools/verify-test181-overwrite-choice.py
+          if ($LASTEXITCODE -ne 0) { throw "TEST181 occupied-slot paste verification failed." }
+
+      - name: Package TEST181 VST3 after audio comparison passes
         if: success() && steps.compare.outcome == 'success'
         shell: powershell
         run: |
           $vst3 = "build\make-release\LSampler24_artefacts\Release\VST3\LSampler-24.vst3"
           if (-not (Test-Path -LiteralPath $vst3)) { throw "VST3 bundle not found: $vst3" }
           @(
-            "LSampler-24 v0.99.25 TEST178 - Windows x64 VST3.",
-            "Release date: 7 November 2026.",
+            "LSampler-24 v0.99.25 TEST181 - Windows x64 VST3.",
+            "Build date: 8 November 2026.",
             "24-slot sampler with Sample Sets, accessible Help (8 languages) and About.",
             "TEST166: 3 ms voice de-click, 1 ms legato pitch transition and bounded Sample Start/End.",
             "TEST169: SWS/BR audio source paths copied to clipboard, import full files with slot-grid Alt+V.",
             "TEST170: Free LFO 1/2 restart on DAW Play in Mono/Poly with repeatable Sample & Hold; Triggered unchanged.",
             "TEST165: LReaParams-compatible keyboard search and TEST163 MIDI routing preserved.",
             "TEST174: apply Start/End Threshold to the combined Sample Set timeline.",
-            "TEST175: focused MIDI Low/High Key learn; REAPER/SWS imports map notes chromatically from 60.",
+            "TEST175: focused MIDI Low/High Key learn; first import starts at MIDI 60 if no mapped predecessor exists.",
             "TEST176: Alt+V imports selected REAPER items directly without Ctrl+C or SWS, preserving ordinary take trims.",
-            "TEST176: Original Pitch also follows 60, 61, 62, etc. with Low/High Key; complex transforms are skipped.",
+            "TEST176: Original Pitch follows Low/High Key; complex REAPER transforms are skipped.",
             "TEST177: direct item import decodes audio on file worker with per-chunk accessible progress.",
             "TEST177: consecutive cuts of the same file share one temporary source decode.",
             "TEST177: source-window metadata replaces huge embedded audio in VST3 project snapshots; host snapshots skip sync SHA.",
             "TEST178: background preparation of threshold/DSP for REAPER items; per-slot snapshot cache avoids repeated bank rescans.",
             "TEST178: no forced NVDA Status focus on REAPER Alt+V; accessible progress and Escape preserved.",
+            "TEST179: Alt+V imports copied Windows Explorer audio files using CF_HDROP and the same background loader.",
+            "TEST180: REAPER/Explorer Alt+V continues from saved chromatic slot mapping; gaps and replacements supported.",
+            "TEST180: 127-note MIDI range enforced without clamping duplicate last notes.",
+            "TEST181: Per-occupied-slot Y to replace, N to keep audio and move same source to next free slot; Escape aborts paste.",
+            "TEST181: Source order preserved; continue on first unused MIDI key, respecting all occupied Low/High Key zones.",
             "Commit: $env:GITHUB_SHA",
             "Audio parity with TEST59 passed for the automated test scenarios.",
             "Performance measurements are in LSampler-24-TEST62-Reports."
-          ) | Set-Content -LiteralPath "BUILD_TEST178.txt" -Encoding UTF8
-          Compress-Archive -Path $vst3, "BUILD_TEST178.txt", "TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt", "TEST170_FREE_LFO_HOST_PLAY_NOTE_IT.txt", "RELEASE_TEST176.md", "RELEASE_TEST177.md", "RELEASE_TEST178.md" -DestinationPath "LSampler-24-Windows-VST3-TEST178.zip" -Force
+          ) | Set-Content -LiteralPath "BUILD_TEST181.txt" -Encoding UTF8
+          Compress-Archive -Path $vst3, "BUILD_TEST181.txt", "TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt", "TEST170_FREE_LFO_HOST_PLAY_NOTE_IT.txt", "RELEASE_TEST176.md", "RELEASE_TEST177.md", "RELEASE_TEST178.md", "RELEASE_TEST179.md", "RELEASE_TEST180.md", "RELEASE_TEST181.md" -DestinationPath "LSampler-24-Windows-VST3-TEST181.zip" -Force
 
-      - name: Upload TEST178 VST3
+      - name: Upload TEST180 VST3
         if: success() && steps.compare.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: LSampler-24-Windows-VST3-TEST178
-          path: LSampler-24-Windows-VST3-TEST178.zip
+          name: LSampler-24-Windows-VST3-TEST181
+          path: LSampler-24-Windows-VST3-TEST181.zip
           if-no-files-found: error

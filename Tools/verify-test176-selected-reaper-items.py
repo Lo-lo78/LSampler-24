@@ -30,7 +30,8 @@ assert 'GetClipboardData' not in selection
 assert 'getReaperSelectedItems' in p and 'getReaperSelectedItems' in h
 assert 'shouldPreferInternalSlotPaste' in p and 'shouldPreferInternalSlotPaste' in h
 assert re.search(r'!processor.shouldPreferInternalSlotPaste\(\).*?processor.getReaperSelectedItems\(reaperItems, reaperError, overflow\).*?\|\| processor.getReaperCopiedItems', e, re.S)
-assert e.count('error, 60 + i') == 1
+assert 'item.startSeconds, item.endSeconds, error, entry.midiNote' in e
+assert 'processor.getChromaticPasteSlotMapping()' in e
 assert ('slot.parameters[lsampler::P::root] = mappedMidiNote >= 0' in p or 'incoming.parameters[lsampler::P::root] = mappedMidiNote >= 0' in p)
 assert ('slot.parameters[lsampler::P::low] = mappedMidiNote >= 0' in p or 'incoming.parameters[lsampler::P::low] = mappedMidiNote >= 0' in p)
 assert ('slot.parameters[lsampler::P::high] = mappedMidiNote >= 0' in p or 'incoming.parameters[lsampler::P::high] = mappedMidiNote >= 0' in p)
@@ -38,5 +39,5 @@ assert 'ReaperItemWindow.h' in cm
 assert 'Tests/ReaperItemWindowTests.cpp' in cm
 assert 'verify-test176-selected-reaper-items.py' in w
 assert ('LSampler-24-Windows-VST3-TEST176' in w
-        or 'LSampler-24-Windows-VST3-TEST177' in w or 'LSampler-24-Windows-VST3-TEST178' in w)
+        or 'LSampler-24-Windows-VST3-TEST177' in w or 'LSampler-24-Windows-VST3-TEST178' in w or 'LSampler-24-Windows-VST3-TEST181' in w)
 print('PASS TEST176: REAPER selected-item source windows, stable ordering, clipboard fallbacks, three matching MIDI notes')

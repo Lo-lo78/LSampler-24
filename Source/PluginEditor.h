@@ -493,7 +493,18 @@ private:
     void commitSlotLibrarySelection();
     void copySlotLibraryEntry(bool cut);
     void pasteSlotLibraryEntry();
-    void pasteCopiedReaperItems(std::vector<LSampler24AudioProcessor::ReaperCopiedItem> items, int skipped);
+    void pasteCopiedReaperItems(std::vector<LSampler24AudioProcessor::ReaperCopiedItem> items, int skipped,
+                                bool fromExplorer = false);
+    struct PendingChromaticPaste;
+    std::shared_ptr<PendingChromaticPaste> pendingChromaticPaste;
+    void continueChromaticPaste(const std::shared_ptr<PendingChromaticPaste>& batch);
+    void chooseChromaticPasteOverwrite(const std::shared_ptr<PendingChromaticPaste>& batch, bool overwrite);
+    void finishChromaticPaste(const std::shared_ptr<PendingChromaticPaste>& batch);
+    void confirmChromaticPasteOverwrite(const juce::String& message,
+                                        std::function<void()> confirmed,
+                                        std::function<void()> declined,
+                                        std::function<void()> cancelled);
+
     int nextSlotLibraryFreeSlot(int from) const;
     bool slotLibraryDestinationReserved(int slot) const;
     void chooseLoadSlot();

@@ -11,12 +11,12 @@ workflow = (root / '.github/workflows/build-windows.yml').read_text(encoding='ut
 assert 'juce::ThreadPool fileWorker' in header
 assert 'startFileTask' in processor
 batch = editor.split('void LSampler24AudioProcessorEditor::pasteCopiedReaperItems(', 1)[1].split('void LSampler24AudioProcessorEditor::confirmOverwrite(', 1)[0]
-assert 'runFileTask("Importing REAPER items"' in batch
+assert 'runFileTask(explorer ? "Importing Explorer audio files" : "Importing REAPER items"' in batch
 assert 'std::shared_ptr<SharedSample> cachedSource;' in batch
 assert 'if (cachedFile != item.file)' in batch
 assert '&cachedSource' in batch
 assert 'p.setFileTaskProgress((double(i) + fraction) / double(total))' in batch
-assert '60 + i' in batch
+assert 'item.startSeconds, item.endSeconds, error, entry.midiNote' in batch
 import_fn = processor.split('bool LSampler24AudioProcessor::importSampleToSlot(', 1)[1].split('bool LSampler24AudioProcessor::prepareImportPreview(', 1)[0]
 assert 'loadSampleWithProgress' in import_fn
 assert 'copySourceWindow' in import_fn
@@ -39,6 +39,6 @@ assert 'slot.sourceWindowEndFrame = endFrame;' in restore
 assert 'slot.sampleAudioModified = (editedAudio.isValid() || sourceWindow.isValid())' in restore
 assert 'slot.sourceWindowFirstFrame = -1;' in processor and 'slot.sourceWindowEndFrame = -1;' in processor
 assert 'TEST177' in workflow and 'verify-test177-background-source-window.py' in workflow
-assert ('LSampler-24-Windows-VST3-TEST177' in workflow or 'LSampler-24-Windows-VST3-TEST178' in workflow)
+assert ('LSampler-24-Windows-VST3-TEST177' in workflow or 'LSampler-24-Windows-VST3-TEST178' in workflow or 'LSampler-24-Windows-VST3-TEST181' in workflow)
 assert (root / 'RELEASE_TEST177.md').exists()
 print('PASS TEST177: background REAPER import, progress per chunk, source reuse, frame-exact state, no inline audio or hashing in host state')

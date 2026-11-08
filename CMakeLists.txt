@@ -55,6 +55,7 @@ target_sources(LSampler24 PRIVATE
     Source/SamplePool.h
     Source/Parameters.h
     Source/ReaperItemWindow.h
+    Source/ChromaticPasteMapping.h
     Source/SlotAudioState.h
     Source/SlotAudioState.cpp
     Source/SamplerVoice.cpp
@@ -87,7 +88,7 @@ target_link_libraries(LSampler24 PRIVATE
     juce::juce_recommended_warning_flags
 )
 if(WIN32)
-    target_link_libraries(LSampler24 PRIVATE Uiautomationcore OleAut32)
+    target_link_libraries(LSampler24 PRIVATE Uiautomationcore OleAut32 shell32)
 endif()
 
 
@@ -133,9 +134,14 @@ if(LSAMPLER_BUILD_FILTER_TESTS)
     target_link_libraries(LSampler24ClipboardTests PRIVATE juce::juce_core
         juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
     if(WIN32)
-        target_link_libraries(LSampler24ClipboardTests PRIVATE user32)
+        target_link_libraries(LSampler24ClipboardTests PRIVATE user32 shell32)
     endif()
     add_test(NAME clipboard-paths COMMAND LSampler24ClipboardTests)
+
+    # TEST180: pure-C++ regression test of cross-session chromatic paste.
+    add_executable(LSampler24ChromaticPasteTests Tests/ChromaticPasteMappingTests.cpp)
+    target_compile_features(LSampler24ChromaticPasteTests PRIVATE cxx_std_17)
+    add_test(NAME chromatic-paste COMMAND LSampler24ChromaticPasteTests)
 
     # TEST170: JUCE-independent real transport detector/Free S&H seed test.
     add_executable(LSampler24FreeLfoTests Tests/FreeLfoTransportTests.cpp)

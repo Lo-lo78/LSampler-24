@@ -3806,6 +3806,18 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
             std::vector<LSampler24AudioProcessor::ReaperCopiedItem> reaperItems;
             juce::String reaperError;
             int overflow = 0;
+            // TEST179: an explicit Windows Explorer Ctrl+C file selection
+            // wins over stale selected REAPER items, unless a slot was copied
+            // internally more recently. CF_HDROP is not plain-text clipboard.
+            if (!processor.shouldPreferInternalSlotPaste()
+                && processor.getExplorerCopiedAudioFiles(reaperItems, reaperError, overflow))
+            {
+                if (reaperError.isNotEmpty())
+                    lsampler::announceToActiveScreenReader(status, reaperError);
+                else
+                    pasteCopiedReaperItems(std::move(reaperItems), overflow, true);
+                return true;
+            }
             // TEST176: item selection in this REAPER project is the primary
             // import source. No Ctrl+C, SWS or Lua is needed. Explicitly
             // copied internal slots still have priority for slot-to-slot paste.
@@ -3938,7 +3950,7 @@ void LSampler24AudioProcessorEditor::setFileUiBusy(bool busy)
         // TEST178: REAPER Alt+V must not hijack focus while a long source is
         // decoding. NVDA gets the same rate-limited UIA progress events, but
         // Escape remains available to REAPER and the original grid keeps focus.
-        const bool nonModalReaperImport = fileTaskTitle == "Importing REAPER items";
+        const bool nonModalReaperImport = (fileTaskTitle == "Importing REAPER items" || fileTaskTitle == "Importing Explorer audio files");
         juce::Component* focusedRoot = fileReturnFocus.getComponent();
         while (focusedRoot != nullptr && focusedRoot->getParentComponent() != this)
             focusedRoot = focusedRoot->getParentComponent();
@@ -4094,7 +4106,7 @@ void LSampler24AudioProcessorEditor::timerCallback()
         const auto now = juce::Time::getMillisecondCounter();
         // For direct REAPER imports, keep focus on the original slot instead
         // of forcing NVDA to follow an always-updating status component.
-        const bool progressFocus = fileTaskTitle == "Importing REAPER items"
+        const bool progressFocus = (fileTaskTitle == "Importing REAPER items" || fileTaskTitle == "Importing Explorer audio files")
             ? hasKeyboardFocus(true) : status.hasKeyboardFocus(true);
         if (isShowing() && progressFocus
             && now - lastProgressAnnouncementMs >= 4000u)
@@ -4232,106 +4244,224 @@ void LSampler24AudioProcessorEditor::enterSampleSetEditor()
 // TEST176: batch import from REAPER selection, SWS paths, or supported native items.
 // Read and validate only at Alt+V on the UI thread; heavy file decoding
 // and audio imports use the existing file worker.
-void LSampler24AudioProcessorEditor::pasteCopiedReaperItems(
-    std::vector<LSampler24AudioProcessor::ReaperCopiedItem> items, int skipped)
+// TEST181: One confirmation per occupied slot, BEFORE starting the nonblocking
+// decoder. Y = replace this destination; N = move the SAME file forward to
+// the next free slot. Escape cancels the entire unstarted batch.
+struct LSampler24AudioProcessorEditor::PendingChromaticPaste
 {
-    if (fileUiBusy || processor.isFileTaskRunning())
+    struct Entry
+    {
+        LSampler24AudioProcessor::ReaperCopiedItem source;
+        int slot = -1;
+        int midiNote = -1;
+    };
+
+    PendingChromaticPaste(std::vector<LSampler24AudioProcessor::ReaperCopiedItem> files,
+                          int initialSkipped, bool explorer, int startSlot,
+                          const std::array<lsampler_chromatic_paste::SlotMapping,
+                                           LSampler24AudioProcessor::slotCount>& snapshot)
+        : items(std::move(files)), skipped(initialSkipped), fromExplorer(explorer),
+          firstSlot(startSlot), planner(snapshot, startSlot) {}
+
+    std::vector<LSampler24AudioProcessor::ReaperCopiedItem> items;
+    std::vector<Entry> assignments;
+    int skipped = 0;
+    bool fromExplorer = false;
+    int firstSlot = 0;
+    std::size_t nextItem = 0;
+    int protectedSlots = 0;
+    lsampler_chromatic_paste::BatchPastePlanner<LSampler24AudioProcessor::slotCount> planner;
+};
+
+void LSampler24AudioProcessorEditor::pasteCopiedReaperItems(
+    std::vector<LSampler24AudioProcessor::ReaperCopiedItem> items, int skipped, bool fromExplorer)
+{
+    if (fileUiBusy || processor.isFileTaskRunning() || pendingChromaticPaste)
     {
         lsampler::announceToActiveScreenReader(status, "File operation in progress");
         return;
     }
-    const int firstSlot = processor.getCurrentSlot();
-    const int available = LSampler24AudioProcessor::slotCount - firstSlot;
-    const int inserted = juce::jmin(available, static_cast<int>(items.size()));
-    skipped += static_cast<int>(items.size()) - inserted;
-    items.resize(static_cast<size_t>(inserted));
     if (items.empty())
     {
-        lsampler::announceToActiveScreenReader(status, "No REAPER items fit in the available slots");
+        lsampler::announceToActiveScreenReader(status, "No supported audio files to paste");
         return;
     }
-    int overwritten = 0;
-    for (int i = 0; i < inserted; ++i)
-        if (processor.isSlotOccupied(firstSlot + i)) ++overwritten;
+    const int firstSlot = processor.getCurrentSlot();
+    // One coherent snapshot of the HOST's current automation and all occupied
+    // key zones. Use the identical planner for Explorer and REAPER sources.
+    auto batch = std::make_shared<PendingChromaticPaste>(std::move(items), skipped,
+        fromExplorer, firstSlot, processor.getChromaticPasteSlotMapping());
+    pendingChromaticPaste = batch;
+    continueChromaticPaste(batch);
+}
 
-    auto perform = [safe = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this),
-                    items = std::move(items), firstSlot, skipped]() mutable
+void LSampler24AudioProcessorEditor::continueChromaticPaste(const std::shared_ptr<PendingChromaticPaste>& batch)
+{
+    if (pendingChromaticPaste != batch) return;
+    while (batch->nextItem < batch->items.size())
     {
-        if (safe == nullptr) return;
-        safe->runFileTask("Importing REAPER items", [items = std::move(items), firstSlot, skipped]
-            (LSampler24AudioProcessor& p) -> FileTaskResult
+        const int slot = batch->planner.pendingSlot();
+        if (slot < 0) break;
+        if (batch->planner.needsOverwriteDecision())
         {
-            FileTaskResult r;
-            r.ok = true;
-            r.skipped = skipped;
-            // One strong source owner stays alive on this worker until a
-            // different source file is encountered. All adjacent REAPER
-            // splits share its decode without doubling long-lived slot RAM.
-            juce::File cachedFile;
-            std::shared_ptr<SharedSample> cachedSource;
-            for (int i = 0; i < static_cast<int>(items.size()); ++i)
-            {
-                if (p.shouldStopFileTask())
+            const auto message = "Slot " + juce::String(slot + 1) + ", "
+                + replacementSlotName(slot) + ", is occupied. Replace its audio? "
+                "Yes replaces this slot. No keeps it and loads this file into the next free slot. "
+                "Escape cancels the entire paste. Press Y or N.";
+            confirmChromaticPasteOverwrite(message,
+                [safe = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), batch]
+                { if (safe != nullptr) safe->chooseChromaticPasteOverwrite(batch, true); },
+                [safe = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), batch]
+                { if (safe != nullptr) safe->chooseChromaticPasteOverwrite(batch, false); },
+                [safe = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this), batch]
                 {
-                    r.ok = false;
-                    r.message = "Import stopped";
-                    break;
-                }
-                const auto& item = items[size_t(i)];
-                if (cachedFile != item.file)
-                {
-                    cachedFile = item.file;
-                    cachedSource.reset();
-                }
-                juce::String error;
-                // REAPER Alt+V imports: Low/High/Original Pitch at consecutive
-                // notes from 60 (C4), independent of the destination slot.
-                // TEST177: report the decoding/copy progress for each item,
-                // not only 1 of N after a potentially multi-minute source loads.
-                if (!p.importSampleToSlot(item.file, firstSlot + i,
-                                          item.startSeconds, item.endSeconds, error, 60 + i,
-                                          [&p, i, total = static_cast<int>(items.size())](double fraction)
-                                          {
-                                              p.setFileTaskProgress((double(i) + fraction) / double(total));
-                                          }, &cachedSource))
-                {
-                    r.ok = false;
-                    r.message = "Slot " + juce::String(firstSlot + i + 1) + ": " + error;
-                    break;
-                }
-                if (item.takeName.isNotEmpty())
-                    p.setSlotName(firstSlot + i, item.takeName);
-                ++r.count;
-                r.slot = firstSlot + i;
-                p.setFileTaskProgress(double(i + 1) / double(items.size()));
-            }
-            r.message = "Imported " + juce::String(r.count) + " REAPER audio "
-                + (r.count == 1 ? "item" : "items") + " into slots "
-                + juce::String(firstSlot + 1) + " to " + juce::String(firstSlot + r.count)
-                + (r.count > 0 ? ". MIDI notes 60 to " + juce::String(59 + r.count) : juce::String{})
-                + (r.skipped ? ". " + juce::String(r.skipped) + " items skipped (unsupported or beyond slot 24)" : juce::String{})
-                + (r.ok ? juce::String{} : ". " + r.message);
-            return r;
-        }, [safe](const FileTaskResult&, bool)
-        {
-            if (safe != nullptr) safe->refreshSlotCells();
-            // runFileTask already restores keyboard focus and announces one
-            // batch result. Do not speak the slot a second time.
-        });
-    };
-    if (overwritten > 0)
-    {
-        const auto label = "Replace " + juce::String(overwritten) + " occupied "
-            + (overwritten == 1 ? "slot" : "slots") + " with REAPER audio items "
-            + "starting at slot " + juce::String(firstSlot + 1)
-            + "? Press Y or N.";
-        confirmOverwrite(label, std::move(perform),
-            [safe = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
-            {
-                if (safe != nullptr) safe->returnToCurrentSlotAndAnnounce();
-            });
+                    if (safe == nullptr || safe->pendingChromaticPaste != batch) return;
+                    safe->pendingChromaticPaste.reset();
+                    safe->returnToCurrentSlotAndAnnounce();
+                });
+            return;
+        }
+        const auto placed = batch->planner.assign(false);
+        if (!placed) break;
+        batch->assignments.push_back({batch->items[batch->nextItem++], placed.slot, placed.note});
     }
-    else perform();
+    finishChromaticPaste(batch);
+}
+
+void LSampler24AudioProcessorEditor::chooseChromaticPasteOverwrite(
+    const std::shared_ptr<PendingChromaticPaste>& batch, bool overwrite)
+{
+    if (pendingChromaticPaste != batch || batch->nextItem >= batch->items.size()) return;
+    // An occupied destination is either replaced only by explicit Yes, or
+    // skipped without dropping the source. No prompts inside the worker.
+    const auto placed = batch->planner.assign(overwrite);
+    if (placed)
+    {
+        batch->assignments.push_back({batch->items[batch->nextItem++], placed.slot, placed.note});
+        batch->protectedSlots += placed.protectedSlots;
+    }
+    else
+    {
+        // No free destination/usable MIDI key after a declined replacement.
+        // Import already-planned files, but report the remaining files explicitly.
+        finishChromaticPaste(batch);
+        return;
+    }
+    continueChromaticPaste(batch);
+}
+
+void LSampler24AudioProcessorEditor::finishChromaticPaste(
+    const std::shared_ptr<PendingChromaticPaste>& batch)
+{
+    if (pendingChromaticPaste != batch) return;
+    pendingChromaticPaste.reset();
+    const int notPlaced = static_cast<int>(batch->items.size() - batch->nextItem);
+    const int skipped = batch->skipped + notPlaced;
+    const bool explorer = batch->fromExplorer;
+    const int protectedSlots = batch->protectedSlots;
+    if (batch->assignments.empty())
+    {
+        lsampler::announceToActiveScreenReader(status,
+            "No files imported. No free destination slot or unassigned MIDI note available. "
+            + juce::String(skipped) + " files not imported");
+        returnToCurrentSlotAndAnnounce();
+        return;
+    }
+
+    // Restore the original slot-grid focus after modal Y/N decisions. The
+    // TEST178 worker then keeps this focused control enabled until completion.
+    auto& originalCell = slotCells[static_cast<std::size_t>(batch->firstSlot)];
+    if (originalCell.isShowing()) originalCell.grabKeyboardFocus();
+    auto entries = std::move(batch->assignments);
+    const int firstImportedSlot = entries.front().slot;
+    const int firstImportedNote = entries.front().midiNote;
+    const int total = static_cast<int>(entries.size());
+    runFileTask(explorer ? "Importing Explorer audio files" : "Importing REAPER items",
+        [entries = std::move(entries), skipped, explorer, protectedSlots,
+         firstImportedSlot, firstImportedNote, total]
+        (LSampler24AudioProcessor& p) -> FileTaskResult
+    {
+        FileTaskResult r;
+        r.ok = true;
+        r.skipped = skipped;
+        juce::String failure;
+        juce::File cachedFile;
+        std::shared_ptr<SharedSample> cachedSource;
+        for (int i = 0; i < total; ++i)
+        {
+            if (p.shouldStopFileTask())
+            {
+                r.ok = false;
+                failure = "Import stopped";
+                break;
+            }
+            const auto& entry = entries[static_cast<std::size_t>(i)];
+            const auto& item = entry.source;
+            if (cachedFile != item.file)
+            {
+                cachedFile = item.file;
+                cachedSource.reset();
+            }
+            juce::String error;
+            if (!p.importSampleToSlot(item.file, entry.slot,
+                                      item.startSeconds, item.endSeconds, error, entry.midiNote,
+                                      [&p, i, total](double fraction)
+                                      {
+                                          p.setFileTaskProgress((double(i) + fraction) / double(total));
+                                      }, &cachedSource))
+            {
+                r.ok = false;
+                failure = "Slot " + juce::String(entry.slot + 1) + ": " + error;
+                break;
+            }
+            if (item.takeName.isNotEmpty()) p.setSlotName(entry.slot, item.takeName);
+            ++r.count;
+            r.slot = entry.slot;
+            p.setFileTaskProgress(double(i + 1) / double(total));
+        }
+        r.message = "Imported " + juce::String(r.count)
+            + (explorer ? " Explorer audio " : " REAPER audio ")
+            + (explorer ? (r.count == 1 ? "file" : "files") : (r.count == 1 ? "item" : "items"))
+            + " starting at slot " + juce::String(firstImportedSlot + 1)
+            + (r.count > 1 ? ", ending at slot " + juce::String(r.slot + 1) : juce::String{})
+            + (r.count > 0 ? ". MIDI notes from " + juce::String(firstImportedNote)
+                + " to " + juce::String(entries[static_cast<std::size_t>(r.count - 1)].midiNote) : juce::String{})
+            + (protectedSlots ? ". " + juce::String(protectedSlots)
+                + (protectedSlots == 1 ? " occupied slot kept" : " occupied slots kept") : juce::String{})
+            + (r.skipped ? ". " + juce::String(r.skipped)
+                + (explorer ? " files not imported" : " items not imported")
+                + " (unsupported, no free slots or no unassigned MIDI notes)" : juce::String{})
+            + (r.ok ? juce::String{} : ". " + failure);
+        return r;
+    }, [safe = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)](const FileTaskResult&, bool)
+    {
+        if (safe != nullptr) safe->refreshSlotCells();
+    });
+}
+
+void LSampler24AudioProcessorEditor::confirmChromaticPasteOverwrite(
+    const juce::String& message, std::function<void()> confirmed,
+    std::function<void()> declined, std::function<void()> cancelled)
+{
+    auto* warning = new juce::AlertWindow("Confirm slot replacement", message,
+                                          juce::MessageBoxIconType::WarningIcon);
+    warning->addButton("Yes", 1, juce::KeyPress('y'));
+    warning->addButton("No", 2, juce::KeyPress('n'));
+    warning->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    warning->setAccessible(true);
+    warning->setName("Confirm slot replacement");
+    warning->setTitle("Confirm slot replacement");
+    if (auto* noButton = warning->getButton("No")) noButton->setWantsKeyboardFocus(true);
+    warning->enterModalState(true, juce::ModalCallbackFunction::create(
+        [safe = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this),
+         yes = std::move(confirmed), no = std::move(declined), cancel = std::move(cancelled)](int result) mutable
+        {
+            if (safe == nullptr) return;
+            if (result == 1) { if (yes) yes(); }
+            else if (result == 2) { if (no) no(); }
+            else { if (cancel) cancel(); }
+        }), true);
+    if (auto* noButton = warning->getButton("No")) noButton->grabKeyboardFocus();
 }
 
 void LSampler24AudioProcessorEditor::confirmOverwrite(

@@ -16,13 +16,13 @@ for term in ['OpenClipboard', 'CloseClipboard', 'EnumClipboardFormats',
              'parseReaperItemText', 'JUCE_WINDOWS']:
     assert term in h, term
 for term in ['pasteCopiedReaperItems', 'processor.getReaperCopiedItems',
-             'processor.markReaperClipboardAsSlot', 'confirmOverwrite(label',
-             'p.importSampleToSlot(item.file, firstSlot + i,']:
+             'processor.markReaperClipboardAsSlot', 'confirmChromaticPasteOverwrite',
+             'p.importSampleToSlot(item.file, entry.slot,']:
     assert term in e, term
 assert 'getApi<const char* (*)(const char*, const char*)>("GetExtState")' not in p
 assert 'Tools/LSampler-24 - Copy REAPER items to slots.lua' not in w
 assert ('LSampler-24-Windows-VST3-TEST168.zip' in w
         or 'LSampler-24-Windows-VST3-TEST169.zip' in w
-        or 'LSampler-24-Windows-VST3-TEST170.zip' in w or 'LSampler-24-Windows-VST3-TEST173.zip' in w or 'LSampler-24-Windows-VST3-TEST174.zip' in w or 'LSampler-24-Windows-VST3-TEST175.zip' in w or 'LSampler-24-Windows-VST3-TEST176.zip' in w or 'LSampler-24-Windows-VST3-TEST177.zip' in w or 'LSampler-24-Windows-VST3-TEST178.zip' in w)
+        or 'LSampler-24-Windows-VST3-TEST170.zip' in w or 'LSampler-24-Windows-VST3-TEST173.zip' in w or 'LSampler-24-Windows-VST3-TEST174.zip' in w or 'LSampler-24-Windows-VST3-TEST175.zip' in w or 'LSampler-24-Windows-VST3-TEST176.zip' in w or 'LSampler-24-Windows-VST3-TEST177.zip' in w or 'LSampler-24-Windows-VST3-TEST178.zip' in w or 'LSampler-24-Windows-VST3-TEST181.zip' in w)
 assert not (root/'Tools/LSampler-24 - Copy REAPER items to slots.lua').exists()
 print('TEST168 native REAPER clipboard structural check passed')

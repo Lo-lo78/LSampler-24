@@ -45,33 +45,23 @@ for key in ('hasKeyboardFocus(true)', 'parameterPage', 'globalOpen', 'bankMacroO
             'P::low', 'P::high'):
     assert key in scope, key
 
-# Destination slot sequence is unaffected; MIDI note starts at 60 each import.
+# TEST181 continues TEST180 chromatic mapping but computes the target for each
+# source in a UI-thread plan with per-slot confirmations.
 assert 'const int firstSlot = processor.getCurrentSlot();' in e
-assert 'if (processor.isSlotOccupied(firstSlot + i)) ++overwritten;' in e
-assert re.search(r'importSampleToSlot\(item.file, firstSlot \+ i,\s*item.startSeconds, item.endSeconds, error, 60 \+ i(?:\)|,)', e)
-assert re.search(r'juce::String\(59 \+ r.count\)', e)
+assert 'processor.getChromaticPasteSlotMapping()' in e
+assert 'batch->planner.needsOverwriteDecision()' in e
+assert 'batch->planner.assign(overwrite)' in e
+assert 'item.startSeconds, item.endSeconds, error, entry.midiNote' in e
 assert 'int mappedMidiNote = -1' in h
-assert ('slot.parameters[lsampler::P::low] = mappedMidiNote >= 0' in p or 'incoming.parameters[lsampler::P::low] = mappedMidiNote >= 0' in p)
-assert ('slot.parameters[lsampler::P::high] = mappedMidiNote >= 0' in p or 'incoming.parameters[lsampler::P::high] = mappedMidiNote >= 0' in p)
-assert ('slot.parameters[lsampler::P::root] = mappedMidiNote >= 0' in p or 'incoming.parameters[lsampler::P::root] = mappedMidiNote >= 0' in p)
-assert '? juce::jlimit(0, 127, mappedMidiNote) : 60.0;' in p
+for key in ('root', 'low', 'high'):
+    assert f'incoming.parameters[lsampler::P::{key}] = mappedMidiNote >= 0' in p
+assert 'juce::jlimit(0, 127, mappedMidiNote)' in p
 assert p.count('int mappedMidiNote') == 1
-assert e.count('error, 60 + i') == 1
-# All other call sites must rely on the default -1 (full zone).
-for match in re.finditer(r'importSampleToSlot\(', e):
-    statement = e[match.start():e.find(')', match.start()) + 1]
-    assert ('60 + i' in statement) or ('r.message' in statement and 'item.slot' in statement), statement
-
-# Exercise exact note/slot model for single and 24 samples from any starting slot.
-for start in (0, 4, 23):
-    for count in (1, 2, 6, 24):
-        inserted = min(count, 24 - start)
-        mapping = [(start + i, 60 + i, 60 + i) for i in range(inserted)]
-        assert all(0 <= slot < 24 and low == high for slot, low, high in mapping)
-        assert [x[1] for x in mapping] == list(range(60, 60 + inserted))
-assert 60 + 23 == 83
+assert e.count('p.importSampleToSlot(item.file, entry.slot,') == 1
+# Other calls preserve the legacy -1/full-keyboard behaviour.
+assert 'p.importSampleToSlot(item.file, item.slot,' in e
+assert (root / 'Source/ChromaticPasteMapping.h').exists()
 assert 'verify-test175-midi-learn-sws-mapping.py' in w
-assert ('LSampler-24-Windows-VST3-TEST176.zip' in w
-        or 'LSampler-24-Windows-VST3-TEST177.zip' in w or 'LSampler-24-Windows-VST3-TEST178.zip' in w)
-assert ('BUILD_TEST176.txt' in w or 'BUILD_TEST177.txt' in w or 'BUILD_TEST178.txt' in w)
-print('PASS TEST175+176: focused Low/High MIDI learn, RT safety, REAPER note sequence 60..83 with matching Original Pitch, CI artifact')
+assert 'LSampler-24-Windows-VST3-TEST181.zip' in w
+assert 'BUILD_TEST181.txt' in w
+print('PASS TEST175+181: focused MIDI learn, RT safety, and destination-dependent chromatic pitch for all imported samples')

@@ -7,6 +7,7 @@
 #include "SamplerVoice.h"
 #include "FreeLfoTransport.h"
 #include "LibraryManager.h"
+#include "ChromaticPasteMapping.h"
 #include <array>
 #include <vector>
 #include <functional>
@@ -52,6 +53,8 @@ public:
         double endSeconds = 0.0;
     };
     // TEST176: REAPER selected items, independent of clipboard/SWS.
+    bool getExplorerCopiedAudioFiles(std::vector<ReaperCopiedItem>& result,
+                                     juce::String& error, int& skipped) const;
     bool getReaperSelectedItems(std::vector<ReaperCopiedItem>& result,
                                juce::String& error, int& skipped) const;
     bool shouldPreferInternalSlotPaste() const noexcept;
@@ -103,7 +106,7 @@ public:
     int getVariationMode(int slot) const;
     void setVariationMode(int slot, int mode);
     static juce::String variationModeName(int mode);
-    // mappedMidiNote is ONLY supplied by REAPER Alt+V batch imports.
+    // mappedMidiNote is ONLY supplied by Alt+V batch imports (REAPER or Explorer).
     // -1 preserves the existing full-keyboard mapping for every other import.
     bool importSampleToSlot(const juce::File& file, int slotIndex, double startSeconds, double endSeconds,
                             juce::String& error, int mappedMidiNote = -1,
@@ -117,6 +120,10 @@ public:
     int consumeMidiKeyLearnEvent() noexcept;
     void setSlotKeyBoundary(int slotIndex, bool isLow, int midiNote);
     bool isSlotOccupied(int slotIndex) const;
+    // TEST180: pitch at the first destination slot, derived from saved slot
+    // mappings rather than a per-Alt+V counter; may return 128+ at MIDI end.
+    int getChromaticPasteStartNote(int firstSlot) const;
+    std::array<lsampler_chromatic_paste::SlotMapping, slotCount> getChromaticPasteSlotMapping() const;
     bool prepareImportPreview(const juce::File& file, juce::String& error);
     void requestImportPreviewToggle() noexcept { importPreviewToggleRequested.store(true); }
     void requestImportPreviewStop() noexcept { importPreviewStopRequested.store(true); }

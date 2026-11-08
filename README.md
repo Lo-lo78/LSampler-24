@@ -157,3 +157,8 @@ Le griglie dei 24 slot terminano con Bank Chorus Send, Bank Delay Send e Bank Re
 - La posizione corrente di Grid in Alt+F è mantenuta nell'istanza VST3 anche quando REAPER distrugge/ricrea la finestra, ed è conservata anche nello stato del progetto. Non viene inserita in uno Slot.
 - Nuovi ID FX sempre aggiunti **dopo** i 30 esistenti; send Slot/Bank, riverbero di default, salvataggio slot e bank rimangono invariati.
 - Nessuna compilazione locale: usare GitHub Actions. I controlli statici da soli non dimostrano parità sonora né assenza di problemi di build.
+
+
+## TEST181 – Alt+V, conferma per slot occupato
+
+Per item REAPER e file audio da Esplora file, Y sovrascrive lo slot richiesto; N mantiene lo slot e sposta lo stesso campione al primo slot libero successivo, continuando con la prima nota MIDI libera. Escape annulla l’intero incolla prima di avviare l’importazione in background. Dettagli in `RELEASE_TEST181.md`.

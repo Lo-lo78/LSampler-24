@@ -27,12 +27,13 @@ for field in ('velocityLow !=', 'velocityHigh !=', 'pitchCents !=', 'octave !=',
               'thresholdEndFrame !=', 'slice.boundaries !=', 'slice.steps[step].values !='):
     assert field in processor, field
 assert 'remembered.owner_before(owner) || owner.owner_before(remembered)' in processor
-assert 'const bool nonModalReaperImport = fileTaskTitle == "Importing REAPER items";' in editor
+assert 'fileTaskTitle == "Importing REAPER items" || fileTaskTitle == "Importing Explorer audio files"' in editor
 assert 'status.setWantsKeyboardFocus(!nonModalReaperImport);' in editor
 assert 'if (!nonModalReaperImport && isShowing()' in editor
 assert 'status.addKeyListener(this)' in editor
-assert 'fileTaskTitle == "Importing REAPER items"\n            ? hasKeyboardFocus(true) : status.hasKeyboardFocus(true)' in editor
-assert 'runFileTask("Importing REAPER items"' in editor
+assert 'fileTaskTitle == "Importing Explorer audio files"' in editor
+assert 'hasKeyboardFocus(true) : status.hasKeyboardFocus(true)' in editor
+assert 'runFileTask(explorer ? "Importing Explorer audio files" : "Importing REAPER items"' in editor
 assert 'Verify TEST178' in workflow
-assert 'LSampler-24-Windows-VST3-TEST178' in workflow
+assert 'LSampler-24-Windows-VST3-TEST181' in workflow
 print('PASS TEST178: per-slot weak-owner cache, background DSP preparation, preserved NVDA progress, no focus hijack for REAPER Alt+V')

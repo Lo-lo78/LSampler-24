@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include "HostSlicePreparation.h"
 #include "ReaperNativeClipboard.h"
+#include "ChromaticPasteMapping.h"
 #include "ReaperItemWindow.h"
 #include "SamplePoolProgress.h"
 #include <algorithm>
@@ -385,6 +386,30 @@ private:
 juce::VST3ClientExtensions* LSampler24AudioProcessor::getVST3ClientExtensions()
 {
     return reaperHostExtension.get();
+}
+bool LSampler24AudioProcessor::getExplorerCopiedAudioFiles(
+    std::vector<ReaperCopiedItem>& result, juce::String& error, int& skipped) const
+{
+    result.clear();
+    error.clear();
+    skipped = 0;
+   #if JUCE_WINDOWS
+    const auto snapshot = lsampler_reaper_clipboard::readExplorerFileDrop();
+    if (!snapshot.recognised) return false;
+    skipped = snapshot.skipped;
+    for (const auto& entry : snapshot.items)
+    {
+        if (!SamplePool::instance().hasSupportedExtension(entry.file))
+        { ++skipped; continue; }
+        if (static_cast<int>(result.size()) >= slotCount)
+        { ++skipped; continue; }
+        result.push_back({entry.file, entry.name, 0.0, 0.0});
+    }
+    if (result.empty()) error = "Windows clipboard contains no supported audio files";
+    return true;
+   #else
+    return false;
+   #endif
 }
 bool LSampler24AudioProcessor::getReaperSelectedItems(
     std::vector<ReaperCopiedItem>& result, juce::String& error, int& skipped) const
@@ -1732,6 +1757,32 @@ bool LSampler24AudioProcessor::isSlotOccupied(int slotIndex) const
     return std::any_of(slot.alternateSamples.begin(), slot.alternateSamples.end(), [](const auto& sample) { return sample != nullptr; });
 }
 
+std::array<lsampler_chromatic_paste::SlotMapping, LSampler24AudioProcessor::slotCount>
+LSampler24AudioProcessor::getChromaticPasteSlotMapping() const
+{
+    // Run once on the message thread before the asynchronous batch starts.
+    // Read all keys under ONE lock; host automation is materialised first.
+    const juce::ScopedLock lock(stateLock);
+    absorbHostValuesLocked();
+    std::array<lsampler_chromatic_paste::SlotMapping, slotCount> mapping{};
+    for (int i = 0; i < slotCount; ++i)
+    {
+        const auto& slot = slots[static_cast<size_t>(i)];
+        const bool hasAudio = slot.sample != nullptr
+            || std::any_of(slot.alternateSamples.begin(), slot.alternateSamples.end(),
+                           [](const auto& sample) { return sample != nullptr; });
+        mapping[static_cast<size_t>(i)] = {hasAudio,
+            slot.parameters[lsampler::P::low], slot.parameters[lsampler::P::high],
+            slot.parameters[lsampler::P::root]};
+    }
+    return mapping;
+}
+
+int LSampler24AudioProcessor::getChromaticPasteStartNote(int firstSlot) const
+{
+    return lsampler_chromatic_paste::firstNote(getChromaticPasteSlotMapping(), firstSlot);
+}
+
 bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int slotIndex, double startSeconds, double endSeconds,
                                                     juce::String& error, int mappedMidiNote,
                                                     std::function<void(double)> progress,
@@ -1788,7 +1839,8 @@ bool LSampler24AudioProcessor::importSampleToSlot(const juce::File& file, int sl
     incoming.sampleAudioModified = hasSlice;
     incoming.sourceWindowFirstFrame = sourceWindowFirstFrame;
     incoming.sourceWindowEndFrame = sourceWindowEndFrame;
-    // TEST176: Low Key, High Key and Original Pitch all track 60, 61 ...
+    // TEST180: Low Key, High Key and Original Pitch follow the computed
+    // chromatic pitch for this destination, even across separate Alt+V batches.
     incoming.parameters[lsampler::P::root] = mappedMidiNote >= 0
         ? juce::jlimit(0, 127, mappedMidiNote) : 60.0;
     incoming.parameters[lsampler::P::low] = mappedMidiNote >= 0
