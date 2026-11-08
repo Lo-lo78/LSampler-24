@@ -35,5 +35,5 @@ assert 'fileTaskTitle == "Importing Explorer audio files"' in editor
 assert 'hasKeyboardFocus(true) : status.hasKeyboardFocus(true)' in editor
 assert 'runFileTask(explorer ? "Importing Explorer audio files" : "Importing REAPER items"' in editor
 assert 'Verify TEST178' in workflow
-assert 'LSampler-24-Windows-VST3-TEST182' in workflow
+assert 'LSampler-24-Windows-VST3-TEST183' in workflow
 print('PASS TEST178: per-slot weak-owner cache, background DSP preparation, preserved NVDA progress, no focus hijack for REAPER Alt+V')

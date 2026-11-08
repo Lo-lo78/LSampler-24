@@ -101,6 +101,9 @@ public:
     void clearSampleSetEntry(int slot, int sampleIndex);
     SampleSetEntryInfo getSampleSetEntry(int slot, int sampleIndex) const;
     juce::File getSampleSetEntryFile(int slot, int sampleIndex) const;
+    // TEST183: protect the 24*16 Sample Set references (and copied slots) of
+    // every loaded LSampler instance when an explicit cache clear runs.
+    static std::vector<juce::File> getAllOpenInstanceSampleReferences();
     void setSampleSetVelocityRange(int slot, int sampleIndex, int low, int high);
     void setSampleSetMix(int slot, int sampleIndex, int field, double value);
     int getVariationMode(int slot) const;

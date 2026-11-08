@@ -465,6 +465,7 @@ private:
     void chooseExportLibrary();
     void chooseImportLibrary();
     void showAdvancedMenu();
+    void clearExtractedAudioCache();
     void returnToAdvancedAndAnnounce();
     void returnToButton(juce::TextButton& button);
     void returnToActionOrigin(juce::TextButton& button);

@@ -5,6 +5,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <functional>
 #include <vector>
+#include <cstdint>
 
 namespace lsampler_media_paste
 {
@@ -15,6 +16,19 @@ struct Track
 };
 using StopRequested = std::function<bool()>;
 using Progress = std::function<void(double)>;
+
+// TEST183: a user-requested cache cleanup. Only LSampler-generated WAVs
+// (and abandoned partial output) may be removed. Currently loaded samples
+// are protected by a snapshot of references from all open plug-in instances.
+struct CacheCleanupResult
+{
+    int deleted = 0, protectedFiles = 0, failed = 0;
+    std::int64_t bytesFreed = 0;
+};
+juce::File extractionCacheDirectory();
+CacheCleanupResult clearExtractedAudioCache(const std::vector<juce::File>& protectedFiles,
+                                            const StopRequested& shouldStop);
+
 
 // A conservative list of MEDIA extensions in addition to JUCE's native audio
 // formats. A supported extension never guarantees a Windows decoder exists.

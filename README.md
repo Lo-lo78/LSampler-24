@@ -1,3 +1,12 @@
+## TEST183 — gestione manuale cache estrazione in Advanced
+
+Alt+T > Advanced > Extracted Audio Cache: **Open Extracted Audio Cache Folder**
+oppure **Clear Extracted Audio Cache...**. Nessuna pulizia durante il normale
+salvataggio. La conferma Y/N avverte dei progetti REAPER chiusi: possono ancora
+richiamare WAV estratti dalla TEST182. La pulizia esclude sempre audio originale,
+Library/Samples e file attualmente referenziati da istanze aperte di LSampler.
+Per dettagli e limiti vedi `RELEASE_TEST183.md`.
+
 ## TEST182 — incolla da video/AAC e multicanale (Alt+V)
 
 In REAPER usa Alt+V dopo la selezione di item o dopo Ctrl+C su file in Esplora file.

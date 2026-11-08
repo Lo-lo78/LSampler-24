@@ -53,6 +53,7 @@ target_sources(LSampler24 PRIVATE
     Source/ScreenReaderAnnouncer.h
     Source/MediaPasteExpansion.cpp
     Source/MediaPasteExpansion.h
+    Source/ExtractedCacheFilename.h
     Source/MediaTrackGrouping.h
     Source/SamplePool.cpp
     Source/SamplePool.h
@@ -148,6 +149,11 @@ if(LSAMPLER_BUILD_FILTER_TESTS)
     add_executable(LSampler24MediaPasteTests Tests/MediaPasteGroupingTests.cpp)
     target_compile_features(LSampler24MediaPasteTests PRIVATE cxx_std_17)
     add_test(NAME media-paste-grouping COMMAND LSampler24MediaPasteTests)
+
+    # TEST183: protective cache filename filter, JUCE-independent.
+    add_executable(LSampler24CacheCleanupTests Tests/ExtractedCacheFilenameTests.cpp)
+    target_compile_features(LSampler24CacheCleanupTests PRIVATE cxx_std_17)
+    add_test(NAME extracted-cache-cleanup COMMAND LSampler24CacheCleanupTests)
 
     # TEST170: JUCE-independent real transport detector/Free S&H seed test.
     add_executable(LSampler24FreeLfoTests Tests/FreeLfoTransportTests.cpp)

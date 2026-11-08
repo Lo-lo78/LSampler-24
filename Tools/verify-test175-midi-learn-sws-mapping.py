@@ -62,6 +62,6 @@ assert e.count('p.importSampleToSlot(item.file, entry.slot,') == 1
 assert 'p.importSampleToSlot(item.file, item.slot,' in e
 assert (root / 'Source/ChromaticPasteMapping.h').exists()
 assert 'verify-test175-midi-learn-sws-mapping.py' in w
-assert 'LSampler-24-Windows-VST3-TEST182.zip' in w
-assert 'BUILD_TEST182.txt' in w
+assert 'LSampler-24-Windows-VST3-TEST183.zip' in w
+assert 'BUILD_TEST183.txt' in w
 print('PASS TEST175+181: focused MIDI learn, RT safety, and destination-dependent chromatic pitch for all imported samples')

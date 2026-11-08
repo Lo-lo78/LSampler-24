@@ -11,6 +11,7 @@
 #include <limits>
 #include <set>
 #include <map>
+#include <mutex>
 #include <juce_cryptography/juce_cryptography.h>
 
 // REAPER-specific VST3 extension, following JUCE ReaperEmbeddedViewPluginDemo.
@@ -21,6 +22,20 @@ JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE("-Wnon-virtual-dtor")
 JUCE_END_IGNORE_WARNINGS_GCC_LIKE
 
 using namespace lsampler;
+
+namespace
+{
+std::mutex& activeSamplerInstancesMutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
+std::vector<LSampler24AudioProcessor*>& activeSamplerInstances()
+{
+    static std::vector<LSampler24AudioProcessor*> instances;
+    return instances;
+}
+}
 
 // Separate visibility from actual automation activity. Hiding a REAPER lane
 // leaves its envelope ACTIVE and locks the plugin's control in Read mode.
@@ -603,10 +618,17 @@ LSampler24AudioProcessor::LSampler24AudioProcessor(const juce::File& libraryRoot
     createHostParameters();
     reaperHostExtension = std::make_unique<LSamplerReaperHostExtension>();
     markAudioStateDirty();
+    { const std::lock_guard<std::mutex> guard(activeSamplerInstancesMutex());
+      activeSamplerInstances().push_back(this); }
 }
 
 LSampler24AudioProcessor::~LSampler24AudioProcessor()
 {
+    // The registry mutex is also held while enumerating referenced samples.
+    // Unregister before the instance's SlotState storage becomes unavailable.
+    { const std::lock_guard<std::mutex> guard(activeSamplerInstancesMutex());
+      auto& instances = activeSamplerInstances();
+      instances.erase(std::remove(instances.begin(), instances.end(), this), instances.end()); }
     cancelPendingUpdate();
     shuttingDown.store(true, std::memory_order_release);
     // Finish the running disk operation before any processor-owned state is freed.
@@ -615,6 +637,26 @@ LSampler24AudioProcessor::~LSampler24AudioProcessor()
     hostPlayDetector.reset();
     voicePool.allNotesOff();
     libraryPreviewVoicePool.allNotesOff();
+}
+
+std::vector<juce::File> LSampler24AudioProcessor::getAllOpenInstanceSampleReferences()
+{
+    std::vector<juce::File> files;
+    const std::lock_guard<std::mutex> registryLock(activeSamplerInstancesMutex());
+    for (const auto* instance : activeSamplerInstances())
+    {
+        const juce::ScopedLock stateGuard(instance->stateLock);
+        auto appendSlot = [&files](const SlotState& slot)
+        {
+            if (slot.sampleFile.getFullPathName().isNotEmpty())
+                files.push_back(slot.sampleFile);
+            for (const auto& alternate : slot.alternateSampleFiles)
+                if (alternate.getFullPathName().isNotEmpty()) files.push_back(alternate);
+        };
+        for (const auto& slot : instance->slots) appendSlot(slot);
+        if (instance->slotClipboardHasData) appendSlot(instance->slotClipboard);
+    }
+    return files;
 }
 
 bool LSampler24AudioProcessor::startFileTask(FileTask task, std::function<void(FileTaskResult)> completion)

@@ -1,11 +1,14 @@
 #include "MediaPasteExpansion.h"
 #include "SamplePool.h"
 #include "MediaTrackGrouping.h"
+#include "ExtractedCacheFilename.h"
 #include <juce_cryptography/juce_cryptography.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <mutex>
+#include <shared_mutex>
 
 #if JUCE_WINDOWS
  #ifndef NOMINMAX
@@ -26,6 +29,10 @@ namespace
 {
 constexpr int maxSourceChannels = 64;
 constexpr int ioFrames = 8192;
+// A shared lock permits simultaneous imports from different plug-in instances;
+// explicit cache clearing waits for all in-progress extractions to finish.
+std::shared_mutex extractionCacheAccess;
+
 
 juce::File extractionDirectory()
 {
@@ -410,6 +417,47 @@ std::vector<Track> splitMediaFoundation(const juce::File& source, int limit,
 #endif
 }
 
+juce::File extractionCacheDirectory()
+{
+    return extractionDirectory();
+}
+
+CacheCleanupResult clearExtractedAudioCache(const std::vector<juce::File>& protectedFiles,
+                                            const StopRequested& shouldStop)
+{
+    CacheCleanupResult result;
+    // This operation runs exclusively on the existing file worker, not the UI
+    // or audio thread. No extraction can create/rename a WAV while we delete.
+    const std::unique_lock<std::shared_mutex> cacheLock(extractionCacheAccess);
+    const auto directory = extractionDirectory();
+    if (!directory.isDirectory()) return result;
+
+    // Match ONLY output owned by this feature. Unknown user files in the
+    // directory are never touched, even if their extension is WAV.
+    juce::Array<juce::File> children;
+    directory.findChildFiles(children, juce::File::findFiles, false);
+    for (const auto& file : children)
+    {
+        if (shouldStop && shouldStop()) break;
+        if (file.getParentDirectory() != directory
+            || !lsampler_extracted_cache::isGeneratedFileName(file.getFileName().toStdString()))
+            continue;
+        if (std::find(protectedFiles.begin(), protectedFiles.end(), file) != protectedFiles.end())
+        {
+            ++result.protectedFiles;
+            continue;
+        }
+        const auto bytes = file.getSize();
+        if (file.deleteFile())
+        {
+            ++result.deleted;
+            result.bytesFreed += static_cast<std::int64_t>(bytes);
+        }
+        else ++result.failed;
+    }
+    return result;
+}
+
 bool isCandidate(const juce::File& file)
 {
     if (SamplePool::instance().hasSupportedExtension(file)) return true;
@@ -429,6 +477,9 @@ std::vector<Track> expand(const juce::File& source, int maxTracks,
     if (!source.existsAsFile() || !isCandidate(source))
     { error = "File not found or unsupported media extension"; return {}; }
     if (maxTracks <= 0) { discardedTracks = 1; return {}; }
+    // Protect derived WAVs from an explicit cache cleanup until this entire
+    // extraction finishes. Shared lock does not serialise independent imports.
+    const std::shared_lock<std::shared_mutex> cacheLock(extractionCacheAccess);
     // Prefer JUCE's unmodified decoder for standard audio files; only split
     // when its format header explicitly reports 3+ channels.
     juce::AudioFormatManager formats;

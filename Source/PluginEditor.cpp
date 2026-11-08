@@ -6183,6 +6183,56 @@ void LSampler24AudioProcessorEditor::enterExportBankBrowser()
         "Export Bank. Select a bank in the Bank Library and press Enter");
 }
 
+void LSampler24AudioProcessorEditor::clearExtractedAudioCache()
+{
+    if (fileUiBusy || processor.isFileTaskRunning())
+    {
+        lsampler::announceToActiveScreenReader(advancedButton, "File operation in progress");
+        return;
+    }
+    if (!lsampler_media_paste::extractionCacheDirectory().isDirectory())
+    {
+        lsampler::announceToActiveScreenReader(advancedButton, "Extracted audio cache is empty");
+        returnToAdvancedAndAnnounce();
+        return;
+    }
+    confirmOverwrite(
+        "Clear extracted audio cache? Only WAV files generated from video or multichannel media will be removed. "
+        "Audio currently referenced by an OPEN LSampler-24 instance is kept. "
+        "IMPORTANT: a CLOSED REAPER project may still reference extracted WAV files. "
+        "If you have not saved those samples into the LSampler Library, clearing the cache "
+        "can make that project's audio unavailable when reopened. "
+        "Your original media files and Library Samples are never deleted. "
+        "Press Y to clear the cache, N to cancel.",
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+        {
+            if (safeThis == nullptr) return;
+            safeThis->runFileTask("Clearing extracted audio cache", [](LSampler24AudioProcessor& p)
+            {
+                FileTaskResult r;
+                const auto protectedFiles = LSampler24AudioProcessor::getAllOpenInstanceSampleReferences();
+                const auto count = lsampler_media_paste::clearExtractedAudioCache(protectedFiles,
+                    [&p] { return p.shouldStopFileTask(); });
+                r.ok = count.failed == 0 && !p.shouldStopFileTask();
+                r.count = count.deleted;
+                r.skipped = count.protectedFiles;
+                r.message = juce::String(count.deleted) + " cached files deleted, "
+                    + juce::String(count.bytesFreed / (1024.0 * 1024.0), 1) + " MB freed. "
+                    + juce::String(count.protectedFiles) + " in-use files kept. "
+                    + juce::String(count.failed) + " failed.";
+                return r;
+            }, [safeThis](const FileTaskResult&, bool)
+            {
+                if (safeThis != nullptr) safeThis->returnToAdvancedAndAnnounce();
+            });
+        },
+        [safeThis = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this)]
+        {
+            if (safeThis != nullptr) safeThis->returnToAdvancedAndAnnounce();
+        },
+        "Clear Extracted Audio Cache");
+}
+
 void LSampler24AudioProcessorEditor::showAdvancedMenu()
 {
     juce::PopupMenu menu;
@@ -6214,6 +6264,11 @@ void LSampler24AudioProcessorEditor::showAdvancedMenu()
     menu.addItem(12, "Import All Library...");
     menu.addItem(14, "Export All Library...");
 
+    menu.addSeparator();
+    menu.addSectionHeader("Extracted Audio Cache");
+    menu.addItem(20, "Open Extracted Audio Cache Folder");
+    menu.addItem(21, "Clear Extracted Audio Cache...");
+
     auto options = juce::PopupMenu::Options().withTargetComponent(&advancedButton)
                          .withInitiallySelectedItem(advancedMenuReturnItem);
     menu.showMenuAsync(options,
@@ -6240,6 +6295,16 @@ void LSampler24AudioProcessorEditor::showAdvancedMenu()
             else if (result == 15) safeThis->enterExportFileBrowser();
             else if (result == 16) safeThis->chooseImportBank();
             else if (result == 17) safeThis->enterExportBankBrowser();
+            else if (result == 20)
+            {
+                const auto cache = lsampler_media_paste::extractionCacheDirectory();
+                if (cache.isDirectory() && cache.startAsProcess())
+                    lsampler::announceToActiveScreenReader(safeThis->advancedButton, "Extracted audio cache folder opened");
+                else
+                    lsampler::announceToActiveScreenReader(safeThis->advancedButton, "Extracted audio cache folder is empty or unavailable");
+                safeThis->returnToAdvancedAndAnnounce();
+            }
+            else if (result == 21) safeThis->clearExtractedAudioCache();
             else if (result >= 100 && result < 100 + static_cast<int>(history.size()))
             {
                 safeThis->activateLibraryRoot(history[static_cast<size_t>(result - 100)], true);
