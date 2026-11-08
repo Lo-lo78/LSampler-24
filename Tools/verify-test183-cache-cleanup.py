@@ -21,5 +21,5 @@ assert 'directory.findChildFiles(children, juce::File::findFiles, false)' in m
 assert 'isGeneratedFileName(file.getFileName().toStdString())' in m and 'file.deleteFile()' in m
 assert 'std::regex_match' in h
 assert 'LSampler24CacheCleanupTests' in s and 'extracted-cache-cleanup' in s
-assert 'LSampler-24-Windows-VST3-TEST183.zip' in w and 'verify-test183-cache-cleanup.py' in w
+assert 'LSampler-24-Windows-VST3-TEST184.zip' in w and 'verify-test183-cache-cleanup.py' in w
 print('PASS TEST183: confirmed user clear, generated-WAV filter, live references, worker/background, Windows CI')

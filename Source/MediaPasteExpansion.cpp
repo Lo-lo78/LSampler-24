@@ -484,7 +484,10 @@ std::vector<Track> expand(const juce::File& source, int maxTracks,
     // when its format header explicitly reports 3+ channels.
     juce::AudioFormatManager formats;
     formats.registerBasicFormats();
-    if (std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(source)))
+    // TEST184: a C++ if-condition cannot use a direct-initialized declaration.
+    // Keep ownership explicit so the reader stays alive throughout the split.
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(source));
+    if (reader != nullptr)
         return splitNativeAudio(source, *reader, maxTracks, stop, progress, error, discardedTracks);
 #if JUCE_WINDOWS
     return splitMediaFoundation(source, maxTracks, stop, progress, error, discardedTracks);

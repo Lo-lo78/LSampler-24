@@ -76,6 +76,12 @@ jobs:
           python Tools/verify-test173-sample-timeline.py
           if ($LASTEXITCODE -ne 0) { throw "TEST173 sample timeline verification failed." }
 
+      - name: Verify TEST184 Windows-compatible media reader declaration
+        shell: powershell
+        run: |
+          python Tools/verify-test184-media-reader-declaration.py
+          if ($LASTEXITCODE -ne 0) { throw "TEST184 MediaPasteExpansion C++ declaration check failed." }
+
       - name: Build TEST62, compare audio and measure performance
         id: compare
         shell: powershell
@@ -158,14 +164,14 @@ jobs:
           python Tools/verify-test183-cache-cleanup.py
           if ($LASTEXITCODE -ne 0) { throw "TEST183 extracted cache cleanup check failed." }
 
-      - name: Package TEST183 VST3 after audio comparison passes
+      - name: Package TEST184 VST3 after audio comparison passes
         if: success() && steps.compare.outcome == 'success'
         shell: powershell
         run: |
           $vst3 = "build\make-release\LSampler24_artefacts\Release\VST3\LSampler-24.vst3"
           if (-not (Test-Path -LiteralPath $vst3)) { throw "VST3 bundle not found: $vst3" }
           @(
-            "LSampler-24 v0.99.25 TEST183 - Windows x64 VST3.",
+            "LSampler-24 v0.99.25 TEST184 - Windows x64 VST3.",
             "Build date: 8 November 2026.",
             "24-slot sampler with Sample Sets, accessible Help (8 languages) and About.",
             "TEST166: 3 ms voice de-click, 1 ms legato pitch transition and bounded Sample Start/End.",
@@ -191,16 +197,17 @@ jobs:
             "TEST182: Stereo pairs count separately towards the 24-slot chromatic plan; Y/N/Escape confirmation remains.",
             "TEST183: Advanced menu can open extracted audio cache and clear generated WAVs on request only.",
             "TEST183: Confirmation warns about closed projects; files referenced by open LSampler instances are protected.",
+            "TEST184: Fix MSVC compile C4430/C2059 in MediaPasteExpansion reader declaration; DSP/features unchanged.",
             "Commit: $env:GITHUB_SHA",
             "Audio parity with TEST59 passed for the automated test scenarios.",
             "Performance measurements are in LSampler-24-TEST62-Reports."
-          ) | Set-Content -LiteralPath "BUILD_TEST183.txt" -Encoding UTF8
-          Compress-Archive -Path $vst3, "BUILD_TEST183.txt", "TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt", "TEST170_FREE_LFO_HOST_PLAY_NOTE_IT.txt", "RELEASE_TEST176.md", "RELEASE_TEST177.md", "RELEASE_TEST178.md", "RELEASE_TEST179.md", "RELEASE_TEST180.md", "RELEASE_TEST181.md", "RELEASE_TEST182.md", "RELEASE_TEST183.md" -DestinationPath "LSampler-24-Windows-VST3-TEST183.zip" -Force
+          ) | Set-Content -LiteralPath "BUILD_TEST184.txt" -Encoding UTF8
+          Compress-Archive -Path $vst3, "BUILD_TEST184.txt", "TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt", "TEST170_FREE_LFO_HOST_PLAY_NOTE_IT.txt", "RELEASE_TEST176.md", "RELEASE_TEST177.md", "RELEASE_TEST178.md", "RELEASE_TEST179.md", "RELEASE_TEST180.md", "RELEASE_TEST181.md", "RELEASE_TEST182.md", "RELEASE_TEST183.md", "RELEASE_TEST184.md" -DestinationPath "LSampler-24-Windows-VST3-TEST184.zip" -Force
 
-      - name: Upload TEST183 VST3
+      - name: Upload TEST184 VST3
         if: success() && steps.compare.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: LSampler-24-Windows-VST3-TEST183
-          path: LSampler-24-Windows-VST3-TEST183.zip
+          name: LSampler-24-Windows-VST3-TEST184
+          path: LSampler-24-Windows-VST3-TEST184.zip
           if-no-files-found: error

@@ -1,3 +1,14 @@
+## TEST184 — correzione compilazione Windows (MediaPasteExpansion)
+
+Corretto il C++ in `Source/MediaPasteExpansion.cpp` (precedente riga 487): la
+`std::unique_ptr<juce::AudioFormatReader>` viene dichiarata prima dell'`if`,
+invece di utilizzare la sintassi non valida di una dichiarazione con
+inizializzazione tra parentesi nella condizione. Elimina gli errori MSVC
+`C4430` e `C2059` segnalati su GitHub Actions. Nessuna modifica al flusso di
+Alt+V, all'estrazione video/multicanale, né ad Advanced/Svuota cache.
+
+Vedi `RELEASE_TEST184.md`.
+
 ## TEST183 — gestione manuale cache estrazione in Advanced
 
 Alt+T > Advanced > Extracted Audio Cache: **Open Extracted Audio Cache Folder**
