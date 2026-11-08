@@ -13,11 +13,11 @@ for key in ('parseMediaSourcePaths(', 'juce::StringArray::fromLines', 'file.exis
             'parseReaperItemText(readText(f))', 'readNativeReaperAudioItems'):
     assert key in h, key
 assert h.index('parseMediaSourcePaths(readText(CF_UNICODETEXT))') < h.index('parseReaperItemText(readText(f))')
-assert 'hasSupportedExtension(entry.file)' in p
+assert 'lsampler_media_paste::isCandidate(entry.file)' in p
 assert 'slotCopyIsLatest && GetClipboardSequenceNumber() == slotCopySequence' in p
 assert 'p.importSampleToSlot(item.file, entry.slot,' in e
 assert '_BR_TSOURCE_PATH_TO_CLIPBOARD' in (r/'TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt').read_text(encoding='utf-8')
-assert any(f'LSampler-24-Windows-VST3-{v}.zip' in w for v in ('TEST169','TEST170','TEST173','TEST174','TEST175','TEST176','TEST177','TEST178','TEST180','TEST181'))
+assert any(f'LSampler-24-Windows-VST3-{v}.zip' in w for v in ('TEST169','TEST170','TEST173','TEST174','TEST175','TEST176','TEST177','TEST178','TEST180','TEST182'))
 assert 'Tools/verify-test169-sws-source-paths.py' in w
 assert 'LSampler24ClipboardTests' in (r/'CMakeLists.txt').read_text(encoding='utf-8')
 assert 'clipboard-paths' in (r/'Tools/build-windows.ps1').read_text(encoding='utf-8')

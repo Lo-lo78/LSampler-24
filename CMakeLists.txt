@@ -51,6 +51,9 @@ target_sources(LSampler24 PRIVATE
     Source/RackGui.h
     Source/ScreenReaderAnnouncer.cpp
     Source/ScreenReaderAnnouncer.h
+    Source/MediaPasteExpansion.cpp
+    Source/MediaPasteExpansion.h
+    Source/MediaTrackGrouping.h
     Source/SamplePool.cpp
     Source/SamplePool.h
     Source/Parameters.h
@@ -88,7 +91,7 @@ target_link_libraries(LSampler24 PRIVATE
     juce::juce_recommended_warning_flags
 )
 if(WIN32)
-    target_link_libraries(LSampler24 PRIVATE Uiautomationcore OleAut32 shell32)
+    target_link_libraries(LSampler24 PRIVATE Uiautomationcore OleAut32 shell32 ole32 mfplat mfreadwrite mfuuid)
 endif()
 
 
@@ -142,6 +145,9 @@ if(LSAMPLER_BUILD_FILTER_TESTS)
     add_executable(LSampler24ChromaticPasteTests Tests/ChromaticPasteMappingTests.cpp)
     target_compile_features(LSampler24ChromaticPasteTests PRIVATE cxx_std_17)
     add_test(NAME chromatic-paste COMMAND LSampler24ChromaticPasteTests)
+    add_executable(LSampler24MediaPasteTests Tests/MediaPasteGroupingTests.cpp)
+    target_compile_features(LSampler24MediaPasteTests PRIVATE cxx_std_17)
+    add_test(NAME media-paste-grouping COMMAND LSampler24MediaPasteTests)
 
     # TEST170: JUCE-independent real transport detector/Free S&H seed test.
     add_executable(LSampler24FreeLfoTests Tests/FreeLfoTransportTests.cpp)

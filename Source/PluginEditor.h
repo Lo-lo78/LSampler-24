@@ -493,8 +493,10 @@ private:
     void commitSlotLibrarySelection();
     void copySlotLibraryEntry(bool cut);
     void pasteSlotLibraryEntry();
+    void startMediaPaste(std::vector<LSampler24AudioProcessor::ReaperCopiedItem> items, int skipped,
+                         bool fromExplorer = false);
     void pasteCopiedReaperItems(std::vector<LSampler24AudioProcessor::ReaperCopiedItem> items, int skipped,
-                                bool fromExplorer = false);
+                                bool fromExplorer = false, int startSlotOverride = -1);
     struct PendingChromaticPaste;
     std::shared_ptr<PendingChromaticPaste> pendingChromaticPaste;
     void continueChromaticPaste(const std::shared_ptr<PendingChromaticPaste>& batch);

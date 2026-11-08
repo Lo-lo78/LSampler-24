@@ -5,6 +5,7 @@
 #include "ChromaticPasteMapping.h"
 #include "ReaperItemWindow.h"
 #include "SamplePoolProgress.h"
+#include "MediaPasteExpansion.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -86,7 +87,7 @@ public:
         truncated = snapshot.skipped;
         for (const auto& entry : snapshot.items)
         {
-            if (!SamplePool::instance().hasSupportedExtension(entry.file))
+            if (!lsampler_media_paste::isCandidate(entry.file))
             {
                 ++truncated;
                 continue;
@@ -162,7 +163,7 @@ public:
             sourceFilename(source, path, static_cast<int>(sizeof(path)));
             if (path[0] == '\0') { ++skipped; continue; }
             const juce::File file(juce::String::fromUTF8(path));
-            if (!file.existsAsFile() || !SamplePool::instance().hasSupportedExtension(file))
+            if (!file.existsAsFile() || !lsampler_media_paste::isCandidate(file))
             {
                 ++skipped;
                 continue;
@@ -399,7 +400,7 @@ bool LSampler24AudioProcessor::getExplorerCopiedAudioFiles(
     skipped = snapshot.skipped;
     for (const auto& entry : snapshot.items)
     {
-        if (!SamplePool::instance().hasSupportedExtension(entry.file))
+        if (!lsampler_media_paste::isCandidate(entry.file))
         { ++skipped; continue; }
         if (static_cast<int>(result.size()) >= slotCount)
         { ++skipped; continue; }

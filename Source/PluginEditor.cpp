@@ -3,6 +3,7 @@
 #include <limits>
 #include <algorithm>
 #include "ScreenReaderAnnouncer.h"
+#include "MediaPasteExpansion.h"
 #include <BinaryData.h>
 #include <cmath>
 #include <utility>
@@ -3815,7 +3816,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 if (reaperError.isNotEmpty())
                     lsampler::announceToActiveScreenReader(status, reaperError);
                 else
-                    pasteCopiedReaperItems(std::move(reaperItems), overflow, true);
+                    startMediaPaste(std::move(reaperItems), overflow, true);
                 return true;
             }
             // TEST176: item selection in this REAPER project is the primary
@@ -3828,7 +3829,7 @@ bool LSampler24AudioProcessorEditor::handleKeyPress(const juce::KeyPress& key, j
                 if (reaperError.isNotEmpty())
                     lsampler::announceToActiveScreenReader(status, reaperError);
                 else
-                    pasteCopiedReaperItems(std::move(reaperItems), overflow);
+                    startMediaPaste(std::move(reaperItems), overflow);
                 return true;
             }
             if (!processor.hasCopiedSlot()) return true;
@@ -4273,8 +4274,101 @@ struct LSampler24AudioProcessorEditor::PendingChromaticPaste
     lsampler_chromatic_paste::BatchPastePlanner<LSampler24AudioProcessor::slotCount> planner;
 };
 
+// TEST182: audio/video inspection and channel-pair extraction happen on the
+// existing file worker BEFORE the TEST181 GUI thread overwrite planner.
+// A multichannel file expands into contiguous stereo pairs before any slot or
+// MIDI note is assigned, so the next file follows the final pair.
+void LSampler24AudioProcessorEditor::startMediaPaste(
+    std::vector<LSampler24AudioProcessor::ReaperCopiedItem> items,
+    int skipped, bool fromExplorer)
+{
+    if (fileUiBusy || processor.isFileTaskRunning() || pendingChromaticPaste)
+    {
+        lsampler::announceToActiveScreenReader(status, "File operation in progress");
+        return;
+    }
+    if (items.empty())
+    {
+        lsampler::announceToActiveScreenReader(status, "No supported media files to paste");
+        return;
+    }
+    const int startingSlot = processor.getCurrentSlot();
+    using Item = LSampler24AudioProcessor::ReaperCopiedItem;
+    auto expanded = std::make_shared<std::vector<Item>>();
+    runFileTask(fromExplorer ? "Importing Explorer audio files" : "Importing REAPER items",
+        [items = std::move(items), skipped, expanded, startingSlot](LSampler24AudioProcessor& p) -> FileTaskResult
+        {
+            FileTaskResult result;
+            result.ok = true;
+            result.skipped = skipped;
+            juce::String firstError;
+            const int total = static_cast<int>(items.size());
+            for (int i = 0; i < total; ++i)
+            {
+                if (p.shouldStopFileTask())
+                {
+                    result.ok = false;
+                    result.message = "Media extraction stopped";
+                    return result;
+                }
+                if (static_cast<int>(expanded->size()) >= LSampler24AudioProcessor::slotCount - startingSlot)
+                {
+                    result.skipped += total - i;
+                    break;
+                }
+                const auto& item = items[static_cast<size_t>(i)];
+                juce::String error;
+                int excessPairs = 0;
+                auto tracks = lsampler_media_paste::expand(item.file,
+                    LSampler24AudioProcessor::slotCount - startingSlot - static_cast<int>(expanded->size()),
+                    [&p] { return p.shouldStopFileTask(); },
+                    [&p, i, total](double fraction)
+                    {
+                        p.setFileTaskProgress((double(i) + juce::jlimit(0.0, 1.0, fraction)) / double(total));
+                    }, error, excessPairs);
+                result.skipped += excessPairs;
+                if (tracks.empty())
+                {
+                    ++result.skipped;
+                    if (firstError.isEmpty()) firstError = error;
+                }
+                else
+                    for (const auto& track : tracks)
+                    {
+                        Item expandedItem = item;
+                        expandedItem.file = track.file;
+                        expandedItem.takeName = (item.takeName.isNotEmpty()
+                            ? item.takeName : item.file.getFileNameWithoutExtension()) + track.suffix;
+                        expanded->push_back(std::move(expandedItem));
+                    }
+                p.setFileTaskProgress(double(i + 1) / double(total));
+            }
+            result.count = static_cast<int>(expanded->size());
+            result.message = "Prepared " + juce::String(result.count)
+                + " audio " + (result.count == 1 ? "track" : "tracks")
+                + " for chromatic paste"
+                + (result.skipped ? ". " + juce::String(result.skipped)
+                    + " unsupported or excess tracks" : juce::String{})
+                + (firstError.isNotEmpty() ? ". " + firstError : juce::String{});
+            return result;
+        }, [safe = juce::Component::SafePointer<LSampler24AudioProcessorEditor>(this),
+            expanded, fromExplorer, startingSlot](const FileTaskResult& result, bool)
+        {
+            if (safe == nullptr) return;
+            if (!result.ok || expanded->empty())
+            {
+                lsampler::announceToActiveScreenReader(safe->status, result.message);
+                safe->returnToCurrentSlotAndAnnounce();
+                return;
+            }
+            safe->pasteCopiedReaperItems(std::move(*expanded), result.skipped,
+                                        fromExplorer, startingSlot);
+        });
+}
+
 void LSampler24AudioProcessorEditor::pasteCopiedReaperItems(
-    std::vector<LSampler24AudioProcessor::ReaperCopiedItem> items, int skipped, bool fromExplorer)
+    std::vector<LSampler24AudioProcessor::ReaperCopiedItem> items, int skipped,
+    bool fromExplorer, int startSlotOverride)
 {
     if (fileUiBusy || processor.isFileTaskRunning() || pendingChromaticPaste)
     {
@@ -4286,7 +4380,7 @@ void LSampler24AudioProcessorEditor::pasteCopiedReaperItems(
         lsampler::announceToActiveScreenReader(status, "No supported audio files to paste");
         return;
     }
-    const int firstSlot = processor.getCurrentSlot();
+    const int firstSlot = startSlotOverride >= 0 ? startSlotOverride : processor.getCurrentSlot();
     // One coherent snapshot of the HOST's current automation and all occupied
     // key zones. Use the identical planner for Explorer and REAPER sources.
     auto batch = std::make_shared<PendingChromaticPaste>(std::move(items), skipped,

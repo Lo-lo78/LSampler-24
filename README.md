@@ -1,3 +1,14 @@
+## TEST182 — incolla da video/AAC e multicanale (Alt+V)
+
+In REAPER usa Alt+V dopo la selezione di item o dopo Ctrl+C su file in Esplora file.
+Audio mono/stereo rimane invariato. Audio multicanale e la prima traccia audio dei
+video supportati da Windows vengono separati in coppie stereo e distribuiti tra
+gli slot disponibili. Esempio: due sorgenti da 16 canali occupano 8 + 8 slot.
+Conferme Y/N/Escape, note cromatiche e caricamento non bloccante restano quelli
+della TEST181. I WAV derivati sono persistenti in AppData/Roaming/Lo-lo78/
+LSampler-24/ExtractedAudio, per consentire la riapertura dei progetti.
+Per dettagli e limiti di codec vedi RELEASE_TEST182.md.
+
 ## TEST178 (7 novembre 2026) — Importazione REAPER non bloccante e focus NVDA
 
 Alt+V usa sempre gli item selezionati. Il calcolo delle soglie e degli stati DSP dello slot in arrivo avviene ora sul worker prima del lock; una cache per slot evita di riscandire tutte le sorgenti già caricate a ogni item. Durante l'importazione il focus resta sulla griglia anziché essere trasferito a Status, pur mantenendo l'annuncio accessibile della percentuale. Vedi `RELEASE_TEST178.md`. Verifica runtime in REAPER/NVDA e build Windows ancora necessarie.

@@ -33,8 +33,8 @@ assert 'CF_HDROP' in clipboard and 'DragQueryFileW' in clipboard
 assert 'readExplorerFileDrop()' in p
 assert 'getExplorerCopiedAudioFiles(reaperItems, reaperError, overflow)' in e
 assert 'getReaperSelectedItems(reaperItems, reaperError, overflow)' in e
-assert 'pasteCopiedReaperItems(std::move(reaperItems), overflow, true)' in e
-assert 'pasteCopiedReaperItems(std::move(reaperItems), overflow);' in e
+assert 'startMediaPaste(std::move(reaperItems), overflow, true)' in e
+assert 'startMediaPaste(std::move(reaperItems), overflow);' in e
 assert 'processor.shouldPreferInternalSlotPaste()' in e
 assert 'entry.midiNote' in batch
 assert 'if (const int existing = chromaticNote(' in helper
@@ -45,6 +45,6 @@ assert 'std::isfinite' in helper
 assert 'LSampler24ChromaticPasteTests' in cm and 'chromatic-paste' in cm
 assert 'LSampler24ChromaticPasteTests' in script and 'chromatic-paste' in script
 assert 'verify-test180-chromatic-paste.py' in work
-assert 'LSampler-24-Windows-VST3-TEST181.zip' in work
+assert 'LSampler-24-Windows-VST3-TEST182.zip' in work
 assert (r/'RELEASE_TEST180.md').exists()
 print('PASS TEST180+181: deterministic notes, per-slot overwrite, relocation, async loading, CI tests')
