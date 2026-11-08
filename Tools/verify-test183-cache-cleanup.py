@@ -2,12 +2,12 @@
 """TEST183: static safety gates for user-confirmed cache cleanup."""
 from pathlib import Path
 r=Path(__file__).resolve().parents[1]
-e=(r/'Source/PluginEditor.cpp').read_text()
-p=(r/'Source/PluginProcessor.cpp').read_text()
-m=(r/'Source/MediaPasteExpansion.cpp').read_text()
-h=(r/'Source/ExtractedCacheFilename.h').read_text()
-w=(r/'.github/workflows/build-windows.yml').read_text()
-s=(r/'Tools/build-windows.ps1').read_text()
+e=(r/'Source/PluginEditor.cpp').read_text(encoding='utf-8')
+p=(r/'Source/PluginProcessor.cpp').read_text(encoding='utf-8')
+m=(r/'Source/MediaPasteExpansion.cpp').read_text(encoding='utf-8')
+h=(r/'Source/ExtractedCacheFilename.h').read_text(encoding='utf-8')
+w=(r/'.github/workflows/build-windows.yml').read_text(encoding='utf-8')
+s=(r/'Tools/build-windows.ps1').read_text(encoding='utf-8')
 assert 'menu.addItem(21, "Clear Extracted Audio Cache...")' in e
 assert 'menu.addItem(20, "Open Extracted Audio Cache Folder")' in e
 assert 'confirmOverwrite(' in e[e.index('void LSampler24AudioProcessorEditor::clearExtractedAudioCache()'):e.index('void LSampler24AudioProcessorEditor::showAdvancedMenu()')]
@@ -21,5 +21,5 @@ assert 'directory.findChildFiles(children, juce::File::findFiles, false)' in m
 assert 'isGeneratedFileName(file.getFileName().toStdString())' in m and 'file.deleteFile()' in m
 assert 'std::regex_match' in h
 assert 'LSampler24CacheCleanupTests' in s and 'extracted-cache-cleanup' in s
-assert 'LSampler-24-Windows-VST3-TEST184.zip' in w and 'verify-test183-cache-cleanup.py' in w
+assert 'LSampler-24-Windows-VST3-TEST185.zip' in w and 'verify-test183-cache-cleanup.py' in w
 print('PASS TEST183: confirmed user clear, generated-WAV filter, live references, worker/background, Windows CI')

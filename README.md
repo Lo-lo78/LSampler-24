@@ -1,3 +1,7 @@
+## TEST185 — controllo UTF-8 Windows / completamento GitHub Actions
+
+La TEST184 ha compilato il VST3 con MSVC e superato i test audio/C++, ma il workflow si è fermato in `verify-test183-cache-cleanup.py` per un `UnicodeDecodeError` causato dalla codifica predefinita cp1252 su Windows. La TEST185 corregge le sei letture usando UTF-8, imposta `PYTHONUTF8=1` per i test in CI, e verifica tutto prima della compilazione. Nessuna modifica al plugin rispetto alla TEST184. Vedi `RELEASE_TEST185.md`.
+
 ## TEST184 — correzione compilazione Windows (MediaPasteExpansion)
 
 Corretto il C++ in `Source/MediaPasteExpansion.cpp` (precedente riga 487): la
