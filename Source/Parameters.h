@@ -173,17 +173,28 @@ enum class P {
     lfo2_voice_mode,
     // TEST163: append only to preserve every TEST161 host ID and index.
     midi_channel,
+    // TEST186: ten new per-slot LFO controls, appended without shifting old IDs.
+    lfo1_drift_amount,
+    lfo1_drift_cycle,
+    lfo1_lace_source,
+    lfo1_lace_rate,
+    lfo1_lace_mix,
+    lfo2_drift_amount,
+    lfo2_drift_cycle,
+    lfo2_lace_source,
+    lfo2_lace_rate,
+    lfo2_lace_mix,
     count
 };
 // Append the new indices only. The first nine VST3 IDs/indices are frozen.
 enum class L { start, end, repeats, fade_in, fade_out, pitch_down, lp_down, hp_down, one_shot,
                repeat_pan, pitch_time, level, crossfade, downsample, pan, repeat_level, direction, count };
-inline constexpr int legacyParameterCount = 143, parameterCount = 160, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
+inline constexpr int legacyParameterCount = 143, parameterCount = 170, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
 static_assert(int(L::repeat_pan)==legacyLoopParameterCount && int(L::pitch_time)==10 && int(L::level)==11
               && int(L::crossfade)==12 && int(L::downsample)==13 && int(L::pan)==14
               && int(L::repeat_level)==15 && int(L::direction)==16 && int(L::count)==loopParameterCount);
 static_assert(int(P::lfo1_one_shot_percent)==legacyParameterCount &&
-              int(P::midi_channel)==159 && int(P::count)==parameterCount,
+              int(P::midi_channel)==159 && int(P::lfo1_drift_amount)==160 && int(P::count)==parameterCount,
               "Legacy parameter IDs must remain unchanged");
 inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"input_gain", "Level", "Slot", Kind::continuous, 0.0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""},
@@ -348,7 +359,17 @@ inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"lfo1_voice_mode", "LFO 1 Voice Mode", "LFO 1", Kind::enumeration, 1, 0, 1, 1, 1, "", 0, "Mono|Poly"},
 {"lfo2_voice_mode", "LFO 2 Voice Mode", "LFO 2", Kind::enumeration, 1, 0, 1, 1, 1, "", 0, "Mono|Poly"},
 // 0 = all MIDI channels (legacy behaviour). 1..16 are explicit MIDI channels.
-{"midi_channel", "MIDI Channel", "Slot", Kind::enumeration, 0, 0, 16, 1, 1, "", 0, "Omni|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16"}
+{"midi_channel", "MIDI Channel", "Slot", Kind::enumeration, 0, 0, 16, 1, 1, "", 0, "Omni|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16"},
+{"lfo1_drift_amount", "LFO 1 Drift Amount", "LFO 1", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
+{"lfo1_drift_cycle", "LFO 1 Drift Cycle", "LFO 1", Kind::integer, 5, 1, 32, 1, 1, "", 0, ""},
+{"lfo1_lace_source", "LFO 1 Lace Source", "LFO 1", Kind::enumeration, 0, 0, 2, 1, 1, "", 0, "Off|LFO 1|LFO 2"},
+{"lfo1_lace_rate", "LFO 1 Lace Rate", "LFO 1", Kind::integer, 4, 1, 32, 1, 1, "", 0, ""},
+{"lfo1_lace_mix", "LFO 1 Lace Mix", "LFO 1", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
+{"lfo2_drift_amount", "LFO 2 Drift Amount", "LFO 2", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
+{"lfo2_drift_cycle", "LFO 2 Drift Cycle", "LFO 2", Kind::integer, 5, 1, 32, 1, 1, "", 0, ""},
+{"lfo2_lace_source", "LFO 2 Lace Source", "LFO 2", Kind::enumeration, 0, 0, 2, 1, 1, "", 0, "Off|LFO 1|LFO 2"},
+{"lfo2_lace_rate", "LFO 2 Lace Rate", "LFO 2", Kind::integer, 4, 1, 32, 1, 1, "", 0, ""},
+{"lfo2_lace_mix", "LFO 2 Lace Mix", "LFO 2", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
 }};
 enum class GlobalP { master_output_gain, output_stage, bus_glue, bus_soft_drive, output_ceiling, count };
 inline constexpr int globalParameterCount = 5;
@@ -382,7 +403,7 @@ inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 }};
 enum class Action { none, sampleZero, loopZero };
 struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; int global = -1; };
-inline constexpr std::array<GridEntry, 184> grid {{
+inline constexpr std::array<GridEntry, 194> grid {{
 {int(P::input_gain), -1, Action::none, "Slot"},
 {int(P::polyphony), -1, Action::none, "Slot"},
 {int(P::slot_polyphony), -1, Action::none, "Slot"},
@@ -481,6 +502,11 @@ inline constexpr std::array<GridEntry, 184> grid {{
 {int(P::lfo1_upper_squash), -1, Action::none, "LFO 1"},
 {int(P::lfo1_lower_squash), -1, Action::none, "LFO 1"},
 {int(P::lfo1_cross_rate), -1, Action::none, "LFO 1"},
+{int(P::lfo1_drift_amount), -1, Action::none, "LFO 1"},
+{int(P::lfo1_drift_cycle), -1, Action::none, "LFO 1"},
+{int(P::lfo1_lace_source), -1, Action::none, "LFO 1"},
+{int(P::lfo1_lace_rate), -1, Action::none, "LFO 1"},
+{int(P::lfo1_lace_mix), -1, Action::none, "LFO 1"},
 {int(P::lfo1_volume_depth), -1, Action::none, "LFO 1"},
 {int(P::lfo1_pan_depth), -1, Action::none, "LFO 1"},
 {int(P::lfo1_lp_depth), -1, Action::none, "LFO 1"},
@@ -502,6 +528,11 @@ inline constexpr std::array<GridEntry, 184> grid {{
 {int(P::lfo2_upper_squash), -1, Action::none, "LFO 2"},
 {int(P::lfo2_lower_squash), -1, Action::none, "LFO 2"},
 {int(P::lfo2_cross_rate), -1, Action::none, "LFO 2"},
+{int(P::lfo2_drift_amount), -1, Action::none, "LFO 2"},
+{int(P::lfo2_drift_cycle), -1, Action::none, "LFO 2"},
+{int(P::lfo2_lace_source), -1, Action::none, "LFO 2"},
+{int(P::lfo2_lace_rate), -1, Action::none, "LFO 2"},
+{int(P::lfo2_lace_mix), -1, Action::none, "LFO 2"},
 {int(P::lfo2_volume_depth), -1, Action::none, "LFO 2"},
 {int(P::lfo2_pan_depth), -1, Action::none, "LFO 2"},
 {int(P::lfo2_lp_depth), -1, Action::none, "LFO 2"},

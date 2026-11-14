@@ -18,9 +18,11 @@ workflow = (root / '.github/workflows/build-windows.yml').read_text(encoding='ut
 enum = parameters.split('enum class P {', 1)[1].split('    count\n', 1)[0]
 keys = [line.strip().rstrip(',') for line in enum.splitlines()
         if line.strip() and not line.strip().startswith('//')]
-assert len(keys) == 160 and keys[-3:] == ['lfo1_voice_mode', 'lfo2_voice_mode', 'midi_channel']
-assert 'parameterCount = 160' in parameters
-assert 'inline constexpr std::array<GridEntry, 184> grid' in parameters
+assert len(keys) == 170 and keys[157:160] == ['lfo1_voice_mode', 'lfo2_voice_mode', 'midi_channel']
+assert keys[160:]==['lfo1_drift_amount','lfo1_drift_cycle','lfo1_lace_source','lfo1_lace_rate','lfo1_lace_mix',
+                    'lfo2_drift_amount','lfo2_drift_cycle','lfo2_lace_source','lfo2_lace_rate','lfo2_lace_mix']
+assert 'parameterCount = 170' in parameters
+assert 'inline constexpr std::array<GridEntry, 194> grid' in parameters
 assert '{int(P::midi_channel), -1, Action::none, "Slot"}' in parameters
 assert '{"midi_channel", "MIDI Channel", "Slot", Kind::enumeration, 0, 0, 16' in parameters
 assert '"Omni|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16"' in parameters
@@ -44,11 +46,11 @@ assert 'v.channel==channel' in voices.split('void GlobalVoicePool::choke(',1)[1]
 assert 'if (!p.acceptsMidiChannel(ch)) continue;' in voices
 
 # Exposed version and new localized documentation must correspond to the artifact.
-assert 'constexpr auto lsamplerVersion = "0.99.26";' in editor
-assert any(f'constexpr auto lsamplerReleaseDate = "{date}";' in editor for date in ('8 November 2026',))
-assert 'project(LSampler24 VERSION 0.99.26' in (root/'CMakeLists.txt').read_text()
-assert 'LSampler-24.0.99.26.vst3.zip' in workflow
-assert 'BUILD_0.99.26.txt' in workflow
+assert 'constexpr auto lsamplerVersion = "0.99.27";' in editor
+assert any(f'constexpr auto lsamplerReleaseDate = "{date}";' in editor for date in ('14 November 2026',))
+assert 'project(LSampler24 VERSION 0.99.27' in (root/'CMakeLists.txt').read_text()
+assert 'LSampler-24.0.99.27.vst3.zip' in workflow
+assert 'BUILD_0.99.27.txt' in workflow
 assert 'FILTER_TEST62_REPORT.txt' in workflow
 assert 'python Tools/verify-test163-midi-routing.py' in workflow
 for lang in ('en','it','es','pt','fr','ru','zh','ja'):

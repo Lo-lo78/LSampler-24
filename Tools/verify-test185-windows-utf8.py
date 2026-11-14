@@ -17,7 +17,7 @@ for node in read_calls:
                for k in node.keywords), 'Windows platform-dependent text decoding detected'
 workflow = (root / '.github/workflows/build-windows.yml').read_text(encoding='utf-8')
 assert 'PYTHONUTF8:' in workflow and 'verify-test185-windows-utf8.py' in workflow
-assert 'LSampler-24.0.99.26.vst3.zip' in workflow
+assert 'LSampler-24.0.99.27.vst3.zip' in workflow
 result = subprocess.run([sys.executable, str(script)], cwd=str(root),
                         capture_output=True, text=True, encoding='utf-8')
 if result.returncode:

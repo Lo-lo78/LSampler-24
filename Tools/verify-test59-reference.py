@@ -20,7 +20,7 @@ mutable_candidate_dependencies = {
 # Approve only the exact extended candidate header; do NOT loosen protection
 # of the frozen renderer or other shared DSP dependencies.
 approved_candidate_hashes = {
-    'Source/Parameters.h': 'abb32d7408a38fd4e07b053324b9ac36f0c5cf812d50c0a4c68c68342636e6bb',
+    'Source/Parameters.h': '5524d671e17f7ff6bb800a199369476c3b20addc8ed3c1733f5cc6f018d20943',
 }
 
 # The 143 parameter IDs and descriptors that existed before TEST160 must be
@@ -29,6 +29,8 @@ approved_candidate_hashes = {
 # recorded from the supplied, unmodified TEST159 source catalog.
 legacy_enum_sha256 = 'acc9479c38c54ac74975e3f48e54f38103cf95717d6ef2d61842f18fa9182687'
 legacy_descriptors_sha256 = '405a2ca52967128ee9f57ac6d03fb01e3c26fa9a65515bbbc4b84f7d9de6433b'
+pre186_names_sha256 = 'd1d4ce5ec6f49839d71d51d3b729a1af8efd7e90ecfd989bc0d18c4721549e68'
+pre186_descriptors_sha256 = 'ace7afcdde6c460b2df659d8f02f33410f3107b66f71eeb414b45489014b20c0'
 
 def legacy_catalog_entries(source):
     enum = source.split('enum class P {', 1)[1].split('    count\n', 1)[0]
@@ -42,12 +44,16 @@ def legacy_catalog_entries(source):
 try:
     source = (root / 'Source/Parameters.h').read_text(encoding='utf-8').replace('\r\n', '\n')
     enum_names, descriptors = legacy_catalog_entries(source)
-    if len(enum_names) != 160 or len(descriptors) != 160:
-        errors.append('TEST163 parameter count (expected 143 legacy + 17 added)')
+    if len(enum_names) != 170 or len(descriptors) != 170:
+        errors.append('TEST186 parameter count (expected 160 existing + 10 LFO additions)')
     if hashlib.sha256('\n'.join(enum_names[:143]).encode('utf-8')).hexdigest() != legacy_enum_sha256:
         errors.append('TEST160 changed original 143 enum IDs or their order')
     if hashlib.sha256('\n'.join(descriptors[:143]).encode('utf-8')).hexdigest() != legacy_descriptors_sha256:
         errors.append('TEST160 changed original 143 parameter descriptors')
+    if hashlib.sha256('\n'.join(enum_names[:160]).encode('utf-8')).hexdigest() != pre186_names_sha256:
+        errors.append('TEST186 changed one of the original 160 parameter IDs')
+    if hashlib.sha256('\n'.join(descriptors[:160]).encode('utf-8')).hexdigest() != pre186_descriptors_sha256:
+        errors.append('TEST186 changed one of the original 160 parameter descriptors')
 except (OSError, IndexError, ValueError):
     errors.append('TEST160 cannot parse parameter catalog')
 for relative, expected in manifest.items():

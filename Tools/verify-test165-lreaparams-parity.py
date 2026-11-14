@@ -30,10 +30,10 @@ assert 'std::wstring(bankEntryName(' in editor
 assert 'static const wchar_t* labels[] = {L"Velocity Low", L"Velocity High", L"Pitch", L"Octave", L"Pan", L"Volume", L"Delay"}' in editor
 assert 'std::wstring(juce::String(' in fx
 assert 'parameterSearch.next(' in slice
-assert 'constexpr auto lsamplerVersion = "0.99.26"' in editor
-assert 'LSampler-24.0.99.26.vst3.zip' in workflow
+assert 'constexpr auto lsamplerVersion = "0.99.27"' in editor
+assert 'LSampler-24.0.99.27.vst3.zip' in workflow
 assert 'verify-test165-lreaparams-parity.py' in workflow
-assert 'project(LSampler24 VERSION 0.99.26 ' in (r/'CMakeLists.txt').read_text()
+assert 'project(LSampler24 VERSION 0.99.27 ' in (r/'CMakeLists.txt').read_text()
 assert 'add_test(NAME incremental-search COMMAND LSampler24SearchTests)' in (r/'CMakeLists.txt').read_text()
 assert 'LSampler24SearchTests' in (r/'Tools/build-windows.ps1').read_text()
 for lang in ('en','it','es','pt','fr','ru','zh','ja'):

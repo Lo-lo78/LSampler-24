@@ -17,7 +17,7 @@ assert 'lsampler_media_paste::isCandidate(entry.file)' in p
 assert 'slotCopyIsLatest && GetClipboardSequenceNumber() == slotCopySequence' in p
 assert 'p.importSampleToSlot(item.file, entry.slot,' in e
 assert '_BR_TSOURCE_PATH_TO_CLIPBOARD' in (r/'TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt').read_text(encoding='utf-8')
-assert 'LSampler-24.0.99.26.vst3.zip' in w
+assert 'LSampler-24.0.99.27.vst3.zip' in w
 assert 'Tools/verify-test169-sws-source-paths.py' in w
 assert 'LSampler24ClipboardTests' in (r/'CMakeLists.txt').read_text(encoding='utf-8')
 assert 'clipboard-paths' in (r/'Tools/build-windows.ps1').read_text(encoding='utf-8')

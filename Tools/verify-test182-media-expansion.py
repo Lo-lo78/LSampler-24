@@ -33,6 +33,6 @@ assert 'trackCount(int channels)' in g and 'pairAt(int channels, int index)' in 
 assert 'LSampler24MediaPasteTests' in script and 'media-paste-grouping' in script
 assert 'mfplat mfreadwrite mfuuid' in cm
 assert 'verify-test182-media-expansion.py' in workflow
-assert 'LSampler-24.0.99.26.vst3.zip' in workflow
+assert 'LSampler-24.0.99.27.vst3.zip' in workflow
 assert (r / 'RELEASE_TEST182.md').exists()
 print('PASS TEST182: video/AAC decoding, stereo-pair expansion, preserved mono/stereo, persistence, CI, no-block UI')

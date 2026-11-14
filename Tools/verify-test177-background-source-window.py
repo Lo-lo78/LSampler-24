@@ -39,6 +39,6 @@ assert 'slot.sourceWindowEndFrame = endFrame;' in restore
 assert 'slot.sampleAudioModified = (editedAudio.isValid() || sourceWindow.isValid())' in restore
 assert 'slot.sourceWindowFirstFrame = -1;' in processor and 'slot.sourceWindowEndFrame = -1;' in processor
 assert 'TEST177' in workflow and 'verify-test177-background-source-window.py' in workflow
-assert ('LSampler-24-Windows-VST3-TEST177' in workflow or 'LSampler-24-Windows-VST3-TEST178' in workflow or 'LSampler-24.0.99.26.vst3.zip' in workflow)
+assert ('LSampler-24-Windows-VST3-TEST177' in workflow or 'LSampler-24-Windows-VST3-TEST178' in workflow or 'LSampler-24.0.99.27.vst3.zip' in workflow)
 assert (root / 'RELEASE_TEST177.md').exists()
 print('PASS TEST177: background REAPER import, progress per chunk, source reuse, frame-exact state, no inline audio or hashing in host state')

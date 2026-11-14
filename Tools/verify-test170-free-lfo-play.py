@@ -43,6 +43,6 @@ assert 'if((*states)[size_t(slot)].lfo[size_t(i)].trigger)continue;' in voice
 assert 'LSampler24FreeLfoTests' in cmake
 assert 'free-lfo-transport' in (r/'Tools/build-windows.ps1').read_text(encoding='utf-8')
 assert 'Tools/verify-test170-free-lfo-play.py' in workflow
-assert 'LSampler-24.0.99.26.vst3.zip' in workflow
+assert 'LSampler-24.0.99.27.vst3.zip' in workflow
 assert 'TEST170' in (r/'Help/LSampler24Help.html').read_text(encoding='utf-8')
 print('PASS TEST170: Free LFO host restart, mono/poly S&H RNG isolation, idle processing and metadata')

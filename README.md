@@ -1,6 +1,23 @@
-# LSampler-24 — Versione 0.99.26
+# LSampler-24 — Versione 0.99.27 TEST186
 
-**Release date: 8 November 2026 · Windows x64 VST3 · REAPER / OSARA / NVDA**
+**Data TEST: 14 November 2026 · Windows x64 VST3 · REAPER / OSARA / NVDA**
+
+Questa TEST186 parte dalla release pubblica **0.99.26** e aggiunge LFO Phase Drift
+ed LFO Lace in entrambi gli LFO dei 24 Slot. Funzioni completamente
+accessibili da Grid/Value e automazione REAPER, senza alterare i preset.
+Consulta `RELEASE_0.99.27.md` per i valori, la compatibilità e la prova sonora.
+
+## Nuovo in 0.99.27 TEST186: due LFO poliritmici per Slot
+
+- Drift Amount e Drift Cycle generano un movimento della fase che torna identico
+  dopo il numero scelto di cicli, senza aumentare la velocità dell'LFO.
+- Lace Source (Off, LFO 1, LFO 2), Lace Rate e Lace Mix intrecciano i LFO.
+  Ogni LFO può utilizzare anche sé stesso come sorgente.
+- Le sei forme d'onda esistenti, Sample Hold incluso, rimangono utilizzabili.
+- Compatibile con Mono/Poly, Free/Trigger e sincronizzazione BPM.
+- I cinque controlli per ciascun LFO sono indipendenti per ogni Slot.
+
+## Storico della release 0.99.26
 
 Questa è la release pubblica successiva alla 0.99.25, basata sul sorgente TEST185
 provato in REAPER. Nessuna modifica al DSP o alla logica del caricamento rispetto

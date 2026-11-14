@@ -39,9 +39,9 @@ assert 'test166DeclickTransitions();' in tests
 assert all(x in tests for x in ('mono retrigger', 'mono genuine legato', 'poly same-note replace', 'poly cap steal'))
 assert all(x in ui_tests for x in ('TEST166 End cannot cross Start','TEST166 Start cannot cross End',
                                    'TEST166 Start slider maximum','TEST166 End slider minimum'))
-assert 'project(LSampler24 VERSION 0.99.26' in (r/'CMakeLists.txt').read_text()
-assert 'constexpr auto lsamplerVersion = "0.99.26"' in editor
-assert 'LSampler-24.0.99.26.vst3.zip' in workflow
+assert 'project(LSampler24 VERSION 0.99.27' in (r/'CMakeLists.txt').read_text()
+assert 'constexpr auto lsamplerVersion = "0.99.27"' in editor
+assert 'LSampler-24.0.99.27.vst3.zip' in workflow
 assert 'Tools/verify-test166-declick-bounds.py' in workflow
 # Frozen reference must never be touched by bugfix tests.
 assert (r/'Tests/ReferenceTEST59/SamplerVoice.cpp').is_file()

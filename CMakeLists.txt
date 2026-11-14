@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(LSampler24 VERSION 0.99.26 LANGUAGES C CXX)
+project(LSampler24 VERSION 0.99.27 LANGUAGES C CXX)
 
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -65,6 +65,7 @@ target_sources(LSampler24 PRIVATE
     Source/SamplerVoice.cpp
     Source/SamplerVoice.h
     Source/FreeLfoTransport.h
+    Source/LfoPolyrhythm.h
     Source/SliceState.h
     Source/SliceState.cpp
     Source/SliceEngine.h
@@ -154,6 +155,11 @@ if(LSAMPLER_BUILD_FILTER_TESTS)
     add_executable(LSampler24CacheCleanupTests Tests/ExtractedCacheFilenameTests.cpp)
     target_compile_features(LSampler24CacheCleanupTests PRIVATE cxx_std_17)
     add_test(NAME extracted-cache-cleanup COMMAND LSampler24CacheCleanupTests)
+
+    # TEST186: JUCE-independent Drift/Lace sound-engine regression.
+    add_executable(LSampler24PolyrhythmTests Tests/LfoPolyrhythmTests.cpp)
+    target_compile_features(LSampler24PolyrhythmTests PRIVATE cxx_std_17)
+    add_test(NAME lfo-polyrhythm COMMAND LSampler24PolyrhythmTests)
 
     # TEST170: JUCE-independent real transport detector/Free S&H seed test.
     add_executable(LSampler24FreeLfoTests Tests/FreeLfoTransportTests.cpp)

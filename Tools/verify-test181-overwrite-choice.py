@@ -26,6 +26,6 @@ assert 'std::shared_ptr<SharedSample> cachedSource' in worker
 assert 'if (mapping.lowKey <= double(note) && double(note) <= mapping.highKey)' in h
 assert 'if (slots[static_cast<std::size_t>(destination)].hasAudio && !overwrite)' in h
 assert 'if (static_cast<std::size_t>(destination) >= N) return {};' in h
-assert 'LSampler-24.0.99.26.vst3.zip' in w
+assert 'LSampler-24.0.99.27.vst3.zip' in w
 assert 'verify-test181-overwrite-choice.py' in w
 print('PASS TEST181: per-slot Y/N/Escape planning, keep occupied audio on N, relocate same file, unused keys, async worker')

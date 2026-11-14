@@ -14,8 +14,8 @@ namespace
 {
 constexpr std::array<int, 5> stepWidths { 1, 5, 10, 15, 20 };
 constexpr int valuePageStep = 40;
-constexpr auto lsamplerVersion = "0.99.26";
-constexpr auto lsamplerReleaseDate = "8 November 2026";
+constexpr auto lsamplerVersion = "0.99.27";
+constexpr auto lsamplerReleaseDate = "14 November 2026";
 constexpr auto lsamplerProjectUrl = "https://github.com/Lo-lo78/LSampler-24";
 constexpr auto lsamplerContactEmail = "vmanolo301@gmail.com";
 
@@ -295,6 +295,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
 
     const auto aboutText = juce::String("LSampler-24\nVersion: ") + lsamplerVersion
         + "\nRelease date: " + lsamplerReleaseDate
+        + "\nNew in 0.99.27 TEST186: LFO1/2 Phase Drift and Lace, including Self-Lace, with repeatable cycles."
         + "\nNew in 0.99.26: Alt+V imports REAPER items, Explorer audio and supported video/AAC."
         + "\nMultichannel files: consecutive stereo pairs, deterministic MIDI mapping and Y/N slot overwrite."
         + "\nAdvanced (Alt+T): open or clear the extracted audio cache with confirmation."

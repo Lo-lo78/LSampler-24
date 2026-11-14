@@ -44,7 +44,7 @@ struct Rig {
 };
 void catalogTests() {
     SlotParameters p;require(p[P::root]==60&&p[P::low]==0&&p[P::high]==127,"Approved mapping defaults");
-    require(legacyParameterCount==143&&parameterCount==160&&loopCount==10,
+    require(legacyParameterCount==143&&parameterCount==170&&loopCount==10,
             "Stable legacy IDs and TEST163 MIDI Channel catalog");
     require(p[P::midi_channel]==0 && p.acceptsMidiChannel(0) && p.acceptsMidiChannel(15),
             "Omni default receives channels 1 to 16");
@@ -102,6 +102,17 @@ void extendedLfoTests() {
     const auto prepared2=prepareSlotAudioState(p,&r.sample,48000,124);
     require(prepared2.lfo[1].envRate==-2&&prepared2.lfo[1].crossRate==-4,
             "Both LFOs have independent ADSR and cross rate controls");
+    p[P::lfo1_drift_amount]=.75;p[P::lfo1_drift_cycle]=7;
+    p[P::lfo1_lace_source]=1;p[P::lfo1_lace_rate]=8;p[P::lfo1_lace_mix]=.6;
+    p[P::lfo2_drift_amount]=.4;p[P::lfo2_drift_cycle]=5;
+    p[P::lfo2_lace_source]=2;p[P::lfo2_lace_rate]=3;p[P::lfo2_lace_mix]=.3;
+    const auto p186=prepareSlotAudioState(p,&r.sample,48000,186);
+    require(p186.lfo[0].driftAmount==.75 && p186.lfo[0].driftCycle==7
+        && p186.lfo[0].laceSource==1 && p186.lfo[0].laceRate==8 && p186.lfo[0].laceMix==.6,
+        "TEST186 LFO1 self-Lace and Drift snapshot");
+    require(p186.lfo[1].driftAmount==.4 && p186.lfo[1].driftCycle==5
+        && p186.lfo[1].laceSource==2 && p186.lfo[1].laceRate==3 && p186.lfo[1].laceMix==.3,
+        "TEST186 LFO2 self-Lace and Drift snapshot");
     std::cout<<"PASS extended LFO PWM, squash, phase, one shot and rate sources\n";
 }
 void cleanAndBypassTests() {

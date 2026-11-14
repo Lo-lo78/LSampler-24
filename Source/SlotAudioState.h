@@ -17,6 +17,8 @@ struct LfoSettings {
     // TEST160: Juno-style waveform shape, phase, partial one-shot and rate modulation.
     double oneShotPercent = 1, phaseOffset = 0, envRate = 0, squarePwm = .5;
     double upperSquash = 0, lowerSquash = 0, crossRate = 0;
+    double driftAmount = 0, laceMix = 0;
+    int driftCycle = 5, laceSource = 0, laceRate = 4;
     double volume = 0, pan = 0, lp = 0, hp = 0, pitch = 0, move = 0, wheel = 0;
 };
 struct FilterCoefficients {

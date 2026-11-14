@@ -44,7 +44,7 @@ private:
         double tick(const lsampler::EnvelopeSettings&) noexcept;
         void release() noexcept { if(phase!=0)phase=4; }
     };
-    struct Lfo { double phase=0,output=0,hold=0; uint64_t age=0; uint32_t freeRandomState=1; };
+    struct Lfo { double phase=0,output=0,hold=0,previousAudible=0; uint64_t age=0,cycles=0; uint32_t freeRandomState=1; };
     struct Filter { double band[2]{},low[2]{}; };
     struct Voice {
         lsampler::SlicePlayback slice;
@@ -85,11 +85,11 @@ private:
     double random(Voice&) noexcept;
     double oscillator(Voice&,double phase,int wave,bool lfo=false) noexcept;
     double lfoTick(Voice&,int index,const lsampler::LfoSettings&,double wheel,
-                   double envelopeSource,double crossSource) noexcept;
+                   double envelopeSource,double crossSource,double laceSource) noexcept;
     double lfoTickState(Lfo&,uint32_t& randomState,const lsampler::LfoSettings&,double phaseIncrement,
-                        double envelopeSource,double crossSource) noexcept;
+                        double envelopeSource,double crossSource,double laceSource) noexcept;
     double lfoTickPrepared(Voice&,int index,const lsampler::LfoSettings&,double phaseIncrement,
-                           double envelopeSource,double crossSource) noexcept;
+                           double envelopeSource,double crossSource,double laceSource) noexcept;
     double read(const Voice&,const lsampler::SlotAudioState&,double position,int channel) const noexcept;
     void processEffects(Voice&,const lsampler::SlotAudioState&,double& left,double& right);
     void applyMachine(Voice&,const lsampler::SlotAudioState&,double& left,double& right) noexcept;
@@ -111,6 +111,7 @@ private:
     std::array<bool,16> pedal {};
     std::array<double,16> bend {},wheel {};
     std::array<std::array<double,2>,slotCount> freePhase {};
+    std::array<std::array<uint64_t,2>,slotCount> freeCycles {};
     // TEST161: independent common LFOs for each of the 24 slots. Scratch is
     // fixed-capacity; rendering splits unusually large blocks, never allocates.
     static constexpr int monoLfoChunk = 512;
@@ -123,6 +124,7 @@ private:
     bool hostFreeLfoTransportStarted = false;
     std::array<std::array<std::array<double,monoLfoChunk>,2>,slotCount> monoLfoSamples {};
     std::array<std::array<std::array<double,monoLfoChunk>,2>,slotCount> monoLfoCoreSamples {};
+    std::array<std::array<std::array<double,monoLfoChunk>,2>,slotCount> monoLfoPreviousAudibleSamples {};
     void retriggerMonoLfos(int slot,const lsampler::SlotAudioState&) noexcept;
     void initialiseFreeVoiceLfo(Voice&,int index) noexcept;
     std::array<int,slotCount> activePerSlot {};
