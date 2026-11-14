@@ -20,7 +20,7 @@ mutable_candidate_dependencies = {
 # Approve only the exact extended candidate header; do NOT loosen protection
 # of the frozen renderer or other shared DSP dependencies.
 approved_candidate_hashes = {
-    'Source/Parameters.h': '5524d671e17f7ff6bb800a199369476c3b20addc8ed3c1733f5cc6f018d20943',
+    'Source/Parameters.h': '8ba9a8a11c2936121fabc7b2b28ac3038381e9d17da2164a974d0358b33d26d6',
 }
 
 # The 143 parameter IDs and descriptors that existed before TEST160 must be

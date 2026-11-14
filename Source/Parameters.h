@@ -362,12 +362,12 @@ inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"midi_channel", "MIDI Channel", "Slot", Kind::enumeration, 0, 0, 16, 1, 1, "", 0, "Omni|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16"},
 {"lfo1_drift_amount", "LFO 1 Drift Amount", "LFO 1", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
 {"lfo1_drift_cycle", "LFO 1 Drift Cycle", "LFO 1", Kind::integer, 5, 1, 32, 1, 1, "", 0, ""},
-{"lfo1_lace_source", "LFO 1 Lace Source", "LFO 1", Kind::enumeration, 0, 0, 2, 1, 1, "", 0, "Off|LFO 1|LFO 2"},
+{"lfo1_lace_source", "LFO 1 Lace Source", "LFO 1", Kind::enumeration, 0, 0, 2, 1, 1, "", 0, "Off|LFO 1 (Self)|LFO 2"},
 {"lfo1_lace_rate", "LFO 1 Lace Rate", "LFO 1", Kind::integer, 4, 1, 32, 1, 1, "", 0, ""},
 {"lfo1_lace_mix", "LFO 1 Lace Mix", "LFO 1", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
 {"lfo2_drift_amount", "LFO 2 Drift Amount", "LFO 2", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
 {"lfo2_drift_cycle", "LFO 2 Drift Cycle", "LFO 2", Kind::integer, 5, 1, 32, 1, 1, "", 0, ""},
-{"lfo2_lace_source", "LFO 2 Lace Source", "LFO 2", Kind::enumeration, 0, 0, 2, 1, 1, "", 0, "Off|LFO 1|LFO 2"},
+{"lfo2_lace_source", "LFO 2 Lace Source", "LFO 2", Kind::enumeration, 0, 0, 2, 1, 1, "", 0, "Off|LFO 1|LFO 2 (Self)"},
 {"lfo2_lace_rate", "LFO 2 Lace Rate", "LFO 2", Kind::integer, 4, 1, 32, 1, 1, "", 0, ""},
 {"lfo2_lace_mix", "LFO 2 Lace Mix", "LFO 2", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
 }};
@@ -605,6 +605,13 @@ inline const Descriptor& descriptor(const GridEntry& e) noexcept {
          : e.global >= 0 ? globalParameters[size_t(e.global)]
          : e.loop >= 0 ? loopParameters[size_t(e.loop)]
          : parameters[size_t(e.parameter)];
+}
+// TEST187: the global editor value step (1, 5, 10, 15, 20) must not
+// skip Lace Source's middle choice. Keep Off=0, LFO1=1, LFO2=2 for
+// existing presets, saved slot banks, and VST3 host automation.
+inline constexpr double laceSourceNavigationStep(int parameter, double requestedStep) noexcept {
+    return parameter == int(P::lfo1_lace_source) || parameter == int(P::lfo2_lace_source)
+        ? 1.0 : requestedStep;
 }
 inline double sanitise(const Descriptor& d, double v) noexcept {
     if (!std::isfinite(v)) return d.initial;

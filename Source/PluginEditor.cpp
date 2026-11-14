@@ -296,6 +296,7 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
     const auto aboutText = juce::String("LSampler-24\nVersion: ") + lsamplerVersion
         + "\nRelease date: " + lsamplerReleaseDate
         + "\nNew in 0.99.27 TEST186: LFO1/2 Phase Drift and Lace, including Self-Lace, with repeatable cycles."
+        + "\nTEST187: Lace Source explicitly marks Self; every option is accessible regardless of Grid step width."
         + "\nNew in 0.99.26: Alt+V imports REAPER items, Explorer audio and supported video/AAC."
         + "\nMultichannel files: consecutive stereo pairs, deterministic MIDI mapping and Y/N slot overwrite."
         + "\nAdvanced (Alt+T): open or clear the extracted audio cache with confirmation."
@@ -1683,7 +1684,13 @@ void LSampler24AudioProcessorEditor::changeSelectedParameterValue(int direction,
     const double baseStep = d.step;
     const double multiplier = static_cast<double>(stepWidths[static_cast<size_t>(stepWidthIndex)])
                             * (coarse ? static_cast<double>(valuePageStep) : 1.0);
-    const double step = selectedRateIsSynced()?.125:baseStep*multiplier;
+    // TEST187: never skip Self-Lace while Grid step width is 5/10/15/20,
+    // or while using coarse PageUp/PageDown. Every LFO Lace Source option
+    // is visited in sequence, independently of the global value step.
+    const double requestedStep = selectedRateIsSynced() ? .125 : baseStep*multiplier;
+    const double step = (!bankMacroOpen || bankMacroUniform) && selectedEntry().loop < 0
+        ? lsampler::laceSourceNavigationStep(selectedEntry().parameter, requestedStep)
+        : requestedStep;
     const double maximum = bankMacroOpen && !bankMacroUniform ? (d.maximum - d.minimum) : d.maximum;
     const double minimum = bankMacroOpen && !bankMacroUniform ? -(d.maximum - d.minimum)
                                                               : (selectedRateIsSynced()?.125:d.minimum);

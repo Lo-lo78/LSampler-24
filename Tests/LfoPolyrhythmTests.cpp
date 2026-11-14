@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstdint>
 #include <iostream>
+#include <string>
 int main() {
     using namespace lsampler;
     static_assert(parameterCount==170 && int(P::midi_channel)==159);
@@ -13,6 +14,29 @@ int main() {
         assert(parameters[static_cast<size_t>(i)].initial >= parameters[static_cast<size_t>(i)].minimum);
         assert(parameters[static_cast<size_t>(i)].initial <= parameters[static_cast<size_t>(i)].maximum);
     }
+    // TEST187: first and last choices remain stable; the middle Self
+    // source must be reachable even after the user selects Step 5 or 20.
+    const auto& source1 = parameters[size_t(P::lfo1_lace_source)];
+    const auto& source2 = parameters[size_t(P::lfo2_lace_source)];
+    assert(source1.minimum == 0 && source1.maximum == 2 && source1.initial == 0);
+    assert(source2.minimum == 0 && source2.maximum == 2 && source2.initial == 0);
+    assert(std::string(source1.labels) == "Off|LFO 1 (Self)|LFO 2");
+    assert(std::string(source2.labels) == "Off|LFO 1|LFO 2 (Self)");
+    for(int selectedStep: {1,5,10,15,20}) {
+        for(int parameter: {int(P::lfo1_lace_source), int(P::lfo2_lace_source)}) {
+            assert(laceSourceNavigationStep(parameter, double(selectedStep)) == 1.0);
+            assert(laceSourceNavigationStep(parameter, double(selectedStep*10)) == 1.0);
+            double current = 0;
+            current = sanitise(parameters[size_t(parameter)],
+                              current + laceSourceNavigationStep(parameter,double(selectedStep)));
+            assert(current == 1);
+            current = sanitise(parameters[size_t(parameter)], current + laceSourceNavigationStep(parameter,20.));
+            assert(current == 2);
+            current = sanitise(parameters[size_t(parameter)], current - laceSourceNavigationStep(parameter,20.));
+            assert(current == 1);
+        }
+    }
+    assert(laceSourceNavigationStep(int(P::lfo1_rate),10.0)==10.0);
     for(double phase: {0.,0.17,0.50,0.91}) {
         assert(driftPhase(phase,0,0.8,7)==phase);
         assert(driftPhase(phase,9,0.,7)==phase);
@@ -33,5 +57,5 @@ int main() {
         assert(std::isfinite(current));assert(std::abs(current)<=1.000001);
         prev=current;
     }
-    std::cout<<"PASS TEST186 LFO Drift/Lace cycle parity and Self-Lace\n";
+    std::cout<<"PASS TEST187 LFO Self-Lace choice navigation, Drift/Lace parity\n";
 }

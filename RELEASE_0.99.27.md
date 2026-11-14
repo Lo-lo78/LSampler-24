@@ -1,9 +1,20 @@
-# LSampler-24 0.99.27 TEST186 — LFO Phase Drift e Lace
+# LSampler-24 0.99.27 TEST187 — LFO Phase Drift e Lace
 
 Data TEST: 14 November 2026 · Windows x64 VST3 · Source / GitHub Actions.
 
 Sorgente derivato integralmente dalla release 0.99.26 TEST185. Non sostituisce
 la release pubblica finché la build MSVC e l'ascolto in REAPER non vengono verificati.
+
+## Correzione TEST187: Self-Lace selezionabile con qualsiasi step
+
+La TEST186 conteneva gia il DSP Self-Lace, ma con gli step generali della
+Griglia maggiori di 1 l'editor poteva saltare da Off a LFO 2. Ora la
+navigazione per Lace Source avanza sempre di **una opzione** anche con
+Step 5, 10, 15, 20 o PageUp/PageDown.
+
+- LFO 1: Off / LFO 1 (Self) / LFO 2.
+- LFO 2: Off / LFO 1 / LFO 2 (Self).
+- Nessun cambio ai valori numerici, agli ID VST3 o al motore audio.
 
 ## Nuove funzioni su entrambi gli LFO, indipendenti per ciascuno dei 24 slot
 

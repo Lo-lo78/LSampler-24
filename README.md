@@ -1,4 +1,4 @@
-# LSampler-24 — Versione 0.99.27 TEST186
+# LSampler-24 — Versione 0.99.27 TEST187
 
 **Data TEST: 14 November 2026 · Windows x64 VST3 · REAPER / OSARA / NVDA**
 
@@ -6,6 +6,15 @@ Questa TEST186 parte dalla release pubblica **0.99.26** e aggiunge LFO Phase Dri
 ed LFO Lace in entrambi gli LFO dei 24 Slot. Funzioni completamente
 accessibili da Grid/Value e automazione REAPER, senza alterare i preset.
 Consulta `RELEASE_0.99.27.md` per i valori, la compatibilità e la prova sonora.
+
+## TEST187: scelta Self-Lace accessibile
+
+- In **LFO 1 Lace Source**: Off, **LFO 1 (Self)**, LFO 2.
+- In **LFO 2 Lace Source**: Off, LFO 1, **LFO 2 (Self)**.
+- Alt+Su/Giù e PageUp/PageDown cambiano una voce alla volta per Lace Source,
+  anche se lo step generale della griglia è 5, 10, 15 o 20.
+- Restano invariati i valori salvati (Off=0, LFO1=1, LFO2=2), gli ID,
+  le automazioni e il DSP Mono/Poly della TEST186.
 
 ## Nuovo in 0.99.27 TEST186: due LFO poliritmici per Slot
 

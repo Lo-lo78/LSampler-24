@@ -78,6 +78,12 @@ jobs:
           python Tools/verify-test186-lfo-polyrhythm.py
           if ($LASTEXITCODE -ne 0) { throw "TEST186 LFO Drift/Lace regression failed." }
 
+      - name: Verify TEST187 Self-Lace selectable at all grid step widths
+        shell: powershell
+        run: |
+          python Tools/verify-test187-self-lace-selection.py
+          if ($LASTEXITCODE -ne 0) { throw "TEST187 Self-Lace option regression failed." }
+
       - name: Verify TEST170 deterministic Free LFO on DAW Play
         shell: powershell
         run: |
