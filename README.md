@@ -59,6 +59,12 @@ le estrazioni da video e multicanale producono WAV persistenti in
 usa Save Slot / Save Bank; per trasferire progetti che usano WAV estratti, porta
 con te anche tali WAV fino al consolidamento.
 
+## TEST188 — AHDSR Hold su tutti gli inviluppi di Slot
+
+Aggiunti **Env Hold**, **LP Env Hold** e **HP Env Hold**: tre tempi indipendenti per ciascuno dei 24 Slot. I parametri compaiono immediatamente dopo i rispettivi Attack in Grid/Value e sono disponibili per automazione REAPER (Ctrl+Shift+A) e Bank Macro. Intervallo 0–5 s con precisione di 1 ms, valore predefinito 0: nessuna variazione dei vecchi preset. Un Note Off avvia Release anche durante Hold. Gli ID/indici precedenti, la modalità Mono/Poly, il legato e tutti i Sample Set restano invariati. La modifica riguarda solo i tre ADSR e non Gate Hold o gli altri processori dinamici.
+
+Vedi `RELEASE_TEST188.md` e la guida aggiornata nelle otto lingue.
+
 ## Cronologia tecnica delle versioni TEST
 
 ## TEST185 — controllo UTF-8 Windows / completamento GitHub Actions

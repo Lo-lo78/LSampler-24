@@ -44,7 +44,7 @@ struct Rig {
 };
 void catalogTests() {
     SlotParameters p;require(p[P::root]==60&&p[P::low]==0&&p[P::high]==127,"Approved mapping defaults");
-    require(legacyParameterCount==143&&parameterCount==170&&loopCount==10,
+    require(legacyParameterCount==143&&parameterCount==173&&int(P::env_hold)==170&&loopCount==10,
             "Stable legacy IDs and TEST163 MIDI Channel catalog");
     require(p[P::midi_channel]==0 && p.acceptsMidiChannel(0) && p.acceptsMidiChannel(15),
             "Omni default receives channels 1 to 16");

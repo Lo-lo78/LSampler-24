@@ -21,6 +21,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="en" lang="en">
 <h1>LSampler-24 0.99.27: accessible guide</h1>
+<h2>New in TEST188 — AHDSR Hold for all three envelopes</h2><p>Each of the 24 Slots now has three independently adjustable Hold stages: Env Hold, LP Env Hold and HP Env Hold. They appear immediately after Attack in their respective Envelope, Low pass filter and High pass filter pages. Range 0–5.000 seconds, resolution 0.001 s (1 ms), default 0 s. Hold keeps the envelope at its maximum before Decay. Note Off starts Release immediately, even during Hold. All three controls support keyboard Grid/Value, REAPER automation (Ctrl+Shift+A), Bank Macro, Slot and Bank presets. Existing preset values and automation IDs are preserved.</p>
 <p><strong>TEST187 Self-Lace:</strong> LFO 1 Lace Source offers Off, LFO 1 (Self), LFO 2; LFO 2 Lace Source offers Off, LFO 1, LFO 2 (Self). Even if the Grid Step is set to 5, 10, 15 or 20, each Lace Source arrow press moves by just one choice.</p>
 <h2>New in 0.99.27 TEST186: Phase Drift and LFO Lace</h2><p>For LFO 1 and LFO 2 of each Slot: Drift Amount (0–1), Drift Cycle (1–32), Lace Source (Off, LFO 1, LFO 2), Lace Rate (1–32), Lace Mix (0–1). Lace can interlace an LFO with itself. Changes are available in the parameter grid, Value and DAW automation. Off/zero preserves old presets. Mono/Poly, Free/Trigger, BPM sync and Sample And Hold are supported.</p>
 <h2>New in 0.99.26 — 8 November 2026: audio/video paste and cache management</h2>
@@ -104,6 +105,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="it" lang="it">
 <h1>LSampler-24 0.99.27: guida accessibile</h1>
+<h2>Novità TEST188 — Hold AHDSR nei tre inviluppi</h2><p>Ognuno dei 24 Slot dispone di tre stadi Hold indipendenti: Env Hold, LP Env Hold e HP Env Hold. Si trovano subito dopo Attack nelle rispettive pagine Envelope, Low pass filter e High pass filter. Intervallo 0–5,000 secondi, risoluzione 0,001 s (1 ms), valore predefinito 0 s. Hold mantiene il livello massimo raggiunto dall’Attack prima del Decay. Il Note Off avvia immediatamente Release, anche durante Hold. I tre controlli sono disponibili in Grid/Value, con automazione REAPER (Ctrl+Shift+A), Bank Macro e salvataggio di Slot e Bank. Restano invariati gli ID delle vecchie automazioni e i suoni dei preset precedenti.</p>
 <p><strong>TEST187 Self-Lace:</strong> LFO 1 Lace Source: Off, LFO 1 (Self), LFO 2. LFO 2 Lace Source: Off, LFO 1, LFO 2 (Self). Anche con Step 5, 10, 15 o 20, ogni freccia scorre una sola scelta.</p>
 <h2>Novità 0.99.27 TEST186: Phase Drift e LFO Lace</h2><p>Per LFO 1 e LFO 2 di ogni Slot: Drift Amount (0–1), Drift Cycle (1–32), Lace Source (Off, LFO 1, LFO 2), Lace Rate (1–32), Lace Mix (0–1). Ogni LFO può intrecciarsi con sé stesso. I parametri sono accessibili da griglia, Value e automazione REAPER. Valori Off/zero mantengono i preset precedenti; compatibili con Mono/Poly, Free/Trigger, BPM Sync e Sample And Hold.</p>
 <h2>Novità 0.99.26 — 8 novembre 2026: incolla audio/video e gestione cache</h2>
@@ -193,6 +195,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="es" lang="es">
 <h1>LSampler-24 0.99.27: guía accesible</h1>
+<h2>Novedad TEST188 — Hold AHDSR para las tres envolventes</h2><p>Cada Slot tiene tres etapas Hold independientes: Env Hold, LP Env Hold y HP Env Hold, justo después de Attack en las páginas Envelope, Low pass filter y High pass filter. Rango 0–5,000 segundos, resolución de 1 ms y valor inicial 0. Hold mantiene el nivel máximo antes de Decay; Note Off activa Release inmediatamente incluso durante Hold. Compatibles con Grid/Value, automatización REAPER (Ctrl+Shift+A), Bank Macro y presets de Slot/Bank. Se conservan los identificadores anteriores.</p>
 <h2>Novedad 0.99.27 TEST186: Phase Drift y LFO Lace</h2><p>En los dos LFO de cada Slot: Drift Amount (0–1), Drift Cycle (1–32), Lace Source (Off, LFO 1, LFO 2), Lace Rate (1–32) y Lace Mix (0–1). Permite entrelazar un LFO consigo mismo. Disponibles en la cuadrícula, Value y automatización DAW; los valores Off/cero preservan los presets anteriores. Compatible con Mono/Poly, Free/Trigger, BPM y Sample And Hold.</p>
 <h2>Novedades 0.99.26 — 8 de noviembre de 2026: importar audio/vídeo y gestionar la caché</h2>
 <p>En la cuadrícula de Slots, <strong>Alt+V</strong> importa elementos de audio seleccionados en REAPER o archivos copiados con Ctrl+C en el Explorador de Windows, incluidos AAC y vídeos compatibles. Windows Media Foundation extrae la primera pista de audio cuando hay un códec disponible. Un archivo mono o estéreo ocupa un Slot; los archivos multicanal se dividen en pares estéreo consecutivos, sin mezcla, y el último canal impar se conserva en mono. Un archivo de 16 canales ocupa ocho Slots; el siguiente archivo continúa después de ellos.</p>
@@ -244,6 +247,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="pt" lang="pt">
 <h1>LSampler-24 0.99.27: guia acessível</h1>
+<h2>Novo TEST188 — Hold AHDSR nos três envelopes</h2><p>Cada Slot tem três estágios Hold independentes: Env Hold, LP Env Hold e HP Env Hold, logo após Attack nas páginas Envelope, Low pass filter e High pass filter. Intervalo 0–5,000 segundos, resolução de 1 ms e valor inicial 0. Hold mantém o pico antes de Decay; Note Off começa Release imediatamente, mesmo durante Hold. Disponíveis na Grid/Value, automação REAPER (Ctrl+Shift+A), Bank Macro e presets de Slot/Bank. Os IDs anteriores permanecem iguais.</p>
 <h2>Novo na 0.99.27 TEST186: Phase Drift e LFO Lace</h2><p>Nos dois LFOs de cada Slot: Drift Amount (0–1), Drift Cycle (1–32), Lace Source (Off, LFO 1, LFO 2), Lace Rate (1–32), Lace Mix (0–1). É possível entrelaçar o LFO consigo próprio. Acessível na grelha, Value e automação DAW; Off/zero preserva as predefinições anteriores. Suporta Mono/Poly, Free/Trigger, BPM e Sample And Hold.</p>
 <h2>Novidades 0.99.26 — 8 de novembro de 2026: importação de áudio/vídeo e cache</h2>
 <p>Na grelha de Slots, <strong>Alt+V</strong> importa itens de áudio selecionados no REAPER ou ficheiros copiados com Ctrl+C no Explorador do Windows, incluindo AAC e vídeos compatíveis. O Windows Media Foundation extrai a primeira faixa áudio quando o codec está disponível. Áudio mono ou estéreo ocupa um Slot; ficheiros multicanal são divididos em pares estéreo consecutivos, sem mistura, ficando o último canal isolado em mono. Um ficheiro de 16 canais ocupa oito Slots, e o seguinte continua depois deles.</p>
@@ -290,6 +294,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="fr" lang="fr">
 <h1>LSampler-24 0.99.27 : guide accessible</h1>
+<h2>Nouveau TEST188 — Hold AHDSR pour les trois enveloppes</h2><p>Chaque Slot possède trois phases Hold indépendantes : Env Hold, LP Env Hold et HP Env Hold, placées juste après Attack dans les pages Envelope, Low pass filter et High pass filter. Plage 0–5,000 secondes, résolution 1 ms, valeur initiale 0. Hold maintient le niveau maximal avant Decay ; Note Off déclenche immédiatement Release, même pendant Hold. Accessibles via Grid/Value, automation REAPER (Ctrl+Shift+A), Bank Macro et préréglages Slot/Bank. Les anciens identifiants restent inchangés.</p>
 <h2>Nouveau 0.99.27 TEST186 : Phase Drift et LFO Lace</h2><p>Pour les deux LFO de chaque Slot : Drift Amount (0–1), Drift Cycle (1–32), Lace Source (Off, LFO 1, LFO 2), Lace Rate (1–32) et Lace Mix (0–1). Chaque LFO peut aussi se combiner avec lui-même. Accessibles via la grille, Value et l’automation DAW ; Off/zéro préserve les anciens presets. Compatibles Mono/Poly, Free/Trigger, BPM et Sample And Hold.</p>
 <h2>Nouveautés 0.99.26 — 8 novembre 2026 : import audio/vidéo et cache</h2>
 <p>Dans la grille des Slots, <strong>Alt+V</strong> importe les items audio sélectionnés dans REAPER ou les fichiers copiés avec Ctrl+C dans l'Explorateur Windows, y compris les AAC et vidéos compatibles. Windows Media Foundation extrait la première piste audio si le codec est disponible. Un fichier mono ou stéréo occupe un Slot ; les fichiers multicanaux sont divisés en paires stéréo successives sans mixage, avec un dernier canal impair en mono. Un fichier à 16 canaux remplit huit Slots ; le suivant commence après eux.</p>
@@ -336,6 +341,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="ru" lang="ru">
 <h1>LSampler-24 0.99.27: доступное руководство</h1>
+<h2>Новое в TEST188 — AHDSR Hold для трёх огибающих</h2><p>Каждый Slot получил три независимых параметра Hold: Env Hold, LP Env Hold и HP Env Hold. Они расположены сразу после Attack на страницах Envelope, Low pass filter и High pass filter. Диапазон 0–5 секунд, шаг 1 мс, значение по умолчанию 0. Hold удерживает максимальный уровень перед Decay; Note Off немедленно запускает Release даже во время Hold. Доступно через Grid/Value, автоматизацию REAPER (Ctrl+Shift+A), Bank Macro и пресеты Slot/Bank. Прежние идентификаторы не меняются.</p>
 <h2>Новое в 0.99.27 TEST186: Phase Drift и LFO Lace</h2><p>Для обоих LFO каждого слота: Drift Amount (0–1), Drift Cycle (1–32), Lace Source (Off, LFO 1, LFO 2), Lace Rate (1–32), Lace Mix (0–1). Поддерживается сочетание LFO с самим собой. Доступно через сетку параметров, Value и автоматизацию DAW. Off/ноль сохраняет звучание прежних пресетов. Поддерживаются Mono/Poly, Free/Trigger, BPM и Sample And Hold.</p>
 <h2>Новое в 0.99.26 — 8 ноября 2026: вставка аудио/видео и управление кэшем</h2>
 <p>В сетке слотов <strong>Alt+V</strong> импортирует выделенные аудиоэлементы REAPER либо файлы, скопированные клавишами Ctrl+C в Проводнике Windows, включая поддерживаемые AAC и видеофайлы. Windows Media Foundation извлекает первую аудиодорожку при наличии нужного кодека. Моно и стерео занимают один слот. Многоканальный звук разделяется на последовательные стереопары без сведения; последний нечётный канал сохраняется в моно. Файл с 16 каналами занимает восемь слотов, следующий файл продолжает после них.</p>
@@ -382,6 +388,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="zh" lang="zh">
 <h1>LSampler-24 0.99.27：无障碍指南</h1>
+<h2>TEST188 新功能：三个包络的 AHDSR Hold</h2><p>每个 Slot 现在有三个独立的 Hold 参数：Env Hold、LP Env Hold 和 HP Env Hold。在 Envelope、Low pass filter 和 High pass filter 页面中均位于 Attack 之后。范围 0–5 秒，精度 1 毫秒，默认值为 0。Hold 在 Decay 之前维持最大电平；Note Off 即使在 Hold 阶段也会立即触发 Release。支持 Grid/Value、REAPER 自动化（Ctrl+Shift+A）、Bank Macro 和 Slot/Bank 预设。旧参数 ID 保持不变。</p>
 <h2>0.99.27 TEST186 新功能：Phase Drift 与 LFO Lace</h2><p>每个 Slot 的两个 LFO 都新增 Drift Amount (0–1)、Drift Cycle (1–32)、Lace Source (Off、LFO 1、LFO 2)、Lace Rate (1–32) 和 Lace Mix (0–1)。支持 LFO 与自身交织。可通过参数网格、Value 和 DAW 自动化访问；Off/零值保留旧预设的声音。兼容 Mono/Poly、Free/Trigger、BPM 同步和 Sample And Hold。</p>
 <h2>0.99.26 更新 — 2026 年 11 月 8 日：音视频导入和缓存管理</h2>
 <p>在采样槽网格中按 <strong>Alt+V</strong>，可导入 REAPER 中选中的音频片段，或在 Windows 资源管理器中使用 Ctrl+C 复制的文件，包括受支持的 AAC 和视频文件。如果 Windows 已安装所需解码器，Media Foundation 会提取视频中的第一条音轨。单声道或立体声文件占用一个槽位；多声道文件按原始顺序拆分为连续的立体声声道对，不进行混音；最后单独的奇数声道保留为单声道。例如，16 声道文件占用八个槽位，下一个文件从后续槽位继续。</p>
@@ -428,6 +435,7 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #49535b;padding
 
 <article class="manual" id="ja" lang="ja">
 <h1>LSampler-24 0.99.27：アクセシブルガイド</h1>
+<h2>TEST188 の新機能：3 種類のエンベロープに AHDSR Hold</h2><p>各 Slot に独立した Env Hold、LP Env Hold、HP Env Hold を追加しました。Envelope、Low pass filter、High pass filter の各ページで Attack の直後に表示されます。範囲 0〜5 秒、分解能 1 ms、初期値 0。Hold は Decay の前に最大レベルを維持し、Note Off は Hold 中でも直ちに Release に移行します。Grid/Value、REAPER オートメーション（Ctrl+Shift+A）、Bank Macro、Slot/Bank プリセットに対応。既存のパラメーター ID は維持されます。</p>
 <h2>0.99.27 TEST186 の新機能：Phase Drift と LFO Lace</h2><p>各スロットの 2 つの LFO に Drift Amount (0–1)、Drift Cycle (1–32)、Lace Source (Off、LFO 1、LFO 2)、Lace Rate (1–32)、Lace Mix (0–1) を追加しました。LFO 自身との Lace にも対応。パラメーターグリッド、Value、DAW オートメーションから操作できます。Off/ゼロなら旧プリセットの音は変わりません。Mono/Poly、Free/Trigger、BPM 同期、Sample And Hold に対応しています。</p>
 <h2>0.99.26 の新機能 — 2026 年 11 月 8 日：音声・動画の貼り付けとキャッシュ管理</h2>
 <p>スロットグリッドで <strong>Alt+V</strong> を押すと、REAPER で選択したオーディオアイテム、または Windows のエクスプローラーで Ctrl+C によりコピーしたファイルを読み込めます。対応する AAC や動画ファイルも対象です。Windows に適切なコーデックがあれば、Media Foundation が動画の最初の音声トラックを抽出します。モノラルとステレオは 1 スロットを使用します。マルチチャンネル音声はミックスダウンせず、連続するステレオペアごとに別スロットへ分割し、最後に余る 1 チャンネルはモノラルになります。16 チャンネルのファイルは 8 スロットを使い、次のファイルはその後に続きます。</p>

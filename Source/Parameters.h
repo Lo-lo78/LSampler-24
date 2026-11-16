@@ -184,17 +184,24 @@ enum class P {
     lfo2_lace_source,
     lfo2_lace_rate,
     lfo2_lace_mix,
+    // TEST188: new AHDSR Hold slots are appended so no earlier ID moves.
+    env_hold,
+    lp_env_hold,
+    hp_env_hold,
     count
 };
 // Append the new indices only. The first nine VST3 IDs/indices are frozen.
 enum class L { start, end, repeats, fade_in, fade_out, pitch_down, lp_down, hp_down, one_shot,
                repeat_pan, pitch_time, level, crossfade, downsample, pan, repeat_level, direction, count };
-inline constexpr int legacyParameterCount = 143, parameterCount = 170, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
+inline constexpr int legacyParameterCount = 143, parameterCount = 173, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
 static_assert(int(L::repeat_pan)==legacyLoopParameterCount && int(L::pitch_time)==10 && int(L::level)==11
               && int(L::crossfade)==12 && int(L::downsample)==13 && int(L::pan)==14
               && int(L::repeat_level)==15 && int(L::direction)==16 && int(L::count)==loopParameterCount);
 static_assert(int(P::lfo1_one_shot_percent)==legacyParameterCount &&
-              int(P::midi_channel)==159 && int(P::lfo1_drift_amount)==160 && int(P::count)==parameterCount,
+              int(P::midi_channel)==159 && int(P::lfo1_drift_amount)==160 &&
+              int(P::lfo2_lace_mix)==169 && int(P::env_hold)==170 &&
+              int(P::lp_env_hold)==171 && int(P::hp_env_hold)==172 &&
+              int(P::count)==parameterCount,
               "Legacy parameter IDs must remain unchanged");
 inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"input_gain", "Level", "Slot", Kind::continuous, 0.0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""},
@@ -370,6 +377,10 @@ inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"lfo2_lace_source", "LFO 2 Lace Source", "LFO 2", Kind::enumeration, 0, 0, 2, 1, 1, "", 0, "Off|LFO 1|LFO 2 (Self)"},
 {"lfo2_lace_rate", "LFO 2 Lace Rate", "LFO 2", Kind::integer, 4, 1, 32, 1, 1, "", 0, ""},
 {"lfo2_lace_mix", "LFO 2 Lace Mix", "LFO 2", Kind::continuous, 0, 0, 1, 0.001, 0.05, "", 3, ""},
+// TEST188: 0.001 seconds = 1 ms; default zero preserves all existing sounds.
+{"env_hold", "Env Hold", "Envelope", Kind::continuous, 0, 0, 5.0, 0.001, 0.01, "s", 3, ""},
+{"lp_env_hold", "LP Env Hold", "Low pass filter", Kind::continuous, 0, 0, 5.0, 0.001, 0.01, "s", 3, ""},
+{"hp_env_hold", "HP Env Hold", "High pass filter", Kind::continuous, 0, 0, 5.0, 0.001, 0.01, "s", 3, ""},
 }};
 enum class GlobalP { master_output_gain, output_stage, bus_glue, bus_soft_drive, output_ceiling, count };
 inline constexpr int globalParameterCount = 5;
@@ -403,7 +414,7 @@ inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 }};
 enum class Action { none, sampleZero, loopZero };
 struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; int global = -1; };
-inline constexpr std::array<GridEntry, 194> grid {{
+inline constexpr std::array<GridEntry, 197> grid {{
 {int(P::input_gain), -1, Action::none, "Slot"},
 {int(P::polyphony), -1, Action::none, "Slot"},
 {int(P::slot_polyphony), -1, Action::none, "Slot"},
@@ -461,6 +472,7 @@ inline constexpr std::array<GridEntry, 194> grid {{
 {int(P::character_air_body), -1, Action::none, "Machine"},
 {int(P::character_output_glue), -1, Action::none, "Machine"},
 {int(P::attack), -1, Action::none, "Envelope"},
+{int(P::env_hold), -1, Action::none, "Envelope"},
 {int(P::decay), -1, Action::none, "Envelope"},
 {int(P::sustain), -1, Action::none, "Envelope"},
 {int(P::release), -1, Action::none, "Envelope"},
@@ -473,6 +485,7 @@ inline constexpr std::array<GridEntry, 194> grid {{
 {int(P::lp_resonance), -1, Action::none, "Low pass filter"},
 {int(P::lp_env_amount), -1, Action::none, "Low pass filter"},
 {int(P::lp_env_attack), -1, Action::none, "Low pass filter"},
+{int(P::lp_env_hold), -1, Action::none, "Low pass filter"},
 {int(P::lp_env_decay), -1, Action::none, "Low pass filter"},
 {int(P::lp_env_sustain), -1, Action::none, "Low pass filter"},
 {int(P::lp_env_release), -1, Action::none, "Low pass filter"},
@@ -483,6 +496,7 @@ inline constexpr std::array<GridEntry, 194> grid {{
 {int(P::hp_resonance), -1, Action::none, "High pass filter"},
 {int(P::hp_env_amount), -1, Action::none, "High pass filter"},
 {int(P::hp_env_attack), -1, Action::none, "High pass filter"},
+{int(P::hp_env_hold), -1, Action::none, "High pass filter"},
 {int(P::hp_env_decay), -1, Action::none, "High pass filter"},
 {int(P::hp_env_sustain), -1, Action::none, "High pass filter"},
 {int(P::hp_env_release), -1, Action::none, "High pass filter"},

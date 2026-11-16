@@ -84,6 +84,12 @@ jobs:
           python Tools/verify-test187-self-lace-selection.py
           if ($LASTEXITCODE -ne 0) { throw "TEST187 Self-Lace option regression failed." }
 
+      - name: Verify TEST188 AHDSR Hold in all three Slot envelopes
+        shell: powershell
+        run: |
+          python Tools/verify-test188-ahdsr-hold.py
+          if ($LASTEXITCODE -ne 0) { throw "TEST188 AHDSR Hold regression failed." }
+
       - name: Verify TEST170 deterministic Free LFO on DAW Play
         shell: powershell
         run: |

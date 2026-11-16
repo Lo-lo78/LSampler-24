@@ -8,6 +8,7 @@ namespace lsampler {
 struct EnvelopeSettings {
     double attackStep = 1, decay = 1, sustain = 1, release = 0;
     bool filter = false;
+    int holdSamples = 0; // trailing field preserves pre-TEST188 aggregate initializers
 };
 struct LfoSettings {
     bool active = false, sync = false, trigger = false, oneShot = false;

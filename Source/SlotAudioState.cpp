@@ -5,9 +5,10 @@ namespace lsampler {
 namespace {
 constexpr double pi = 3.14159265358979323846;
 double db(double x) { return std::pow(10.0,x/20.0); }
-EnvelopeSettings envelope(double a,double d,double s,double r,double sr,bool filter) {
+EnvelopeSettings envelope(double a,double h,double d,double s,double r,double sr,bool filter) {
     return {1/std::max(1.0,a*sr),filter?(1-s)/std::max(1.0,d*sr):std::pow(.001,1/std::max(1.0,d*sr)),s,
-        filter?std::exp(-1/std::max(1.0,r*sr)):std::pow(.001,1/std::max(1.0,r*sr)),filter};
+        filter?std::exp(-1/std::max(1.0,r*sr)):std::pow(.001,1/std::max(1.0,r*sr)),
+        filter,int(std::round(std::clamp(h,0.0,5.0)*sr))};
 }
 }
 FilterCoefficients filterCoefficients(bool hp,double hz,double resonance,double sr) noexcept {
@@ -264,14 +265,14 @@ SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sampl
     s.grain=primary.grain;
     s.downsampleHold=primary.downsampleHold;s.downsampleScale=primary.downsampleScale;
     s.portamento=1/std::max(1.0,ms(P::portamento));s.smooth=1/std::max(1.0,ms(P::retrigger_smooth));
-    s.amp=envelope(v(P::attack),v(P::decay),v(P::sustain),v(P::release),sr,false);
+    s.amp=envelope(v(P::attack),v(P::env_hold),v(P::decay),v(P::sustain),v(P::release),sr,false);
     s.lp=v(P::lp_on)!=0;s.hp=v(P::hp_on)!=0;
     {
-        s.lpEnv=envelope(v(P::lp_env_attack),v(P::lp_env_decay),v(P::lp_env_sustain),v(P::lp_env_release),sr,true);
+        s.lpEnv=envelope(v(P::lp_env_attack),v(P::lp_env_hold),v(P::lp_env_decay),v(P::lp_env_sustain),v(P::lp_env_release),sr,true);
         s.lpHz=20*std::pow(500,v(P::lp_cutoff));s.lpStatic=filterCoefficients(false,s.lpHz,v(P::lp_resonance),sr);
     }
     {
-        s.hpEnv=envelope(v(P::hp_env_attack),v(P::hp_env_decay),v(P::hp_env_sustain),v(P::hp_env_release),sr,true);
+        s.hpEnv=envelope(v(P::hp_env_attack),v(P::hp_env_hold),v(P::hp_env_decay),v(P::hp_env_sustain),v(P::hp_env_release),sr,true);
         s.hpHz=20*std::pow(500,v(P::hp_cutoff));s.hpStatic=filterCoefficients(true,s.hpHz,v(P::hp_resonance),sr);
     }
     for(int i=0;i<2;++i) {

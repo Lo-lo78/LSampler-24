@@ -7,10 +7,10 @@
 #include <string>
 int main() {
     using namespace lsampler;
-    static_assert(parameterCount==170 && int(P::midi_channel)==159);
-    static_assert(grid.size()==194);
+    static_assert(parameterCount==173 && int(P::midi_channel)==159 && int(P::env_hold)==170);
+    static_assert(grid.size()==197);
     static_assert(int(P::lfo2_lace_mix)==169);
-    for(int i=int(P::lfo1_drift_amount);i<parameterCount;++i){
+    for(int i=int(P::lfo1_drift_amount);i<int(P::env_hold);++i){
         assert(parameters[static_cast<size_t>(i)].initial >= parameters[static_cast<size_t>(i)].minimum);
         assert(parameters[static_cast<size_t>(i)].initial <= parameters[static_cast<size_t>(i)].maximum);
     }

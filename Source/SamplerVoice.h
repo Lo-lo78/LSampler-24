@@ -40,7 +40,7 @@ public:
     struct Diagnostics { uint64_t lp=0,hp=0,lfo=0,ring=0,fm=0,drive=0,comp=0,gate=0,transient=0,degrade=0,machine=0,simpleSpans=0,sharedReadSpans=0,filterSpans=0,generalSpans=0; } diagnostics;
 private:
     struct Envelope {
-        double value=0; int phase=1;
+        double value=0; int phase=1, holdElapsed=0;
         double tick(const lsampler::EnvelopeSettings&) noexcept;
         void release() noexcept { if(phase!=0)phase=4; }
     };

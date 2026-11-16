@@ -21,7 +21,14 @@ double velocityGain(double velocity,double depth) noexcept {
 }
 }
 double GlobalVoicePool::Envelope::tick(const EnvelopeSettings& e) noexcept {
-    if(phase==1) {value+=e.attackStep;if(value>=1){value=1;phase=2;}}
+    // TEST188: phase 5 = Hold. A zero Hold follows the original ADSR path
+    // (including the same-sample Attack -> Decay handover for preset parity).
+    if(phase==1) {value+=e.attackStep;if(value>=1){value=1;holdElapsed=0;phase=e.holdSamples>0?5:2;}}
+    if(phase==5) {
+        value=1.0;
+        if(++holdElapsed>=e.holdSamples)phase=2;
+        return value; // no Decay on the final Hold sample
+    }
     if(phase==2) {
         value=e.filter?value-e.decay:e.sustain+(value-e.sustain)*e.decay;
         if(value<=e.sustain+.000001){value=e.sustain;phase=3;}
