@@ -1,3 +1,32 @@
+# LSampler-24 — Versione 0.99.28
+
+**Release date: 16 November 2026 · Windows x64 VST3 · REAPER / OSARA / NVDA**
+
+La nuova release pubblica integra la **TEST188** e la correzione **TEST187** sulla base della **0.99.27**.
+Ciascuno dei 24 Slot ora ha tre ADSR con stadio **Hold** indipendente, dopo Attack:
+**Env Hold** (ampiezza), **LP Env Hold** (filtro Low Pass) e **HP Env Hold** (filtro High Pass).
+Tutti hanno intervallo **0–5 secondi**, passo **1 ms** e default **0**. Note Off avvia
+Release anche quando Hold è in corso. I vecchi ID di automazione e i preset sono
+preservati; il Gate Hold non viene modificato.
+
+I tre nuovi Hold si raggiungono da Grid/Value nelle relative pagine e supportano
+**Ctrl+Shift+A** per attivare/disattivare l'automazione REAPER senza eliminare i punti,
+oltre alle **Bank Macro** e al salvataggio Slot/Bank. Ctrl+Shift+A è una funzione
+preesistente, ora disponibile anche per i tre nuovi parametri.
+
+**LFO Self-Lace:** LFO 1 può selezionare LFO 1 (Self), e LFO 2 può selezionare
+LFO 2 (Self), anche con Grid Step maggiore di 1. La durata dei campioni, il
+sequencer, le altre modulazioni e il caricamento audio rimangono invariati.
+
+Aggiornati **About (Alt+A)**, CMake/VST3, guida incorporata nelle **otto lingue**,
+GitHub Actions e le note di rilascio. Vedi `RELEASE_0.99.28.md` e
+`RELEASE_TEST188.md`. Le note delle TEST e delle precedenti release sono
+conservate più avanti in questo README come cronologia tecnica.
+
+---
+
+## Cronologia precedente: 0.99.27 TEST187 e TEST188
+
 # LSampler-24 — Versione 0.99.27 TEST187
 
 **Data TEST: 14 November 2026 · Windows x64 VST3 · REAPER / OSARA / NVDA**

@@ -14,8 +14,8 @@ namespace
 {
 constexpr std::array<int, 5> stepWidths { 1, 5, 10, 15, 20 };
 constexpr int valuePageStep = 40;
-constexpr auto lsamplerVersion = "0.99.27";
-constexpr auto lsamplerReleaseDate = "14 November 2026";
+constexpr auto lsamplerVersion = "0.99.28";
+constexpr auto lsamplerReleaseDate = "16 November 2026";
 constexpr auto lsamplerProjectUrl = "https://github.com/Lo-lo78/LSampler-24";
 constexpr auto lsamplerContactEmail = "vmanolo301@gmail.com";
 
@@ -295,7 +295,11 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
 
     const auto aboutText = juce::String("LSampler-24\nVersion: ") + lsamplerVersion
         + "\nRelease date: " + lsamplerReleaseDate
-        + "\nNew in 0.99.27 TEST186: LFO1/2 Phase Drift and Lace, including Self-Lace, with repeatable cycles."
+        + "\nNew in 0.99.28: AHDSR Hold for Amp, Low Pass and High Pass envelopes in all 24 Slots."
+        + "\nEnv Hold, LP Env Hold, HP Env Hold: 0 to 5 s, 1 ms resolution, default 0."
+        + "\nCtrl+Shift+A: REAPER envelope automation also works for all three Hold controls."
+        + "\n0.99.28: Self-Lace Source remains selectable at every Grid step width."
+        + "\nPrevious 0.99.27: LFO1/2 Phase Drift and Lace, including Self-Lace, with repeatable cycles."
         + "\nTEST187: Lace Source explicitly marks Self; every option is accessible regardless of Grid step width."
         + "\nNew in 0.99.26: Alt+V imports REAPER items, Explorer audio and supported video/AAC."
         + "\nMultichannel files: consecutive stereo pairs, deterministic MIDI mapping and Y/N slot overwrite."
