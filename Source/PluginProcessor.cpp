@@ -4383,13 +4383,28 @@ void LSampler24AudioProcessor::createHostParameters()
         auto& h=hostSlots[size_t(slot)];
         const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
         const juce::String name="Slot "+juce::String(slot+1)+" - ";
-        for(int i=int(P::env_hold);i<parameterCount;++i) {
+        for(int i=int(P::env_hold);i<int(P::phase);++i) {
             const auto& d=parameters[size_t(i)];
             h.values[size_t(i)]=add(id+d.key,name+juce::String(d.name),d,hostGenerations[size_t(slot)]);
         }
     }
     // Corresponding bank-wide macro offsets, also appended after all old lanes.
-    for(int i=int(P::env_hold);i<parameterCount;++i) {
+    for(int i=int(P::env_hold);i<int(P::phase);++i) {
+        const auto& d=parameters[size_t(i)];
+        hostBankMacros[size_t(i)]=add("bankmacro_"+juce::String(d.key),
+            "Bank Macro - "+juce::String(d.name),
+            bankMacroDeltaDescriptor(i),bankMacroHostGeneration);
+    }
+    // TEST189: one Phase control per slot, appended after the complete TEST188
+    // batch. Every earlier VST3 ID and numeric host index remains unchanged.
+    for(int slot=0;slot<slotCount;++slot) {
+        auto& h=hostSlots[size_t(slot)];
+        const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
+        const juce::String name="Slot "+juce::String(slot+1)+" - ";
+        const auto& d=parameters[size_t(P::phase)];
+        h.values[size_t(P::phase)]=add(id+d.key,name+juce::String(d.name),d,hostGenerations[size_t(slot)]);
+    }
+    for(int i=int(P::phase);i<parameterCount;++i) {
         const auto& d=parameters[size_t(i)];
         hostBankMacros[size_t(i)]=add("bankmacro_"+juce::String(d.key),
             "Bank Macro - "+juce::String(d.name),

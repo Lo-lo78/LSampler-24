@@ -14,8 +14,8 @@ namespace
 {
 constexpr std::array<int, 5> stepWidths { 1, 5, 10, 15, 20 };
 constexpr int valuePageStep = 40;
-constexpr auto lsamplerVersion = "0.99.28";
-constexpr auto lsamplerReleaseDate = "16 November 2026";
+constexpr auto lsamplerVersion = "0.99.29";
+constexpr auto lsamplerReleaseDate = "20 November 2026";
 constexpr auto lsamplerProjectUrl = "https://github.com/Lo-lo78/LSampler-24";
 constexpr auto lsamplerContactEmail = "vmanolo301@gmail.com";
 
@@ -295,6 +295,8 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
 
     const auto aboutText = juce::String("LSampler-24\nVersion: ") + lsamplerVersion
         + "\nRelease date: " + lsamplerReleaseDate
+        + "\nNew in 0.99.29: Phase per Slot, -180 to +180 degrees, default 0, immediately after Pan."
+        + "\nPhase uses a zero-latency all-pass referenced to 1 kHz; 0 degrees is exact bypass."
         + "\nNew in 0.99.28: AHDSR Hold for Amp, Low Pass and High Pass envelopes in all 24 Slots."
         + "\nEnv Hold, LP Env Hold, HP Env Hold: 0 to 5 s, 1 ms resolution, default 0."
         + "\nCtrl+Shift+A: REAPER envelope automation also works for all three Hold controls."

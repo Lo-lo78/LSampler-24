@@ -35,6 +35,11 @@ pre186_descriptors_sha256 = 'ace7afcdde6c460b2df659d8f02f33410f3107b66f71eeb414b
 # Freeze all 170 TEST187 identifiers and descriptors. TEST188 adds only three.
 pre188_names_sha256 = 'e4fbf78f959c98a2f843d75a6157dddd4d8cfb53ab0d1bd7b6cd42dda406e606'
 pre188_descriptors_sha256 = '398dd7a9faaddd9f6f3841b809c8318aafbffb54cc7a63af34d826c301ed1c25'
+# TEST189 appends Phase after the complete TEST188 batch. Freeze all 173
+# pre-TEST189 identifiers and descriptors so the new slot control cannot shift
+# any published automation ID or descriptor.
+pre189_names_sha256 = '94ffe5f67b47b1fbfaf94436c1cd9e67063f0bd6185d2eb4648448d70aeae83e'
+pre189_descriptors_sha256 = '2ad2d2006374a7fdedc7c3a8089e8b5d47f177581876c5b01943a3e3cf463662'
 
 def legacy_catalog_entries(source):
     enum = source.split('enum class P {', 1)[1].split('    count\n', 1)[0]
@@ -48,8 +53,8 @@ def legacy_catalog_entries(source):
 try:
     source = (root / 'Source/Parameters.h').read_text(encoding='utf-8').replace('\r\n', '\n')
     enum_names, descriptors = legacy_catalog_entries(source)
-    if len(enum_names) != 173 or len(descriptors) != 173:
-        errors.append('TEST188 parameter count (170 frozen parameters + 3 appended Hold controls)')
+    if len(enum_names) != 174 or len(descriptors) != 174:
+        errors.append('TEST189 parameter count (173 frozen parameters + 1 appended Phase control)')
     if hashlib.sha256('\n'.join(enum_names[:143]).encode('utf-8')).hexdigest() != legacy_enum_sha256:
         errors.append('TEST160 changed original 143 enum IDs or their order')
     if hashlib.sha256('\n'.join(descriptors[:143]).encode('utf-8')).hexdigest() != legacy_descriptors_sha256:
@@ -62,6 +67,10 @@ try:
         errors.append('TEST188 changed one of the original 170 parameter IDs')
     if hashlib.sha256('\n'.join(descriptors[:170]).encode('utf-8')).hexdigest() != pre188_descriptors_sha256:
         errors.append('TEST188 changed one of the original 170 parameter descriptors')
+    if hashlib.sha256('\n'.join(enum_names[:173]).encode('utf-8')).hexdigest() != pre189_names_sha256:
+        errors.append('TEST189 changed one of the original 173 parameter IDs')
+    if hashlib.sha256('\n'.join(descriptors[:173]).encode('utf-8')).hexdigest() != pre189_descriptors_sha256:
+        errors.append('TEST189 changed one of the original 173 parameter descriptors')
 except (OSError, IndexError, ValueError):
     errors.append('TEST160 cannot parse parameter catalog')
 for relative, expected in manifest.items():

@@ -9,9 +9,9 @@ a=read("Source/SlotAudioState.cpp")
 v=read("Source/SamplerVoice.cpp")
 h=read("Source/SamplerVoice.h")
 host=read("Source/PluginProcessor.cpp")
-assert "parameterCount = 173" in p and "int(P::midi_channel)==159" in p
+assert "parameterCount = 174" in p and "int(P::midi_channel)==159" in p
 assert "int(P::lfo1_drift_amount)==160" in p
-assert "std::array<GridEntry, 197> grid" in p
+assert "std::array<GridEntry, 198> grid" in p
 for i in (1,2):
     for suffix in ("drift_amount","drift_cycle","lace_source","lace_rate","lace_mix"):
         key=f"lfo{i}_{suffix}"

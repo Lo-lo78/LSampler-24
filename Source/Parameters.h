@@ -188,12 +188,14 @@ enum class P {
     env_hold,
     lp_env_hold,
     hp_env_hold,
+    // TEST189: slot signal phase, appended after every existing ID.
+    phase,
     count
 };
 // Append the new indices only. The first nine VST3 IDs/indices are frozen.
 enum class L { start, end, repeats, fade_in, fade_out, pitch_down, lp_down, hp_down, one_shot,
                repeat_pan, pitch_time, level, crossfade, downsample, pan, repeat_level, direction, count };
-inline constexpr int legacyParameterCount = 143, parameterCount = 173, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
+inline constexpr int legacyParameterCount = 143, parameterCount = 174, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
 static_assert(int(L::repeat_pan)==legacyLoopParameterCount && int(L::pitch_time)==10 && int(L::level)==11
               && int(L::crossfade)==12 && int(L::downsample)==13 && int(L::pan)==14
               && int(L::repeat_level)==15 && int(L::direction)==16 && int(L::count)==loopParameterCount);
@@ -201,7 +203,7 @@ static_assert(int(P::lfo1_one_shot_percent)==legacyParameterCount &&
               int(P::midi_channel)==159 && int(P::lfo1_drift_amount)==160 &&
               int(P::lfo2_lace_mix)==169 && int(P::env_hold)==170 &&
               int(P::lp_env_hold)==171 && int(P::hp_env_hold)==172 &&
-              int(P::count)==parameterCount,
+              int(P::phase)==173 && int(P::count)==parameterCount,
               "Legacy parameter IDs must remain unchanged");
 inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"input_gain", "Level", "Slot", Kind::continuous, 0.0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""},
@@ -381,6 +383,8 @@ inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"env_hold", "Env Hold", "Envelope", Kind::continuous, 0, 0, 5.0, 0.001, 0.01, "s", 3, ""},
 {"lp_env_hold", "LP Env Hold", "Low pass filter", Kind::continuous, 0, 0, 5.0, 0.001, 0.01, "s", 3, ""},
 {"hp_env_hold", "HP Env Hold", "High pass filter", Kind::continuous, 0, 0, 5.0, 0.001, 0.01, "s", 3, ""},
+// TEST189: -180..+180 degrees, 1 degree step, neutral zero preserves every old sound.
+{"phase", "Phase", "Slot", Kind::continuous, 0, -180, 180, 1, 15, "°", 0, ""},
 }};
 enum class GlobalP { master_output_gain, output_stage, bus_glue, bus_soft_drive, output_ceiling, count };
 inline constexpr int globalParameterCount = 5;
@@ -414,7 +418,7 @@ inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 }};
 enum class Action { none, sampleZero, loopZero };
 struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; int global = -1; };
-inline constexpr std::array<GridEntry, 197> grid {{
+inline constexpr std::array<GridEntry, 198> grid {{
 {int(P::input_gain), -1, Action::none, "Slot"},
 {int(P::polyphony), -1, Action::none, "Slot"},
 {int(P::slot_polyphony), -1, Action::none, "Slot"},
@@ -431,6 +435,8 @@ inline constexpr std::array<GridEntry, 197> grid {{
 {int(P::ram_swap_lr), -1, Action::none, "Slot"},
 {int(P::ram_downsample), -1, Action::none, "Slot"},
 {int(P::pan), -1, Action::none, "Slot"},
+// TEST189: immediately after Pan in the Slot page; host IDs remain appended.
+{int(P::phase), -1, Action::none, "Slot"},
 {int(P::low), -1, Action::none, "Mapping"},
 {int(P::high), -1, Action::none, "Mapping"},
 {int(P::root), -1, Action::none, "Mapping"},

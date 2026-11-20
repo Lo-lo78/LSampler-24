@@ -1,8 +1,33 @@
+# LSampler-24 — Versione 0.99.29
+
+**Release date: 20 November 2026 · Windows x64 VST3 · REAPER / OSARA / NVDA**
+
+La release pubblica 0.99.29 aggiunge il controllo **Phase** per ciascuno dei
+24 Slot. Si trova nella pagina Slot, subito dopo Pan; intervallo
+**-180°..+180°**, passo **1°**, default **0°**. Ruota il segnale audio dello Slot
+con un all-pass a latenza zero riferito a 1 kHz: 0° è bypass esatto e ±180° è
+inversione di polarità. La risposta di fase varia con la frequenza perché la
+rotazione non aggiunge latenza.
+
+Phase è disponibile in **Grid/Value**, automazione REAPER (**Ctrl+Shift+A**),
+**Bank Macro** e preset Slot/Bank. Gli ID VST3 esistenti non si spostano: il
+nuovo ID è aggiunto in coda. Restano invariati gli AHDSR Hold della TEST188,
+Self-Lace e tutte le funzioni precedenti.
+
+Aggiornati **About (Alt+A)**, CMake/VST3, guida incorporata nelle **otto lingue**,
+GitHub Actions e le note di rilascio. Vedi `RELEASE_0.99.29.md` e
+`RELEASE_TEST189.md`. Le note delle TEST e delle precedenti release sono
+conservate più avanti in questo README come cronologia tecnica.
+
+---
+
+## Cronologia precedente: 0.99.28 TEST188
+
 # LSampler-24 — Versione 0.99.28
 
 **Release date: 16 November 2026 · Windows x64 VST3 · REAPER / OSARA / NVDA**
 
-La nuova release pubblica integra la **TEST188** e la correzione **TEST187** sulla base della **0.99.27**.
+La release pubblica 0.99.28 integra la **TEST188** e la correzione **TEST187** sulla base della **0.99.27**.
 Ciascuno dei 24 Slot ora ha tre ADSR con stadio **Hold** indipendente, dopo Attack:
 **Env Hold** (ampiezza), **LP Env Hold** (filtro Low Pass) e **HP Env Hold** (filtro High Pass).
 Tutti hanno intervallo **0–5 secondi**, passo **1 ms** e default **0**. Note Off avvia

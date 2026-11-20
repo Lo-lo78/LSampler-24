@@ -3,11 +3,11 @@
 from pathlib import Path
 import re
 root = Path(__file__).resolve().parents[1]
-editor = (root/'Source/PluginEditor.cpp').read_text()
-header = (root/'Source/PluginEditor.h').read_text()
-panel = (root/'Source/FXPanel.h').read_text()
-params = (root/'Source/FXParameters.h').read_text()
-processor = (root/'Source/PluginProcessor.cpp').read_text()
+editor = (root/'Source/PluginEditor.cpp').read_text(encoding='utf-8')
+header = (root/'Source/PluginEditor.h').read_text(encoding='utf-8')
+panel = (root/'Source/FXPanel.h').read_text(encoding='utf-8')
+params = (root/'Source/FXParameters.h').read_text(encoding='utf-8')
+processor = (root/'Source/PluginProcessor.cpp').read_text(encoding='utf-8')
 
 assert 'static constexpr int bankFXCount = 3;' in header
 assert 'bankMacroEntries.push_back(bankFXFirst + i)' in editor

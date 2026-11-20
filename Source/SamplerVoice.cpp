@@ -312,6 +312,8 @@ void GlobalVoicePool::retarget(Voice& v,int note,double velocity,const SlotAudio
     v.note=note;v.velocity=velocity;v.keyDown=true;v.sustained=false;
     if(retrigger) {
         v.amp={};v.lpEnvelope={};v.hpEnvelope={};v.loopsReleased=false;v.repeat=0;v.skipStage=-1;v.loopClock=0;
+        v.phaseCoefficient=s.phase.coefficient;v.phaseSign=s.phase.sign;
+        v.phaseX1[0]=v.phaseX1[1]=v.phaseY1[0]=v.phaseY1[1]=0.0;
         // With No Retrigger Smooth, preserve the read head on a retrigger.
         if(s.params[P::retrigger_smooth]==0) {
             const auto& g=s.playback[size_t(v.sampleIndex)];
@@ -417,6 +419,7 @@ void GlobalVoicePool::noteOn(int slot,int note,float velocity,int channel,bool p
     auto& v=chooseVoice(slot,mono?1:int(p[P::slot_polyphony]));
     const bool wasStolen=retireVoice(v);
     stop(v);v=Voice{};
+    v.phaseCoefficient=s.phase.coefficient;v.phaseSign=s.phase.sign;
     if(wasStolen || hasReplacedVoice)v.fadeInLeft=transitionSamples;
     v.active=true;v.preview=preview;v.slotIndex=slot;v.note=note;v.channel=channel;v.velocity=velocity;v.sampleIndex=sampleIndex;
     v.sample=g.sample;v.sample->voiceReferences.fetch_add(1,std::memory_order_relaxed);++activePerSlot[size_t(slot)];
@@ -995,6 +998,11 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
     // voice routed to 3/4 etc. can feed the shared stereo FX return on 1/2.
     const bool sendToFX = fxSendLevels != nullptr && fxSendBuses[0] != nullptr;
     const auto sends = sendToFX ? (*fxSendLevels)[size_t(v.slotIndex)] : std::array<float,3> {};
+    const bool phaseActive = s.phase.active;
+    if(!phaseActive) {
+        v.phaseCoefficient=1.0;v.phaseSign=1.0;
+        v.phaseX1[0]=v.phaseX1[1]=v.phaseY1[0]=v.phaseY1[1]=0.0;
+    }
     for(int frame=start;frame<start+count && v.active;++frame) {
         if(v.delayFramesRemaining>0) { --v.delayFramesRemaining; continue; }
         if(v.amp.phase==0){stop(v);break;}
@@ -1345,6 +1353,13 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
         }
         left*=gain*panL;right*=gain*panR;
         if(!BasicRead&&s.machine)applyMachine(v,s,left,right);
+        if(phaseActive) {
+            v.phaseCoefficient+=(s.phase.coefficient-v.phaseCoefficient)*s.phase.smoothing;
+            v.phaseSign+=(s.phase.sign-v.phaseSign)*s.phase.smoothing;
+            const double yL=phaseAllPass(left,v.phaseX1[0],v.phaseY1[0],v.phaseCoefficient);
+            const double yR=phaseAllPass(right,v.phaseX1[1],v.phaseY1[1],v.phaseCoefficient);
+            left=v.phaseSign*yL;right=v.phaseSign*yR;
+        }
         // TEST166: no gain change for ordinary playback or true (unretriggered)
         // legato. Only a replaced/retargeted voice overlaps its old waveform.
         // Smoothstep gives continuous gain and slope at both fade boundaries.

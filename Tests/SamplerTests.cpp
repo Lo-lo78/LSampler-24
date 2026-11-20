@@ -23,7 +23,7 @@ using namespace lsampler;
 namespace {
 int checks=0;
 void require(bool condition,const char* message) {++checks;if(!condition)throw std::runtime_error(message);}
-bool near(double a,double b,double tolerance=1e-5){return std::abs(a-b)<=tolerance;}
+bool approx(double a,double b,double tolerance=1e-5){return std::abs(a-b)<=tolerance;}
 int index(P parameter){for(size_t i=0;i<grid.size();++i)if(grid[i].parameter==int(parameter))return int(i);throw std::runtime_error("Missing grid entry");}
 int loopIndex(L parameter){for(size_t i=0;i<grid.size();++i)if(grid[i].loop==int(parameter))return int(i);throw std::runtime_error("Missing loop entry");}
 struct Rig {
@@ -44,8 +44,9 @@ struct Rig {
 };
 void catalogTests() {
     SlotParameters p;require(p[P::root]==60&&p[P::low]==0&&p[P::high]==127,"Approved mapping defaults");
-    require(legacyParameterCount==143&&parameterCount==173&&int(P::env_hold)==170&&loopCount==10,
-            "Stable legacy IDs and TEST163 MIDI Channel catalog");
+    require(legacyParameterCount==143&&parameterCount==174&&int(P::env_hold)==170
+            &&int(P::phase)==173&&loopCount==10,
+            "Stable legacy IDs and TEST163/TEST189 catalog");
     require(p[P::midi_channel]==0 && p.acceptsMidiChannel(0) && p.acceptsMidiChannel(15),
             "Omni default receives channels 1 to 16");
     p[P::midi_channel]=5;
@@ -54,7 +55,7 @@ void catalogTests() {
     for(int i=0;i<parameterCount;++i) {
         const auto& d=parameters[size_t(i)];require(d.initial>=d.minimum&&d.initial<=d.maximum,"Catalog default in range");
         for(int j=0;j<i;++j)require(std::strcmp(d.key,parameters[size_t(j)].key)!=0,"Unique persistent keys");
-        require(near(sanitise(d,NAN),d.initial),"Invalid values default safely");
+        require(approx(sanitise(d,NAN),d.initial),"Invalid values default safely");
     }
     require(parameters[size_t(P::comp_release)].maximum==10000,"Lua compressor release range");
     require(parameters[size_t(P::gate_hold)].maximum==10000,"Lua gate hold range");
@@ -75,22 +76,22 @@ void extendedLfoTests() {
     r.set(0,p);r.on();r.render(512);
     // Square is high for the first 10% of a cycle. Upper attenuation applies.
     const double source10=r.sample.audio.getSample(0,10);
-    require(near(r.output.getSample(0,10),source10*1.4,2e-5),
+    require(approx(r.output.getSample(0,10),source10*1.4,2e-5),
             "LFO Square PWM and Upper Squash affect audio");
     r.render(2048); // 512+1500 samples: past the 10% high-pulse boundary
     const int pos=1500;
     const double sourceAt=r.sample.audio.getSample(0,512+pos);
-    require(near(r.output.getSample(0,pos),sourceAt*.4,2e-5),
+    require(approx(r.output.getSample(0,pos),sourceAt*.4,2e-5),
             "LFO Square PWM and Lower Squash affect audio");
     r.pool.allNotesOff();p[P::lfo1_square_pwm]=.5;p[P::lfo1_upper_squash]=0;
     p[P::lfo1_lower_squash]=0;p[P::lfo1_phase]=.75;
     r.set(0,p);r.on();r.render(128);
-    require(near(r.output.getSample(0,64),r.sample.audio.getSample(0,64)*.2,2e-5),
+    require(approx(r.output.getSample(0,64),r.sample.audio.getSample(0,64)*.2,2e-5),
             "LFO Phase shifts waveform without moving sample playback");
     r.pool.allNotesOff();p[P::lfo1_phase]=0;p[P::lfo1_one_shot]=1;
     p[P::lfo1_one_shot_percent]=25;p[P::lfo1_square_pwm]=.5;
     r.set(0,p);r.on();r.render(8192);
-    require(near(r.output.getSample(0,7000),r.sample.audio.getSample(0,7000)*1.8,2e-5),
+    require(approx(r.output.getSample(0,7000),r.sample.audio.getSample(0,7000)*1.8,2e-5),
             "Partial One Shot stops at the specified percentage of an LFO cycle");
     // Env Rate follows the slot ADSR; Cross Rate can read the other LFO even
     // if the latter has no direct audio modulation destination.
@@ -117,13 +118,13 @@ void extendedLfoTests() {
 }
 void cleanAndBypassTests() {
     Rig r;r.on();r.render(512);
-    for(int i=0;i<512;++i)require(near(r.output.getSample(0,i),r.sample.audio.getSample(0,i)),"Clean native path matches source at Original Pitch");
+    for(int i=0;i<512;++i)require(approx(r.output.getSample(0,i),r.sample.audio.getSample(0,i)),"Clean native path matches source at Original Pitch");
     const auto& d=r.pool.diagnostics;
     require(d.lp+d.hp+d.lfo+d.comp+d.gate+d.drive+d.ring+d.fm+d.degrade+d.transient+d.machine==0,"All optional blocks hard bypass by default");
     auto p=SlotParameters{};p[P::lfo1_lp_depth]=96;p[P::lfo2_hp_depth]=96;p[P::character_depth]=10000;p[P::character_input_drive]=10000;
     r.pool.allNotesOff();r.set(0,p);r.on();r.render(512);
     require(r.pool.diagnostics.lfo==0&&r.pool.diagnostics.machine==0,"Disabled filters and machine do not wake DSP");
-    for(int i=0;i<512;++i)require(near(r.output.getSample(0,i),r.sample.audio.getSample(0,i)),"Bypass remains unchanged with dormant depths");
+    for(int i=0;i<512;++i)require(approx(r.output.getSample(0,i),r.sample.audio.getSample(0,i)),"Bypass remains unchanged with dormant depths");
     p[P::lp_on]=1;p[P::input_gain]=-120;r.pool.allNotesOff();r.set(0,p);r.on();r.render(512);
     require(r.pool.diagnostics.lp==0&&r.pool.diagnostics.lfo==0,"Silent level skips optional DSP");
     require(r.output.getMagnitude(0,512)==0,"Muted slot remains silent");
@@ -152,32 +153,32 @@ void voiceTests() {
 }
 void pitchAndStereoTests() {
     Rig r;auto p=SlotParameters{};p[P::octave]=1;r.set(0,p);r.on();r.render(64);
-    for(int i=0;i<64;++i)require(near(r.output.getSample(0,i),r.sample.audio.getSample(0,2*i)),"Octave mapping");
+    for(int i=0;i<64;++i)require(approx(r.output.getSample(0,i),r.sample.audio.getSample(0,2*i)),"Octave mapping");
     r.pool.allNotesOff();p[P::octave]=0;p[P::pitch_bend_range]=12;r.set(0,p);r.pool.pitchBend(0,-8192);r.on();r.render(64);
-    for(int i=0;i<64;++i){const double pos=i*.5;const int j=int(pos);const auto a=r.sample.audio.getSample(0,j),b=r.sample.audio.getSample(0,j+1);require(near(r.output.getSample(0,i),a+(b-a)*(pos-j)),"Per-channel pitch bend range");}
+    for(int i=0;i<64;++i){const double pos=i*.5;const int j=int(pos);const auto a=r.sample.audio.getSample(0,j),b=r.sample.audio.getSample(0,j+1);require(approx(r.output.getSample(0,i),a+(b-a)*(pos-j)),"Per-channel pitch bend range");}
     r.pool.allNotesOff();r.pool.pitchBend(0,0);p[P::ram_swap_lr]=1;p[P::pan]=-100;r.set(0,p);r.on();r.render(64);
-    require(near(r.output.getSample(0,9),r.sample.audio.getSample(1,9)),"Stereo swap");require(r.output.getMagnitude(1,0,64)==0,"Static pan");
+    require(approx(r.output.getSample(0,9),r.sample.audio.getSample(1,9)),"Stereo swap");require(r.output.getMagnitude(1,0,64)==0,"Static pan");
     r.pool.allNotesOff();p=SlotParameters{};p[P::sample_start]=25;p[P::sample_end]=75;p[P::sample_play_start]=50;r.set(0,p);r.on();r.render(2);
-    const int offset=16384+int(std::round((32768-1)*.5));require(near(r.output.getSample(0,0),r.sample.audio.getSample(0,offset)),"Sample window and play start");
+    const int offset=16384+int(std::round((32768-1)*.5));require(approx(r.output.getSample(0,0),r.sample.audio.getSample(0,offset)),"Sample window and play start");
     r.pool.allNotesOff();p=SlotParameters{};p[P::ram_reverse]=1;r.set(0,p);r.on();r.render(32);
-    for(int i=0;i<32;++i)require(near(r.output.getSample(0,i),r.sample.audio.getSample(0,65535-i)),"Non-destructive reverse");
+    for(int i=0;i<32;++i)require(approx(r.output.getSample(0,i),r.sample.audio.getSample(0,65535-i)),"Non-destructive reverse");
     r.pool.allNotesOff();p=SlotParameters{};p[P::vel_volume_depth]=-1;r.set(0,p);r.on(0,60,.25f);r.render(32);
-    require(near(r.output.getSample(0,10),r.sample.audio.getSample(0,10)),"Negative velocity depth follows legacy clamp");
+    require(approx(r.output.getSample(0,10),r.sample.audio.getSample(0,10)),"Negative velocity depth follows legacy clamp");
     std::cout<<"PASS pitch, velocity, stereo tools, sample window and reverse\n";
 }
 void dspReferenceTests() {
     Rig r;auto p=SlotParameters{};p[P::ring_mode]=1;p[P::ring_amount]=.6;p[P::ring_freq]=440;r.set(0,p);r.on();r.render(128);
-    for(int i=0;i<128;++i)require(near(r.output.getSample(0,i),r.sample.audio.getSample(0,i)*(1+.6*std::sin(2*juce::MathConstants<double>::pi*440*(i+1)/48000))),"Legacy additive ring equation");
+    for(int i=0;i<128;++i)require(approx(r.output.getSample(0,i),r.sample.audio.getSample(0,i)*(1+.6*std::sin(2*juce::MathConstants<double>::pi*440*(i+1)/48000))),"Legacy additive ring equation");
     r.pool.allNotesOff();p=SlotParameters{};p[P::lp_on]=1;p[P::lp_cutoff]=.4;p[P::lp_resonance]=.3;r.set(0,p);r.on();r.render(128);
     const double hz=20*std::pow(500,.4),g=std::tan(juce::MathConstants<double>::pi*hz/48000),k=1/(.707+.3*9.293),a1=1/(1+g*(g+k)),a2=g*a1,a3=g*a2;
     double band=0,low=0;
-    for(int i=0;i<128;++i){const double x=r.sample.audio.getSample(0,i),v3=x-low,v1=a1*band+a2*v3,v2=low+a2*band+a3*v3;band=2*v1-band;low=2*v2-low;require(near(r.output.getSample(0,i),low),"Legacy LP integrator output");}
+    for(int i=0;i<128;++i){const double x=r.sample.audio.getSample(0,i),v3=x-low,v1=a1*band+a2*v3,v2=low+a2*band+a3*v3;band=2*v1-band;low=2*v2-low;require(approx(r.output.getSample(0,i),low),"Legacy LP integrator output");}
     r.pool.allNotesOff();p=SlotParameters{};p[P::drive_type]=1;p[P::drive_amount]=50;r.set(0,p);r.on();r.render(128);
-    for(int i=0;i<128;++i){const double x=r.sample.audio.getSample(0,i);require(near(r.output.getSample(0,i),x*.5+(2/juce::MathConstants<double>::pi)*std::atan(x*5)*.5),"Legacy tape drive equation");}
+    for(int i=0;i<128;++i){const double x=r.sample.audio.getSample(0,i);require(approx(r.output.getSample(0,i),x*.5+(2/juce::MathConstants<double>::pi)*std::atan(x*5)*.5),"Legacy tape drive equation");}
     r.pool.allNotesOff();p=SlotParameters{};p[P::comp_on]=1;p[P::comp_ratio]=1;p[P::comp_delta]=1;r.set(0,p);r.on();r.render(256);require(r.output.getMagnitude(0,256)==0,"Compressor delta zero at unity ratio/makeup");
     r.pool.allNotesOff();p=SlotParameters{};p[P::lfo1_bpm_sync]=1;p[P::lfo1_rate]=4;p[P::lfo1_mode]=1;p[P::lfo1_volume_depth]=1;r.set(0,p);r.pool.setTempo(120);r.on();r.render(128);
-    for(int i=0;i<128;++i)require(near(r.output.getSample(0,i),r.sample.audio.getSample(0,i)*(1+std::sin(2*juce::MathConstants<double>::pi*2*(i+1)/48000))),"Host tempo LFO conversion");
-    r.pool.allNotesOff();r.pool.setTempo(60);r.on();r.render(128);require(near(r.output.getSample(0,127),r.sample.audio.getSample(0,127)*(1+std::sin(2*juce::MathConstants<double>::pi*128/48000))),"Tempo changes update synced LFO");
+    for(int i=0;i<128;++i)require(approx(r.output.getSample(0,i),r.sample.audio.getSample(0,i)*(1+std::sin(2*juce::MathConstants<double>::pi*2*(i+1)/48000))),"Host tempo LFO conversion");
+    r.pool.allNotesOff();r.pool.setTempo(60);r.on();r.render(128);require(approx(r.output.getSample(0,127),r.sample.audio.getSample(0,127)*(1+std::sin(2*juce::MathConstants<double>::pi*128/48000))),"Tempo changes update synced LFO");
     std::cout<<"PASS legacy ring, LP, tape, compressor delta and BPM LFO equations\n";
 }
 void loopAndEffectTests() {
@@ -187,8 +188,8 @@ void loopAndEffectTests() {
     p.loops[0][size_t(L::end)]=10;p.loops[0][size_t(L::repeats)]=3;
     p.loops[1][size_t(L::start)]=50;p.loops[1][size_t(L::end)]=60;p.loops[1][size_t(L::repeats)]=2;
     r.set(0,p);r.on();r.render(50);
-    for(int i=0;i<40;++i)require(near(r.output.getSample(0,i),double(i%10)/100),"Loop counted repeats");
-    for(int i=40;i<50;++i)require(near(r.output.getSample(0,i),double(50+i-40)/100),"Next loop jumps to absolute start");
+    for(int i=0;i<40;++i)require(approx(r.output.getSample(0,i),double(i%10)/100),"Loop counted repeats");
+    for(int i=40;i<50;++i)require(approx(r.output.getSample(0,i),double(50+i-40)/100),"Next loop jumps to absolute start");
     r.pool.allNotesOff();p=SlotParameters{};p[P::global_one_shot]=1;r.set(0,p);r.on();r.render(25);r.pool.noteOff(60);r.render(200);require(r.pool.activeVoiceCount()==0,"One Shot follows ADSR Note Off release and stops no later than sample end without wrapping");
     r.pool.allNotesOff();p=SlotParameters{};p[P::global_one_shot]=0;p[P::machine_character]=7;p[P::character_depth]=10000;
     p[P::comp_on]=p[P::gate_on]=p[P::lp_on]=p[P::hp_on]=1;p[P::fm_amount]=80;p[P::ring_mode]=2;p[P::ring_amount]=1;
@@ -221,12 +222,12 @@ void persistenceAndProcessorTests(const juce::File& folder) {
     // TEST166: the edited boundary stops against the opposite handle.
     p.setSlotParameter(index(P::sample_start),20);
     p.setSlotParameter(index(P::sample_end),15);
-    require(near(p.getSampleWindowEnd(),20),"TEST166 End cannot cross Start");
+    require(approx(p.getSampleWindowEnd(),20),"TEST166 End cannot cross Start");
     p.setSlotParameter(index(P::sample_start),75);
-    require(near(p.getSampleWindowStart(),20),"TEST166 Start cannot cross End");
+    require(approx(p.getSampleWindowStart(),20),"TEST166 Start cannot cross End");
     p.setSlotParameter(index(P::sample_end),90);
     p.setSlotParameter(index(P::sample_start),75);
-    require(near(p.getSampleWindowStart(),75)&&near(p.getSampleWindowEnd(),90),
+    require(approx(p.getSampleWindowStart(),75)&&approx(p.getSampleWindowEnd(),90),
         "TEST166 both boundary handles work within their ranges");
     p.setSlotParameter(index(P::sample_start),0);
     p.setSlotParameter(index(P::sample_end),100);
@@ -252,8 +253,8 @@ void persistenceAndProcessorTests(const juce::File& folder) {
         p.setSlotParameter(loopIndex(L(i)),v,j);expectedLoops[size_t(j)][size_t(i)]=v;
     }
     auto compare=[&] {
-        for(int i=0;i<parameterCount;++i)require(near(p.getSlotParameter(index(P(i))),expected[size_t(i)],1e-8),"Every slot parameter roundtrips");
-        for(int j=0;j<10;++j)for(int i=0;i<loopParameterCount;++i)require(near(p.getSlotParameter(loopIndex(L(i)),j),expectedLoops[size_t(j)][size_t(i)],1e-8),"All ten loop memories roundtrip");
+        for(int i=0;i<parameterCount;++i)require(approx(p.getSlotParameter(index(P(i))),expected[size_t(i)],1e-8),"Every slot parameter roundtrips");
+        for(int j=0;j<10;++j)for(int i=0;i<loopParameterCount;++i)require(approx(p.getSlotParameter(loopIndex(L(i)),j),expectedLoops[size_t(j)][size_t(i)],1e-8),"All ten loop memories roundtrip");
     };
     const auto slotFile=folder.getChildFile("Slot_Test.lsampler-24-s");require(p.saveSlotPreset(slotFile,error),"Save slot");
     auto alias=SamplePool::instance().load(p.getCurrentSampleFile(),error);require(alias==original,"Saving materialises a file without duplicating decoded audio");
@@ -267,7 +268,7 @@ void persistenceAndProcessorTests(const juce::File& folder) {
     // Original v2 XML, missing all migrated values.
     const auto oldFile=folder.getChildFile("old.lsampler-24-s");
     oldFile.replaceWithText("<LSampler24Slot formatVersion=\"2\" samplePath=\""+wav.getFullPathName()+"\" lowKey=\"12\" highKey=\"95\" rootNote=\"60\" volume=\"0.5\"/>");
-    require(p.loadSlotPreset(oldFile,error),"Legacy v2 slot loads");require(p.getLowKey()==12&&p.getHighKey()==95&&p.getRootNote()==60&&near(p.getVolume(),.5),"Legacy mapping and linear volume aliases");
+    require(p.loadSlotPreset(oldFile,error),"Legacy v2 slot loads");require(p.getLowKey()==12&&p.getHighKey()==95&&p.getRootNote()==60&&approx(p.getVolume(),.5),"Legacy mapping and linear volume aliases");
     require(p.getSlotParameter(index(P::lp_on))==0,"Missing values reset to catalog defaults");
     p.clearBank();process(p,audio,midi);require(p.getActiveVoiceCount()==0,"Clear bank stops all voices");
     std::cout<<"PASS processor offsets, mapping, layering, complete slot/bank/project persistence and v2 compatibility\n";
@@ -350,29 +351,29 @@ void bankInitialisationTests(const juce::File& folder) {
     p.clearBank();
     require(p.getCurrentBankName().isEmpty(), "TEST150 Bank Init clears bank name");
     for (int i = 0; i < fx::count; ++i)
-        require(near(p.getFXParameter(i), fx::parameters[size_t(i)].initial, 1.e-8),
+        require(approx(p.getFXParameter(i), fx::parameters[size_t(i)].initial, 1.e-8),
                 "TEST150 Bank Init resets every master FX control to its new-instance default");
-    require(near(p.getFXParameter(fx::reverbSize), 80), "TEST150 default reverb Size 80");
-    require(near(p.getFXParameter(fx::reverbDamping), 10), "TEST150 default reverb Damping 10");
-    require(near(p.getBankMacroOffset(int(P::input_gain)), 0), "TEST150 Bank Init clears macro offset");
+    require(approx(p.getFXParameter(fx::reverbSize), 80), "TEST150 default reverb Size 80");
+    require(approx(p.getFXParameter(fx::reverbDamping), 10), "TEST150 default reverb Damping 10");
+    require(approx(p.getBankMacroOffset(int(P::input_gain)), 0), "TEST150 Bank Init clears macro offset");
     for (int i = 0; i < globalParameterCount; ++i)
-        require(near(p.getGlobalOutputParameter(GlobalP(i)), globalParameters[size_t(i)].initial),
+        require(approx(p.getGlobalOutputParameter(GlobalP(i)), globalParameters[size_t(i)].initial),
                 "TEST150 Bank Init restores default output parameters");
     for (int slot = 0; slot < 24; ++slot)
         for (int send = 0; send < 3; ++send)
-            require(near(p.getSlotFXSend(slot, send), 100), "TEST150 Bank Init restores Slot Bank Sends");
+            require(approx(p.getSlotFXSend(slot, send), 100), "TEST150 Bank Init restores Slot Bank Sends");
     juce::AudioBuffer<float> buffer(2, 256);
     juce::MidiBuffer midi;
     process(p, buffer, midi);
     require(buffer.getMagnitude(0, 256) == 0, "TEST150 first block after Bank Init is silent");
 
     require(p.loadBankPreset(bank, error), "TEST150 restore previously saved FX bank");
-    require(near(p.getFXParameter(fx::reverbSize), 20), "TEST150 bank restores custom reverb size");
-    require(near(p.getFXParameter(fx::reverbGain), 12), "TEST150 bank restores custom reverb gain");
-    require(near(p.getFXParameter(fx::delayGain), 15), "TEST150 bank restores custom delay gain");
-    require(near(p.getBankMacroOffset(int(P::input_gain)), 6), "TEST150 bank restores macro offset");
-    require(near(p.getSlotFXSend(0, 2), 30), "TEST150 bank restores Slot Bank Sends");
-    require(near(p.getGlobalOutputParameter(GlobalP::bus_soft_drive), 65), "TEST150 bank restores output settings");
+    require(approx(p.getFXParameter(fx::reverbSize), 20), "TEST150 bank restores custom reverb size");
+    require(approx(p.getFXParameter(fx::reverbGain), 12), "TEST150 bank restores custom reverb gain");
+    require(approx(p.getFXParameter(fx::delayGain), 15), "TEST150 bank restores custom delay gain");
+    require(approx(p.getBankMacroOffset(int(P::input_gain)), 6), "TEST150 bank restores macro offset");
+    require(approx(p.getSlotFXSend(0, 2), 30), "TEST150 bank restores Slot Bank Sends");
+    require(approx(p.getGlobalOutputParameter(GlobalP::bus_soft_drive), 65), "TEST150 bank restores output settings");
     std::cout << "PASS TEST150 Bank Init restores all FX, sends, macros and output defaults\n";
 }
 
@@ -569,6 +570,45 @@ void idleAndFileWorkerTests(const juce::File& folder) {
     std::cout << "PASS idle wakeups and file worker isolation\n";
 }
 
+void phaseTests() {
+    auto r=std::make_unique<Rig>();
+    SlotParameters p;
+    p[P::phase]=0;
+    r->set(0,p);
+    require(!r->states[0].phase.active,"Phase 0 is an exact bypass");
+    p[P::phase]=-90;
+    r->set(0,p);
+    require(r->states[0].phase.active&&r->states[0].phase.sign==1.0,
+            "Negative phase uses the all-pass directly");
+    require(r->states[0].phase.coefficient<-0.8&&r->states[0].phase.coefficient>-0.95,
+            "Phase -90 coefficient at 48 kHz");
+    p[P::phase]=90;
+    r->set(0,p);
+    require(r->states[0].phase.active&&r->states[0].phase.sign==-1.0,
+            "Positive phase uses polarity inversion");
+    p[P::phase]=180;
+    r->set(0,p);
+    require(r->states[0].phase.active&&r->states[0].phase.sign==-1.0
+            &&approx(r->states[0].phase.coefficient,1.0,1e-9),
+            "Phase +180 is exact polarity inversion");
+    p[P::phase]=-180;
+    r->set(0,p);
+    require(r->states[0].phase.active&&r->states[0].phase.sign==1.0
+            &&approx(r->states[0].phase.coefficient,-1.0,1e-6),
+            "Phase -180 is exact polarity inversion");
+    // Integration: +180 must invert the rendered slot sample-for-sample.
+    auto a=std::make_unique<Rig>(),b=std::make_unique<Rig>();
+    SlotParameters pa,pb;
+    pa[P::phase]=0;pb[P::phase]=180;
+    a->set(0,pa);b->set(0,pb);
+    a->on();b->on();
+    a->render(4096);b->render(4096);
+    for(int i=0;i<4096;++i)
+        require(approx(a->output.getSample(0,i),-b->output.getSample(0,i),1e-5),
+                "Phase +180 inverts the rendered slot");
+    std::cout<<"PASS phase rotation catalog, bypass and polarity\n";
+}
+
 void editorTests(const juce::File& folder) {
     LSampler24AudioProcessor p(folder.getChildFile("library"));
     p.setSlotParameter(index(P::sample_start),25);
@@ -586,9 +626,9 @@ void editorTests(const juce::File& folder) {
     require(editor->keyPressed(key(juce::KeyPress::returnKey),slot),"Enter parameters");
     require(gridControl->getNumItems()==int(grid.size()),"All descriptors populate grid");
     gridControl->setSelectedItemIndex(index(P::sample_start));
-    require(near(value->getMaximum(),70),"TEST166 Start slider maximum follows Sample End");
+    require(approx(value->getMaximum(),70),"TEST166 Start slider maximum follows Sample End");
     gridControl->setSelectedItemIndex(index(P::sample_end));
-    require(near(value->getMinimum(),25),"TEST166 End slider minimum follows Sample Start");
+    require(approx(value->getMinimum(),25),"TEST166 End slider minimum follows Sample Start");
     require(editor->keyPressed(key(juce::KeyPress::spaceKey),gridControl),"Parameter Space owns preview");
     require(editor->keyPressed(key(juce::KeyPress::endKey,juce::ModifierKeys::ctrlModifier),gridControl),"Ctrl End is consumed");
     require(gridControl->getSelectedItemIndex()==int(grid.size())-1,"Ctrl End reaches last parameter");
@@ -607,7 +647,7 @@ int main() {
     try {
         juce::ScopedJuceInitialiser_GUI initialise;
         const auto folder=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("lsampler-regression","",false);folder.createDirectory();
-        voiceOptimisationParityTests();catalogTests();extendedLfoTests();cleanAndBypassTests();voiceTests();pitchAndStereoTests();dspReferenceTests();loopAndEffectTests();
+        voiceOptimisationParityTests();catalogTests();phaseTests();extendedLfoTests();cleanAndBypassTests();voiceTests();pitchAndStereoTests();dspReferenceTests();loopAndEffectTests();
         persistenceAndProcessorTests(folder);midiChannelRoutingTests(folder);bankInitialisationTests(folder);concurrentPublicationTest(folder);idleAndFileWorkerTests(folder);editorTests(folder);runSliceTests(folder);
         require(realtimeAllocations==0&&realtimeDeletes==0,"Zero allocations and frees across all guarded render/note-on/process calls");
         folder.deleteRecursively();

@@ -258,6 +258,7 @@ SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sampl
     s.sourceRatio=primary.sourceRatio;s.start=primary.start;s.length=primary.length;
     s.level=v(P::input_gain)<=-119.9?0:db(v(P::input_gain));
     s.panL=1-std::max(0.0,v(P::pan)*.01);s.panR=1+std::min(0.0,v(P::pan)*.01);
+    s.phase=phaseRotation(v(P::phase),sr);
     s.normalize=primary.normalize;
     s.fadeIn=primary.fadeIn;s.fadeOut=primary.fadeOut;s.edgeFade=primary.edgeFade;
     s.delayL=primary.delayL;s.delayR=primary.delayR;

@@ -2,8 +2,8 @@
 """Source-only keyguard regression check; does not build VST3."""
 from pathlib import Path
 root=Path(__file__).resolve().parents[1]
-main=(root/'Source/PluginEditor.cpp').read_text()
-slice=(root/'Source/SliceEditor.cpp').read_text()
+main=(root/'Source/PluginEditor.cpp').read_text(encoding='utf-8')
+slice=(root/'Source/SliceEditor.cpp').read_text(encoding='utf-8')
 assert 'if (sampleSetActive && mods.isCtrlDown() && mods.isShiftDown()\n        && !mods.isAltDown()\n' in main
 assert '&& parameterPage && !sourceIsValueEditor)' in main
 assert 'if (mods.isCtrlDown() && mods.isShiftDown() && !mods.isAltDown()\n        && juce::CharacterFunctions::toLowerCase(juce::juce_wchar(code)) == \'a\')' in slice

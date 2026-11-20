@@ -1,5 +1,6 @@
 #pragma once
 #include "Parameters.h"
+#include "PhaseRotation.h"
 #include "SamplePool.h"
 #include "SliceState.h"
 #include <cstdint>
@@ -85,6 +86,7 @@ struct SlotAudioState {
     double characterScale = 1, characterSlew = 1, characterAir = 0, characterRelease = 0;
     std::array<LoopAudioState, loopCount> stages {};
     int stageCount = 0;
+    PhaseRotation phase; // TEST189: prepared off the audio thread
 };
 // TEST173: interpret global Start/End on the full delayed Sample Set timeline.
 void applySampleSetGlobalWindow(SlotAudioState&) noexcept;

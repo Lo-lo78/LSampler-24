@@ -65,6 +65,9 @@ private:
         Envelope amp,lpEnvelope,hpEnvelope;
         std::array<Lfo,2> lfo;
         Filter lp,hp;
+        // TEST189: per-voice state for the slot's zero-latency phase rotator.
+        double phaseCoefficient=1.0,phaseSign=1.0;
+        double phaseX1[2]{},phaseY1[2]{};
         double ringPhase=0,fmPhase=0,fmFeedback=0;
         int degradeCount=0;
         double heldL=0,heldR=0,compEnv=0,gateEnv=0,gateGain=1,gateHold=0,transFast=0,transSlow=0;

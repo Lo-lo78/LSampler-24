@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(LSampler24 VERSION 0.99.28 LANGUAGES C CXX)
+project(LSampler24 VERSION 0.99.29 LANGUAGES C CXX)
 
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -58,6 +58,7 @@ target_sources(LSampler24 PRIVATE
     Source/SamplePool.cpp
     Source/SamplePool.h
     Source/Parameters.h
+    Source/PhaseRotation.h
     Source/ReaperItemWindow.h
     Source/ChromaticPasteMapping.h
     Source/SlotAudioState.h
@@ -160,6 +161,11 @@ if(LSAMPLER_BUILD_FILTER_TESTS)
     add_executable(LSampler24PolyrhythmTests Tests/LfoPolyrhythmTests.cpp)
     target_compile_features(LSampler24PolyrhythmTests PRIVATE cxx_std_17)
     add_test(NAME lfo-polyrhythm COMMAND LSampler24PolyrhythmTests)
+
+    # TEST189: JUCE-independent phase-rotator magnitude and phase response.
+    add_executable(LSampler24PhaseRotationTests Tests/PhaseRotationTests.cpp)
+    target_compile_features(LSampler24PhaseRotationTests PRIVATE cxx_std_17)
+    add_test(NAME phase-rotation COMMAND LSampler24PhaseRotationTests)
 
     # TEST170: JUCE-independent real transport detector/Free S&H seed test.
     add_executable(LSampler24FreeLfoTests Tests/FreeLfoTransportTests.cpp)

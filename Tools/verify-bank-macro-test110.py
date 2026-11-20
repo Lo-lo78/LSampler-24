@@ -6,7 +6,7 @@ root = Path(__file__).resolve().parents[1]
 manifest = json.loads((root / 'VST3_AUTOMATION_MANIFEST.json').read_text())
 old_ids = [p['id'] for p in manifest]
 assert len(old_ids) == 6629 and len(set(old_ids)) == 6629
-text = (root / 'Source/Parameters.h').read_text()
+text = (root / 'Source/Parameters.h').read_text(encoding='utf-8')
 entries = re.findall(r'^\{int\(P::(\w+)\),\s*-1,\s*Action::none,\s*"([^"]+)"\}', text, re.M)
 excluded = set('low high root velocity_low velocity_high midi_channel choke_trigger choke_target choke_mode normalize_on normalize_target ram_downsample ram_fade_in ram_fade_out ram_reverse dc_remove'.split())
 # Freeze the original TEST110 macro ABI: the TEST160 LFO additions have
@@ -16,8 +16,11 @@ new_lfo_keys = {f'lfo{lfo}_{name}' for lfo in (1, 2) for name in
                  'upper_squash', 'lower_squash', 'cross_rate', 'voice_mode',
                  'drift_amount', 'drift_cycle', 'lace_source', 'lace_rate', 'lace_mix')}
 assert len(new_lfo_keys) == 26
+# TEST188 Hold and TEST189 Phase add their own appended macro lanes. They are
+# not part of the frozen TEST110 batch, exactly like the TEST160/186 LFO lanes.
+appended_keys = new_lfo_keys | {'env_hold', 'lp_env_hold', 'hp_env_hold', 'phase'}
 macro_keys = {p for p, cat in entries if cat != 'Sample Window'
-              and p not in excluded and p not in new_lfo_keys}
+              and p not in excluded and p not in appended_keys}
 # TEST130 hides the legacy Loop Crossfade in the Grid, but retains its old
 # Bank Macro automation ID at its original position before Drive.
 macro_keys.add('loop_crossfade')
@@ -32,8 +35,8 @@ def vst_hash(name):
 all_ids = old_ids + new_ids
 assert len(set(all_ids)) == len(all_ids)
 assert len({vst_hash(x) for x in all_ids}) == len(all_ids)
-processor = (root / 'Source/PluginProcessor.cpp').read_text()
-editor = (root / 'Source/PluginEditor.cpp').read_text()
+processor = (root / 'Source/PluginProcessor.cpp').read_text(encoding='utf-8')
+editor = (root / 'Source/PluginEditor.cpp').read_text(encoding='utf-8')
 assert processor.index('    // Append after the existing 6629') > processor.index('for(int slot=0;slot<slotCount;++slot) {')
 assert 'bankMacroEligible(entry)' in processor and 'bankMacroEligible(e)' in editor
 assert 'saveBankMacroState(bank);' in processor and 'saveBankMacroState(state);' in processor

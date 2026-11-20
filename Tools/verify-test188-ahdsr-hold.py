@@ -10,7 +10,7 @@ state_h=read('Source/SlotAudioState.h')
 voice=read('Source/SamplerVoice.cpp')
 voice_h=read('Source/SamplerVoice.h')
 host=read('Source/PluginProcessor.cpp')
-assert 'parameterCount = 173' in p and 'std::array<GridEntry, 197> grid' in p
+assert 'parameterCount = 174' in p and 'std::array<GridEntry, 198> grid' in p
 assert 'int(P::lfo2_lace_mix)==169 && int(P::env_hold)==170' in p
 assert 'int(P::lp_env_hold)==171 && int(P::hp_env_hold)==172' in p
 for field,attack,group in [('env_hold','attack','Envelope'),('lp_env_hold','lp_env_attack','Low pass filter'),('hp_env_hold','hp_env_attack','High pass filter')]:
@@ -21,7 +21,7 @@ for field,attack,group in [('env_hold','attack','Envelope'),('lp_env_hold','lp_e
     assert f'"slot"+juce::String(slot+1).paddedLeft(\'0\',2)+"_"' in host
 assert host.index('// TEST188: three AHDSR Hold controls') > host.index('// TEST186: ten LFO Drift/Lace controls')
 assert host.count('for(int i=int(P::lfo1_drift_amount);i<int(P::env_hold);++i)') == 2
-assert host.count('for(int i=int(P::env_hold);i<parameterCount;++i)') == 2
+assert host.count('for(int i=int(P::env_hold);i<int(P::phase);++i)') == 2
 assert 'int phase=1, holdElapsed=0;' in voice_h
 assert 'if(phase==5)' in voice and 'if(++holdElapsed>=e.holdSamples)phase=2;' in voice
 assert 'if(phase!=0)phase=4;' in voice_h

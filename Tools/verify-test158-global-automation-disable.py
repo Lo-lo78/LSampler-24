@@ -2,14 +2,14 @@
 """TEST158 source-only regression checks; do not build the VST3."""
 from pathlib import Path
 r = Path(__file__).resolve().parent.parent
-proc = (r / 'Source/PluginProcessor.cpp').read_text()
-head = (r / 'Source/PluginProcessor.h').read_text()
-editor = (r / 'Source/PluginEditor.cpp').read_text()
-ui = (r / 'Source/PluginEditor.h').read_text()
-fx = (r / 'Source/FXPanel.h').read_text()
-slice_cpp = (r / 'Source/SliceEditor.cpp').read_text()
-slice_h = (r / 'Source/SliceEditor.h').read_text()
-help_page = (r / 'Help/LSampler24Help.html').read_text()
+proc = (r / 'Source/PluginProcessor.cpp').read_text(encoding='utf-8')
+head = (r / 'Source/PluginProcessor.h').read_text(encoding='utf-8')
+editor = (r / 'Source/PluginEditor.cpp').read_text(encoding='utf-8')
+ui = (r / 'Source/PluginEditor.h').read_text(encoding='utf-8')
+fx = (r / 'Source/FXPanel.h').read_text(encoding='utf-8')
+slice_cpp = (r / 'Source/SliceEditor.cpp').read_text(encoding='utf-8')
+slice_h = (r / 'Source/SliceEditor.h').read_text(encoding='utf-8')
+help_page = (r / 'Help/LSampler24Help.html').read_text(encoding='utf-8')
 # One instance only: host parent + currently focused FX validated with an
 # existing parameter's name, never blindly use last-touched other plugins.
 batch = proc[proc.index('    bool deactivateAll(LSampler24AudioProcessor&'):proc.index('\nprivate:\n    template <class T> T getApi', proc.index('    bool deactivateAll(LSampler24AudioProcessor&'))]
