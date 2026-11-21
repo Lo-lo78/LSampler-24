@@ -11,7 +11,16 @@ rotazione non aggiunge latenza.
 
 Phase è disponibile in **Grid/Value**, automazione REAPER (**Ctrl+Shift+A**),
 **Bank Macro** e preset Slot/Bank. Gli ID VST3 esistenti non si spostano: il
-nuovo ID è aggiunto in coda. Restano invariati gli AHDSR Hold della TEST188,
+nuovo ID è aggiunto in coda.
+
+**Uso pratico di Phase:** apri la pagina Slot e passa da Pan a Phase.
+0° conserva l’audio originale; usa valori diversi per sperimentare
+la combinazione di più campioni sovrapposti. Il parametro non è un controllo
+di Pan, di fase dell’LFO o di spostamento del punto iniziale del campione.
+L’angolo è riferito a 1 kHz, non è una rotazione costante a ogni frequenza;
+le variazioni automatizzate sono smussate su circa 10 ms. I canali stereo
+sono elaborati separatamente con lo stesso parametro.
+ Restano invariati gli AHDSR Hold della TEST188,
 Self-Lace e tutte le funzioni precedenti.
 
 Aggiornati **About (Alt+A)**, CMake/VST3, guida incorporata nelle **otto lingue**,

@@ -297,6 +297,9 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
         + "\nRelease date: " + lsamplerReleaseDate
         + "\nNew in 0.99.29: Phase per Slot, -180 to +180 degrees, default 0, immediately after Pan."
         + "\nPhase uses a zero-latency all-pass referenced to 1 kHz; 0 degrees is exact bypass."
+        + "\nPhase is audio phase, not LFO Phase or Pan; its angle varies with frequency."
+        + "\nPlus/minus 180 degrees invert polarity; automation changes are smoothed over 10 ms."
+        + "\nPhase works in Grid/Value, Bank Macros, host automation and saved Slot/Bank presets."
         + "\nNew in 0.99.28: AHDSR Hold for Amp, Low Pass and High Pass envelopes in all 24 Slots."
         + "\nEnv Hold, LP Env Hold, HP Env Hold: 0 to 5 s, 1 ms resolution, default 0."
         + "\nCtrl+Shift+A: REAPER envelope automation also works for all three Hold controls."

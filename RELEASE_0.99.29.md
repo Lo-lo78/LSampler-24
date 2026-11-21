@@ -12,6 +12,7 @@
 - Phase rotates the **Slot audio signal**, not an LFO. It uses a **zero-latency first-order all-pass referenced to 1 kHz** with unity magnitude.
 - **+180° and -180° are exact polarity inversion.** Intermediate angles have the requested phase at 1 kHz; because the rotator adds no latency, the phase response necessarily varies with frequency.
 - The rotator is applied per voice after the Machine stage and before de-click fades, FX sends and the Slot output. Coefficient and polarity changes are smoothed over **10 ms** for host automation.
+- **Practical use:** when layering samples, vary Phase in one Slot and listen to the combined sound, especially in the low frequencies. This is audio phase processing, not Pan, sample-start offset or LFO Phase. The two stereo channels are processed separately with the same Phase setting.
 - **Phase is available in Grid/Value, REAPER automation (Ctrl+Shift+A), Bank Macro and Slot/Bank presets.**
 - The new VST3 ID is `slotXX_phase` (one per Slot), appended **after the complete TEST188 batch**. All previously published IDs, indices, automation and presets remain unchanged.
 
