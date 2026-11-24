@@ -193,12 +193,15 @@ enum class P {
     // TEST190: append only; the UI order is independent.
     hp_key_follow,
     bp_cutoff,
+    // TEST191: append new LFO destinations without changing existing host IDs.
+    lfo1_bp_depth,
+    lfo2_bp_depth,
     count
 };
 // Append the new indices only. The first nine VST3 IDs/indices are frozen.
 enum class L { start, end, repeats, fade_in, fade_out, pitch_down, lp_down, hp_down, one_shot,
                repeat_pan, pitch_time, level, crossfade, downsample, pan, repeat_level, direction, count };
-inline constexpr int legacyParameterCount = 143, parameterCount = 176, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
+inline constexpr int legacyParameterCount = 143, parameterCount = 178, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
 static_assert(int(L::repeat_pan)==legacyLoopParameterCount && int(L::pitch_time)==10 && int(L::level)==11
               && int(L::crossfade)==12 && int(L::downsample)==13 && int(L::pan)==14
               && int(L::repeat_level)==15 && int(L::direction)==16 && int(L::count)==loopParameterCount);
@@ -207,7 +210,8 @@ static_assert(int(P::lfo1_one_shot_percent)==legacyParameterCount &&
               int(P::lfo2_lace_mix)==169 && int(P::env_hold)==170 &&
               int(P::lp_env_hold)==171 && int(P::hp_env_hold)==172 &&
               int(P::phase)==173 && int(P::hp_key_follow)==174 &&
-              int(P::bp_cutoff)==175 && int(P::count)==parameterCount,
+              int(P::bp_cutoff)==175 && int(P::lfo1_bp_depth)==176 &&
+              int(P::lfo2_bp_depth)==177 && int(P::count)==parameterCount,
               "Legacy parameter IDs must remain unchanged");
 inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"input_gain", "Level", "Slot", Kind::continuous, 0.0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""},
@@ -391,6 +395,8 @@ inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"phase", "Phase", "Slot", Kind::continuous, 0, -180, 180, 1, 15, "°", 0, ""},
 {"hp_key_follow", "HP Key Follow", "High pass filter", Kind::continuous, 0.0, -1.0, 1.0, 0.001, 0.01, "", 3, ""},
 {"bp_cutoff", "BP Cutoff", "High pass filter", Kind::continuous, 0.5, 0.0, 1.0, 0.001, 0.05, "", 3, ""},
+{"lfo1_bp_depth", "LFO 1 BP Depth", "LFO 1", Kind::continuous, 0.0, -96.0, 96.0, 0.1, 1.0, "semitones", 1, ""},
+{"lfo2_bp_depth", "LFO 2 BP Depth", "LFO 2", Kind::continuous, 0.0, -96.0, 96.0, 0.1, 1.0, "semitones", 1, ""},
 }};
 enum class GlobalP { master_output_gain, output_stage, bus_glue, bus_soft_drive, output_ceiling, count };
 inline constexpr int globalParameterCount = 5;
@@ -424,7 +430,7 @@ inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 }};
 enum class Action { none, sampleZero, loopZero };
 struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; int global = -1; };
-inline constexpr std::array<GridEntry, 200> grid {{
+inline constexpr std::array<GridEntry, 202> grid {{
 {int(P::input_gain), -1, Action::none, "Slot"},
 {int(P::polyphony), -1, Action::none, "Slot"},
 {int(P::slot_polyphony), -1, Action::none, "Slot"},
@@ -539,6 +545,7 @@ inline constexpr std::array<GridEntry, 200> grid {{
 {int(P::lfo1_pan_depth), -1, Action::none, "LFO 1"},
 {int(P::lfo1_lp_depth), -1, Action::none, "LFO 1"},
 {int(P::lfo1_hp_depth), -1, Action::none, "LFO 1"},
+{int(P::lfo1_bp_depth), -1, Action::none, "LFO 1"},
 {int(P::lfo1_pitch_depth), -1, Action::none, "LFO 1"},
 {int(P::lfo1_sample_depth), -1, Action::none, "LFO 1"},
 {int(P::lfo2_rate), -1, Action::none, "LFO 2"},
@@ -565,6 +572,7 @@ inline constexpr std::array<GridEntry, 200> grid {{
 {int(P::lfo2_pan_depth), -1, Action::none, "LFO 2"},
 {int(P::lfo2_lp_depth), -1, Action::none, "LFO 2"},
 {int(P::lfo2_hp_depth), -1, Action::none, "LFO 2"},
+{int(P::lfo2_bp_depth), -1, Action::none, "LFO 2"},
 {int(P::lfo2_pitch_depth), -1, Action::none, "LFO 2"},
 {int(P::lfo2_mod_pitch_depth), -1, Action::none, "LFO 2"},
 {int(P::lfo2_sample_depth), -1, Action::none, "LFO 2"},
@@ -689,4 +697,11 @@ struct SlotParameters {
             (*this)[P::bp_cutoff] = cutoffMidpoint((*this)[P::lp_cutoff], (*this)[P::hp_cutoff]);
     }
 };
+// TEST191: shared modulation is summed with the individual destinations at
+// snapshot preparation time. No writes to the physical cutoff controls.
+inline std::array<double, 2> lfoFilterDepths(const SlotParameters& p, int lfo, bool lpOn, bool hpOn) noexcept {
+    const auto bp = p[lfo ? P::lfo2_bp_depth : P::lfo1_bp_depth];
+    return {lpOn ? p[lfo ? P::lfo2_lp_depth : P::lfo1_lp_depth] + bp : 0.0,
+            hpOn ? p[lfo ? P::lfo2_hp_depth : P::lfo1_hp_depth] + bp : 0.0};
+}
 } // namespace lsampler

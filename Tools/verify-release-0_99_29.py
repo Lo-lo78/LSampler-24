@@ -36,7 +36,7 @@ assert help_page.count('<article class="manual"') == 8
 HTMLParser().feed(help_page)
 params = read('Source/Parameters.h')
 assert '"phase", "Phase", "Slot"' in params
-assert 'parameterCount = 176' in params
+assert 'parameterCount = 178' in params
 assert 'python Tools/verify-test189-phase.py' in workflow
 assert 'python Tools/verify-test188-ahdsr-hold.py' in workflow
 assert 'python Tools/verify-test187-self-lace-selection.py' in workflow

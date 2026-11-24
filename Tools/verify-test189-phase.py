@@ -18,8 +18,8 @@ build = read('Tools/build-windows.ps1')
 
 # Catalog: Phase is appended after every frozen ID and appears after Pan in the
 # accessible Slot page, while the VST3 ID remains at the end of the host batch.
-assert 'parameterCount = 176' in p
-assert 'std::array<GridEntry, 200> grid' in p
+assert 'parameterCount = 178' in p
+assert 'std::array<GridEntry, 202> grid' in p
 assert 'int(P::env_hold)==170' in p and 'int(P::lp_env_hold)==171' in p
 assert 'int(P::hp_env_hold)==172' in p and 'int(P::phase)==173' in p
 assert '{"phase", "Phase", "Slot", Kind::continuous, 0, -180, 180, 1, 15, "°", 0, ""}' in p

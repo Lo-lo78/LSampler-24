@@ -283,7 +283,11 @@ SlotAudioState prepareSlotAudioState(const SlotParameters& p,SharedSample* sampl
         l.sync=f(2)!=0;l.trigger=f(1)!=0;l.oneShot=f(3)!=0;l.wave=int(f(4));
         l.rate=l.sync?std::max(.125,f(0))/(240*sr):f(0)/sr;
         l.delay=f(5)*sr;l.smoothing=1-std::min(.999,f(6));
-        l.volume=f(7);l.pan=f(8);l.lp=s.lp?f(9):0;l.hp=s.hp?f(10):0;l.pitch=f(11);
+        l.volume=f(7);l.pan=f(8);l.pitch=f(11);
+        // TEST191: identical bipolar semitone modulation for both enabled filters.
+        // This is an audio modulation destination, not a write to host/base cutoffs.
+        const auto filterDepths=lfoFilterDepths(p,i,s.lp,s.hp);
+        l.lp=filterDepths[0];l.hp=filterDepths[1];
         l.wheel=i?v(P::lfo2_mod_pitch_depth):0;l.move=i?v(P::lfo2_sample_depth):v(P::lfo1_sample_depth);
         // Address the appended IDs explicitly: legacy LFO groups remain contiguous
         // and all 143 original parameter positions must stay unchanged.

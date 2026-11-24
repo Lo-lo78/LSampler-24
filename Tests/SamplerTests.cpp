@@ -44,7 +44,7 @@ struct Rig {
 };
 void catalogTests() {
     SlotParameters p;require(p[P::root]==60&&p[P::low]==0&&p[P::high]==127,"Approved mapping defaults");
-    require(legacyParameterCount==143&&parameterCount==176&&int(P::env_hold)==170
+    require(legacyParameterCount==143&&parameterCount==178&&int(P::env_hold)==170
             &&int(P::phase)==173&&loopCount==10,
             "Stable legacy IDs and TEST163/TEST189 catalog");
     require(p[P::midi_channel]==0 && p.acceptsMidiChannel(0) && p.acceptsMidiChannel(15),
@@ -605,6 +605,37 @@ void filterMacroTests(const juce::File& folder) {
     std::cout<<"PASS TEST190 HP tracking DSP and physical macro host routing\n";
 }
 
+void bpLfoTests() {
+    // Compare common depth to exactly the same individual modulation on LP/HP.
+    // Also exercise signed sums, separate LFOs, disabled filters and defaults.
+    for(int mask=0;mask<4;++mask) {
+        for(int lfo=0;lfo<2;++lfo) {
+            auto a=std::make_unique<Rig>(), b=std::make_unique<Rig>();
+            SlotParameters pa,pb;
+            pa[P::lp_on]=pb[P::lp_on]=mask&1?1:0;
+            pa[P::hp_on]=pb[P::hp_on]=mask&2?1:0;
+            pa[P::lp_cutoff]=pb[P::lp_cutoff]=.65;
+            pa[P::hp_cutoff]=pb[P::hp_cutoff]=.3;
+            const auto bp=lfo?P::lfo2_bp_depth:P::lfo1_bp_depth;
+            const auto lp=lfo?P::lfo2_lp_depth:P::lfo1_lp_depth;
+            const auto hp=lfo?P::lfo2_hp_depth:P::lfo1_hp_depth;
+            const double depth=lfo?-12:24;
+            pa[bp]=depth; pa[lp]=3;pa[hp]=-5;
+            pb[lp]=3+depth;pb[hp]=-5+depth;
+            a->set(0,pa);b->set(0,pb);
+            const auto& prepared=a->states[0];
+            require(approx(prepared.lfo[lfo].lp,mask&1?3+depth:0),"BP adds to enabled LP");
+            require(approx(prepared.lfo[lfo].hp,mask&2?-5+depth:0),"BP adds to enabled HP");
+            require(!prepared.lfo[1-lfo].active,"Other LFO stays independent");
+            require(approx(prepared.params[P::lp_cutoff],.65)&&approx(prepared.params[P::hp_cutoff],.3),"Base cutoffs unchanged");
+            a->on();b->on();a->render(4096);b->render(4096);
+            for(int ch=0;ch<2;++ch)for(int i=0;i<4096;++i)
+                require(approx(a->output.getSample(ch,i),b->output.getSample(ch,i),1e-6),"Common LFO depth matches individual destinations");
+        }
+    }
+    std::cout<<"PASS TEST191 common LFO cutoff depth and independent destination parity\n";
+}
+
 void phaseTests() {
     auto r=std::make_unique<Rig>();
     SlotParameters p;
@@ -682,7 +713,7 @@ int main() {
     try {
         juce::ScopedJuceInitialiser_GUI initialise;
         const auto folder=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("lsampler-regression","",false);folder.createDirectory();
-        voiceOptimisationParityTests();catalogTests();filterMacroTests(folder);phaseTests();extendedLfoTests();cleanAndBypassTests();voiceTests();pitchAndStereoTests();dspReferenceTests();loopAndEffectTests();
+        voiceOptimisationParityTests();catalogTests();filterMacroTests(folder);bpLfoTests();phaseTests();extendedLfoTests();cleanAndBypassTests();voiceTests();pitchAndStereoTests();dspReferenceTests();loopAndEffectTests();
         persistenceAndProcessorTests(folder);midiChannelRoutingTests(folder);bankInitialisationTests(folder);concurrentPublicationTest(folder);idleAndFileWorkerTests(folder);editorTests(folder);runSliceTests(folder);
         require(realtimeAllocations==0&&realtimeDeletes==0,"Zero allocations and frees across all guarded render/note-on/process calls");
         folder.deleteRecursively();

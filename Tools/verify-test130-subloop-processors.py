@@ -66,7 +66,7 @@ assert 10**(min(24,max(-120,100*3))/20) == 10**(24/20)
 grid=re.search(r'inline constexpr std::array<GridEntry, (\d+)> grid \{\{(.*?)\}\};',p,re.S)
 assert grid and int(grid.group(1))==len(re.findall(r'^\{',grid.group(2),re.M))
 # TEST160 appends 14 accessible LFO items; all original 167 still exist.
-assert int(grid.group(1))==200
+assert int(grid.group(1))==202
 # Record all actual host IDs in the exact order from TEST129 plus appended new fields.
 legacy_manifest=json.loads((root/'VST3_AUTOMATION_MANIFEST.json').read_text())
 legacy_ids=[d['id'] for d in legacy_manifest]
@@ -80,7 +80,7 @@ new_lfo_keys={f'lfo{lfo}_{name}' for lfo in (1,2) for name in
               ('one_shot_percent','phase','env_rate','square_pwm','upper_squash','lower_squash','cross_rate','voice_mode','drift_amount','drift_cycle','lace_source','lace_rate','lace_mix')}
 macros=[]
 for key,category in re.findall(r'^\{int\(P::(\w+)\),\s*-1,\s*Action::none,\s*"([^"]+)"\}',p,re.M):
-    if category!='Sample Window' and key not in exclude and key not in new_lfo_keys and key not in {'env_hold','lp_env_hold','hp_env_hold','phase','hp_key_follow','bp_cutoff'} and key not in macros:macros.append(key)
+    if category!='Sample Window' and key not in exclude and key not in new_lfo_keys and key not in {'env_hold','lp_env_hold','hp_env_hold','phase','hp_key_follow','bp_cutoff','lfo1_bp_depth','lfo2_bp_depth'} and key not in macros:macros.append(key)
 macros.insert(macros.index('drive_type'),'loop_crossfade')
 assert len(macros)==116 and macros.index('loop_crossfade')+1==macros.index('drive_type')
 macro_ids=['bankmacro_'+key for key in macros]

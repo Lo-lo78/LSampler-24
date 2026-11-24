@@ -102,6 +102,12 @@ jobs:
           python Tools/verify-test190-filter-macro.py
           if ($LASTEXITCODE -ne 0) { throw "TEST190 filter macro verification failed." }
 
+      - name: Verify TEST191 common cutoff LFO depths
+        shell: powershell
+        run: |
+          python Tools/verify-test191-bp-lfo.py
+          if ($LASTEXITCODE -ne 0) { throw "TEST191 common cutoff LFO verification failed." }
+
       - name: Verify TEST170 deterministic Free LFO on DAW Play
         shell: powershell
         run: |
@@ -253,7 +259,7 @@ jobs:
             "Audio parity with TEST59 passed for the automated test scenarios.",
             "Performance measurements are in LSampler-24-TEST62-Reports."
           ) | Set-Content -LiteralPath "BUILD_0.99.29.txt" -Encoding UTF8
-          Compress-Archive -Path $vst3, "BUILD_0.99.29.txt", "TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt", "TEST170_FREE_LFO_HOST_PLAY_NOTE_IT.txt", "RELEASE_TEST176.md", "RELEASE_TEST177.md", "RELEASE_TEST178.md", "RELEASE_TEST179.md", "RELEASE_TEST180.md", "RELEASE_TEST181.md", "RELEASE_TEST182.md", "RELEASE_TEST183.md", "RELEASE_TEST184.md", "RELEASE_TEST185.md", "RELEASE_0.99.27.md", "RELEASE_0.99.28.md", "RELEASE_TEST188.md", "RELEASE_0.99.29.md", "RELEASE_TEST189.md", "RELEASE_TEST190.md", "Help/LSampler24Help.html" -DestinationPath "LSampler-24.0.99.29.vst3.zip" -Force
+          Compress-Archive -Path $vst3, "BUILD_0.99.29.txt", "TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt", "TEST170_FREE_LFO_HOST_PLAY_NOTE_IT.txt", "RELEASE_TEST176.md", "RELEASE_TEST177.md", "RELEASE_TEST178.md", "RELEASE_TEST179.md", "RELEASE_TEST180.md", "RELEASE_TEST181.md", "RELEASE_TEST182.md", "RELEASE_TEST183.md", "RELEASE_TEST184.md", "RELEASE_TEST185.md", "RELEASE_0.99.27.md", "RELEASE_0.99.28.md", "RELEASE_TEST188.md", "RELEASE_0.99.29.md", "RELEASE_TEST189.md", "RELEASE_TEST190.md", "RELEASE_TEST191.md", "Help/LSampler24Help.html" -DestinationPath "LSampler-24.0.99.29.vst3.zip" -Force
 
       - name: Upload LSampler-24 0.99.29 VST3
         if: success() && steps.compare.outcome == 'success'

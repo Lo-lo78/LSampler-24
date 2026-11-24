@@ -4415,7 +4415,7 @@ void LSampler24AudioProcessor::createHostParameters()
         auto& h=hostSlots[size_t(slot)];
         const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
         const juce::String name="Slot "+juce::String(slot+1)+" - ";
-        for(int i=int(P::hp_key_follow);i<parameterCount;++i) {
+        for(int i=int(P::hp_key_follow);i<int(P::lfo1_bp_depth);++i) {
             const auto& d=parameters[size_t(i)];
             h.values[size_t(i)]=add(id+d.key,name+juce::String(d.name),d,hostGenerations[size_t(slot)]);
         }
@@ -4427,6 +4427,21 @@ void LSampler24AudioProcessor::createHostParameters()
     const auto& hpDescriptor=parameters[size_t(hpIndex)];
     hostBankMacros[size_t(hpIndex)]=add("bankmacro_"+juce::String(hpDescriptor.key),
         "Bank Macro - "+juce::String(hpDescriptor.name),bankMacroDeltaDescriptor(hpIndex),bankMacroHostGeneration);
+    // TEST191: append after all TEST190 slot and bank lanes, preserving indices.
+    for(int slot=0;slot<slotCount;++slot) {
+        auto& h=hostSlots[size_t(slot)];
+        const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
+        const juce::String name="Slot "+juce::String(slot+1)+" - ";
+        for(int i=int(P::lfo1_bp_depth);i<parameterCount;++i) {
+            const auto& d=parameters[size_t(i)];
+            h.values[size_t(i)]=add(id+d.key,name+juce::String(d.name),d,hostGenerations[size_t(slot)]);
+        }
+    }
+    for(int i=int(P::lfo1_bp_depth);i<parameterCount;++i) {
+        const auto& d=parameters[size_t(i)];
+        hostBankMacros[size_t(i)]=add("bankmacro_"+juce::String(d.key),
+            "Bank Macro - "+juce::String(d.name),bankMacroDeltaDescriptor(i),bankMacroHostGeneration);
+    }
     hostParametersReady=true;
 }
 
