@@ -1,3 +1,23 @@
+# LSampler-24 — Versione 0.99.30
+
+**Release date: 24 November 2026 · Windows x64 VST3 · REAPER / OSARA / NVDA**
+
+La release pubblica integra le TEST190 e TEST191 validate in REAPER.
+
+- **HP Key Follow**: tracking indipendente del passa-alto, dopo HP Velocity; da -1 a +1, default 0, passo 0,001. Segue la nota MIDI rispetto a Original Pitch, come LP Key Follow.
+- **BP Cutoff**: macro fisica dopo HP Cutoff. Legge la media dei due cutoff e sposta entrambi sulla scala logaritmica originale, conservando il rapporto tra le frequenze. Entrambi si fermano al primo limite; la modifica di un cutoff individuale ricalibra la macro. Non aggiunge un filtro DSP né un Key Follow comune.
+- **LFO 1 BP Depth** e **LFO 2 BP Depth**: dopo il rispettivo HP Depth, da -96 a +96 semitoni, passo 0,1, default 0. Sommano una modulazione comune ai depth LP/HP individuali, senza modificare i cutoff memorizzati.
+
+**Esempio:** LP Cutoff 0,600, HP Cutoff 0,300; BP Cutoff legge 0,450. Portandolo a 0,550, LP diventa 0,700 e HP 0,400. Attiva entrambi i filtri per costruire una finestra spettrale a piacere; imposta entrambi i Key Follow a +1 per seguire la tastiera. Prova LFO 1 BP Depth = 12 semitoni con i depth individuali a zero. Le risonanze rimangono indipendenti.
+
+Tutti i nuovi controlli supportano automazione REAPER (**Ctrl+Shift+A**) e preset per Slot. HP Key Follow e i due BP Depth supportano anche Bank Macro; BP Cutoff no. Evita automazioni simultanee della macro fisica e dei cutoff individuali. I vecchi ID e il suono dei preset sono preservati.
+
+Aggiornati About (Alt+A), guida integrata in otto lingue, CMake e GitHub Actions. Vedi `RELEASE_0.99.30.md`, `RELEASE_TEST190.md` e `RELEASE_TEST191.md`.
+
+---
+
+## Cronologia precedente: 0.99.29 TEST189
+
 # LSampler-24 — Versione 0.99.29
 
 **Release date: 20 November 2026 · Windows x64 VST3 · REAPER / OSARA / NVDA**

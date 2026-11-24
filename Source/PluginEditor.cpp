@@ -14,8 +14,8 @@ namespace
 {
 constexpr std::array<int, 5> stepWidths { 1, 5, 10, 15, 20 };
 constexpr int valuePageStep = 40;
-constexpr auto lsamplerVersion = "0.99.29";
-constexpr auto lsamplerReleaseDate = "20 November 2026";
+constexpr auto lsamplerVersion = "0.99.30";
+constexpr auto lsamplerReleaseDate = "24 November 2026";
 constexpr auto lsamplerProjectUrl = "https://github.com/Lo-lo78/LSampler-24";
 constexpr auto lsamplerContactEmail = "vmanolo301@gmail.com";
 
@@ -295,6 +295,10 @@ LSampler24AudioProcessorEditor::LSampler24AudioProcessorEditor(LSampler24AudioPr
 
     const auto aboutText = juce::String("LSampler-24\nVersion: ") + lsamplerVersion
         + "\nRelease date: " + lsamplerReleaseDate
+        + "\nNew in 0.99.30: HP Key Follow, physical BP Cutoff and LFO 1/2 BP Depth for each Slot."
+        + "\nHP Key Follow: -1 to +1, default 0; independent of LP Key Follow."
+        + "\nBP Cutoff moves both stored cutoff values together on their logarithmic scale; no extra filter."
+        + "\nLFO 1 BP Depth and LFO 2 BP Depth: -96 to +96 semitones, default 0; shared DSP modulation, independent of the stored cutoffs."
         + "\nNew in 0.99.29: Phase per Slot, -180 to +180 degrees, default 0, immediately after Pan."
         + "\nPhase uses a zero-latency all-pass referenced to 1 kHz; 0 degrees is exact bypass."
         + "\nPhase is audio phase, not LFO Phase or Pan; its angle varies with frequency."

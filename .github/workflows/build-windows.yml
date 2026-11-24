@@ -18,11 +18,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify release 0.99.29 version, About, Help and artifact metadata
+      - name: Verify release 0.99.30 version, About, Help and artifact metadata
         shell: powershell
         run: |
-          python Tools/verify-release-0_99_29.py
-          if ($LASTEXITCODE -ne 0) { throw "LSampler-24 0.99.29 release metadata mismatch." }
+          python Tools/verify-release-0_99_30.py
+          if ($LASTEXITCODE -ne 0) { throw "LSampler-24 0.99.30 release metadata mismatch." }
 
       - name: Verify TEST185 Windows Python UTF-8 file decoding
         shell: powershell
@@ -214,15 +214,15 @@ jobs:
           python Tools/verify-test183-cache-cleanup.py
           if ($LASTEXITCODE -ne 0) { throw "TEST183 extracted cache cleanup check failed." }
 
-      - name: Package LSampler-24 v0.99.29 VST3 after audio comparison passes
+      - name: Package LSampler-24 v0.99.30 VST3 after audio comparison passes
         if: success() && steps.compare.outcome == 'success'
         shell: powershell
         run: |
           $vst3 = "build\make-release\LSampler24_artefacts\Release\VST3\LSampler-24.vst3"
           if (-not (Test-Path -LiteralPath $vst3)) { throw "VST3 bundle not found: $vst3" }
           @(
-            "LSampler-24 v0.99.29 - Windows x64 VST3.",
-            "Build date: 20 November 2026.",
+            "LSampler-24 v0.99.30 - Windows x64 VST3.",
+            "Build date: 24 November 2026.",
             "24-slot sampler with Sample Sets, accessible Help (8 languages) and About.",
             "TEST166: 3 ms voice de-click, 1 ms legato pitch transition and bounded Sample Start/End.",
             "TEST169: SWS/BR audio source paths copied to clipboard, import full files with slot-grid Alt+V.",
@@ -255,16 +255,18 @@ jobs:
             "v0.99.29 TEST189: Phase per Slot, -180 to +180 degrees, default zero, immediately after Pan.",
             "TEST189 Phase rotates the Slot audio with a zero-latency all-pass at 1 kHz; 0 is exact bypass.",
             "All three Hold controls support REAPER automation, Bank Macro, Slot/Bank presets and Note Off Release.",
+            "v0.99.30 TEST190: independent HP Key Follow and physical linked BP Cutoff.",
+            "v0.99.30 TEST191: LFO 1/2 BP Depth, common cutoff modulation without changing stored cutoffs.",
             "Commit: $env:GITHUB_SHA",
             "Audio parity with TEST59 passed for the automated test scenarios.",
             "Performance measurements are in LSampler-24-TEST62-Reports."
-          ) | Set-Content -LiteralPath "BUILD_0.99.29.txt" -Encoding UTF8
-          Compress-Archive -Path $vst3, "BUILD_0.99.29.txt", "TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt", "TEST170_FREE_LFO_HOST_PLAY_NOTE_IT.txt", "RELEASE_TEST176.md", "RELEASE_TEST177.md", "RELEASE_TEST178.md", "RELEASE_TEST179.md", "RELEASE_TEST180.md", "RELEASE_TEST181.md", "RELEASE_TEST182.md", "RELEASE_TEST183.md", "RELEASE_TEST184.md", "RELEASE_TEST185.md", "RELEASE_0.99.27.md", "RELEASE_0.99.28.md", "RELEASE_TEST188.md", "RELEASE_0.99.29.md", "RELEASE_TEST189.md", "RELEASE_TEST190.md", "RELEASE_TEST191.md", "Help/LSampler24Help.html" -DestinationPath "LSampler-24.0.99.29.vst3.zip" -Force
+          ) | Set-Content -LiteralPath "BUILD_0.99.30.txt" -Encoding UTF8
+          Compress-Archive -Path $vst3, "BUILD_0.99.30.txt", "TEST169_SWS_COPY_SOURCE_PATHS_NOTE_IT.txt", "TEST170_FREE_LFO_HOST_PLAY_NOTE_IT.txt", "RELEASE_TEST176.md", "RELEASE_TEST177.md", "RELEASE_TEST178.md", "RELEASE_TEST179.md", "RELEASE_TEST180.md", "RELEASE_TEST181.md", "RELEASE_TEST182.md", "RELEASE_TEST183.md", "RELEASE_TEST184.md", "RELEASE_TEST185.md", "RELEASE_0.99.27.md", "RELEASE_0.99.28.md", "RELEASE_TEST188.md", "RELEASE_0.99.29.md", "RELEASE_TEST189.md", "RELEASE_TEST190.md", "RELEASE_TEST191.md", "RELEASE_0.99.30.md", "Help/LSampler24Help.html" -DestinationPath "LSampler-24.0.99.30.vst3.zip" -Force
 
-      - name: Upload LSampler-24 0.99.29 VST3
+      - name: Upload LSampler-24 0.99.30 VST3
         if: success() && steps.compare.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: LSampler-24.0.99.29.vst3
-          path: LSampler-24.0.99.29.vst3.zip
+          name: LSampler-24.0.99.30.vst3
+          path: LSampler-24.0.99.30.vst3.zip
           if-no-files-found: error
