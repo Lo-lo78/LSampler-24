@@ -18,7 +18,7 @@ new_lfo_keys = {f'lfo{lfo}_{name}' for lfo in (1, 2) for name in
 assert len(new_lfo_keys) == 26
 # TEST188 Hold and TEST189 Phase add their own appended macro lanes. They are
 # not part of the frozen TEST110 batch, exactly like the TEST160/186 LFO lanes.
-appended_keys = new_lfo_keys | {'env_hold', 'lp_env_hold', 'hp_env_hold', 'phase'}
+appended_keys = new_lfo_keys | {'env_hold', 'lp_env_hold', 'hp_env_hold', 'phase', 'hp_key_follow', 'bp_cutoff'}
 macro_keys = {p for p, cat in entries if cat != 'Sample Window'
               and p not in excluded and p not in appended_keys}
 # TEST130 hides the legacy Loop Crossfade in the Grid, but retains its old

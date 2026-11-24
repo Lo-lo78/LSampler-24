@@ -53,8 +53,12 @@ def legacy_catalog_entries(source):
 try:
     source = (root / 'Source/Parameters.h').read_text(encoding='utf-8').replace('\r\n', '\n')
     enum_names, descriptors = legacy_catalog_entries(source)
-    if len(enum_names) != 174 or len(descriptors) != 174:
-        errors.append('TEST189 parameter count (173 frozen parameters + 1 appended Phase control)')
+    if len(enum_names) != 176 or len(descriptors) != 176:
+        errors.append('TEST190 parameter count (174 frozen parameters + 2 appended filter controls)')
+    if hashlib.sha256('\n'.join(enum_names[:174]).encode('utf-8')).hexdigest() != '3ed34770c0250af883929433f461a543871bea1f54ac3353b197ed4f0caec5be':
+        errors.append('TEST190 changed frozen 174 parameter IDs')
+    if hashlib.sha256('\n'.join(descriptors[:174]).encode('utf-8')).hexdigest() != 'afd283772d79471cb7579a1e5c6c8e034f562846a1c22e2d8fbad853c3b1481f':
+        errors.append('TEST190 changed frozen 174 descriptors')
     if hashlib.sha256('\n'.join(enum_names[:143]).encode('utf-8')).hexdigest() != legacy_enum_sha256:
         errors.append('TEST160 changed original 143 enum IDs or their order')
     if hashlib.sha256('\n'.join(descriptors[:143]).encode('utf-8')).hexdigest() != legacy_descriptors_sha256:

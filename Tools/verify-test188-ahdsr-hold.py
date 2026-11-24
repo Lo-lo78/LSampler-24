@@ -10,7 +10,7 @@ state_h=read('Source/SlotAudioState.h')
 voice=read('Source/SamplerVoice.cpp')
 voice_h=read('Source/SamplerVoice.h')
 host=read('Source/PluginProcessor.cpp')
-assert 'parameterCount = 174' in p and 'std::array<GridEntry, 198> grid' in p
+assert 'parameterCount = 176' in p and 'std::array<GridEntry, 200> grid' in p
 assert 'int(P::lfo2_lace_mix)==169 && int(P::env_hold)==170' in p
 assert 'int(P::lp_env_hold)==171 && int(P::hp_env_hold)==172' in p
 for field,attack,group in [('env_hold','attack','Envelope'),('lp_env_hold','lp_env_attack','Low pass filter'),('hp_env_hold','hp_env_attack','High pass filter')]:

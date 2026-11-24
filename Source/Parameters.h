@@ -190,12 +190,15 @@ enum class P {
     hp_env_hold,
     // TEST189: slot signal phase, appended after every existing ID.
     phase,
+    // TEST190: append only; the UI order is independent.
+    hp_key_follow,
+    bp_cutoff,
     count
 };
 // Append the new indices only. The first nine VST3 IDs/indices are frozen.
 enum class L { start, end, repeats, fade_in, fade_out, pitch_down, lp_down, hp_down, one_shot,
                repeat_pan, pitch_time, level, crossfade, downsample, pan, repeat_level, direction, count };
-inline constexpr int legacyParameterCount = 143, parameterCount = 174, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
+inline constexpr int legacyParameterCount = 143, parameterCount = 176, legacyLoopParameterCount = 9, loopParameterCount = 17, loopCount = 10;
 static_assert(int(L::repeat_pan)==legacyLoopParameterCount && int(L::pitch_time)==10 && int(L::level)==11
               && int(L::crossfade)==12 && int(L::downsample)==13 && int(L::pan)==14
               && int(L::repeat_level)==15 && int(L::direction)==16 && int(L::count)==loopParameterCount);
@@ -203,7 +206,8 @@ static_assert(int(P::lfo1_one_shot_percent)==legacyParameterCount &&
               int(P::midi_channel)==159 && int(P::lfo1_drift_amount)==160 &&
               int(P::lfo2_lace_mix)==169 && int(P::env_hold)==170 &&
               int(P::lp_env_hold)==171 && int(P::hp_env_hold)==172 &&
-              int(P::phase)==173 && int(P::count)==parameterCount,
+              int(P::phase)==173 && int(P::hp_key_follow)==174 &&
+              int(P::bp_cutoff)==175 && int(P::count)==parameterCount,
               "Legacy parameter IDs must remain unchanged");
 inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"input_gain", "Level", "Slot", Kind::continuous, 0.0, -120.0, 24.0, 0.1, 1.0, "dB", 1, ""},
@@ -385,6 +389,8 @@ inline constexpr std::array<Descriptor, parameterCount> parameters {{
 {"hp_env_hold", "HP Env Hold", "High pass filter", Kind::continuous, 0, 0, 5.0, 0.001, 0.01, "s", 3, ""},
 // TEST189: -180..+180 degrees, 1 degree step, neutral zero preserves every old sound.
 {"phase", "Phase", "Slot", Kind::continuous, 0, -180, 180, 1, 15, "°", 0, ""},
+{"hp_key_follow", "HP Key Follow", "High pass filter", Kind::continuous, 0.0, -1.0, 1.0, 0.001, 0.01, "", 3, ""},
+{"bp_cutoff", "BP Cutoff", "High pass filter", Kind::continuous, 0.5, 0.0, 1.0, 0.001, 0.05, "", 3, ""},
 }};
 enum class GlobalP { master_output_gain, output_stage, bus_glue, bus_soft_drive, output_ceiling, count };
 inline constexpr int globalParameterCount = 5;
@@ -418,7 +424,7 @@ inline constexpr std::array<Descriptor, loopParameterCount> loopParameters {{
 }};
 enum class Action { none, sampleZero, loopZero };
 struct GridEntry { int parameter = -1, loop = -1; Action action = Action::none; const char* category = ""; int global = -1; };
-inline constexpr std::array<GridEntry, 198> grid {{
+inline constexpr std::array<GridEntry, 200> grid {{
 {int(P::input_gain), -1, Action::none, "Slot"},
 {int(P::polyphony), -1, Action::none, "Slot"},
 {int(P::slot_polyphony), -1, Action::none, "Slot"},
@@ -499,6 +505,7 @@ inline constexpr std::array<GridEntry, 198> grid {{
 {int(P::lp_key_follow), -1, Action::none, "Low pass filter"},
 {int(P::hp_on), -1, Action::none, "High pass filter"},
 {int(P::hp_cutoff), -1, Action::none, "High pass filter"},
+{int(P::bp_cutoff), -1, Action::none, "High pass filter"},
 {int(P::hp_resonance), -1, Action::none, "High pass filter"},
 {int(P::hp_env_amount), -1, Action::none, "High pass filter"},
 {int(P::hp_env_attack), -1, Action::none, "High pass filter"},
@@ -507,6 +514,7 @@ inline constexpr std::array<GridEntry, 198> grid {{
 {int(P::hp_env_sustain), -1, Action::none, "High pass filter"},
 {int(P::hp_env_release), -1, Action::none, "High pass filter"},
 {int(P::hp_vel_amount), -1, Action::none, "High pass filter"},
+{int(P::hp_key_follow), -1, Action::none, "High pass filter"},
 {int(P::lfo1_rate), -1, Action::none, "LFO 1"},
 {int(P::lfo1_mode), -1, Action::none, "LFO 1"},
 {int(P::lfo1_voice_mode), -1, Action::none, "LFO 1"},
@@ -639,6 +647,15 @@ inline double sanitise(const Descriptor& d, double v) noexcept {
     if (d.kind == Kind::integer || d.kind == Kind::enumeration || d.kind == Kind::note) v = std::round(v);
     return v;
 }
+// Both cutoff controls share the same logarithmic frequency mapping.
+// Move the pair together; stop at the first boundary, never change its width
+// or reorder crossed cutoffs. BP is the actual midpoint, not a DSP offset.
+inline double cutoffMidpoint(double lp, double hp) noexcept { return (lp + hp) * 0.5; }
+inline std::array<double, 2> moveCutoffPair(double lp, double hp, double target) noexcept {
+    const double delta = std::clamp(target - cutoffMidpoint(lp, hp),
+                                    -std::min(lp, hp), 1.0 - std::max(lp, hp));
+    return {std::clamp(lp + delta, 0.0, 1.0), std::clamp(hp + delta, 0.0, 1.0)};
+}
 struct SlotParameters {
     std::array<double, parameterCount> values {};
     std::array<std::array<double, loopParameterCount>, loopCount> loops {};
@@ -656,11 +673,20 @@ struct SlotParameters {
     double& operator[](P p) noexcept { return values[size_t(p)]; }
     double loop(int index, L field) const noexcept { return loops[size_t(index)][size_t(field)]; }
     double get(const GridEntry& e, int selectedLoop) const noexcept {
+        if (e.parameter == int(P::bp_cutoff) && e.loop < 0)
+            return cutoffMidpoint((*this)[P::lp_cutoff], (*this)[P::hp_cutoff]);
         return e.action != Action::none ? 0 : e.loop >= 0 ? loops[size_t(selectedLoop)][size_t(e.loop)] : values[size_t(e.parameter)];
     }
     void set(const GridEntry& e, int selectedLoop, double value) noexcept {
         if (e.action != Action::none) return;
-        (e.loop >= 0 ? loops[size_t(selectedLoop)][size_t(e.loop)] : values[size_t(e.parameter)]) = sanitise(descriptor(e),value);
+        if (e.loop < 0 && e.parameter == int(P::bp_cutoff)) {
+            const auto pair = moveCutoffPair((*this)[P::lp_cutoff], (*this)[P::hp_cutoff], sanitise(descriptor(e),value));
+            (*this)[P::lp_cutoff] = pair[0]; (*this)[P::hp_cutoff] = pair[1];
+        } else {
+            (e.loop >= 0 ? loops[size_t(selectedLoop)][size_t(e.loop)] : values[size_t(e.parameter)]) = sanitise(descriptor(e),value);
+        }
+        if (e.loop < 0 && (e.parameter == int(P::bp_cutoff) || e.parameter == int(P::lp_cutoff) || e.parameter == int(P::hp_cutoff)))
+            (*this)[P::bp_cutoff] = cutoffMidpoint((*this)[P::lp_cutoff], (*this)[P::hp_cutoff]);
     }
 };
 } // namespace lsampler

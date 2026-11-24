@@ -1288,7 +1288,7 @@ void GlobalVoicePool::renderVoice(Voice& v,const SlotAudioState& s,juce::AudioBu
             v.hpProcessingLast=true;
             ++diagnostics.hp;
             const double env=p[P::hp_env_amount]!=0?v.hpEnvelope.tick(s.hpEnv):0;
-            const double mod=env*p[P::hp_env_amount]+l1*s.lfo[0].hp+l2*s.lfo[1].hp-(loop?repeats*loop->hp:0)+(!BasicRead&&v.slice.active?v.slice.hp:0);
+            const double mod=env*p[P::hp_env_amount]+(v.note-p[P::root])*p[P::hp_key_follow]+l1*s.lfo[0].hp+l2*s.lfo[1].hp-(loop?repeats*loop->hp:0)+(!BasicRead&&v.slice.active?v.slice.hp:0);
             if(mod!=v.hpModCached) {
                 v.hpCoefficients=mod==0&&p[P::hp_vel_amount]==0?s.hpStatic:modulatedCoefficients.template operator()<true>(v.hpBase,mod,p[P::hp_resonance]);
                 v.hpModCached=mod;

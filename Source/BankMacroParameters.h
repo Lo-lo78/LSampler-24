@@ -10,7 +10,7 @@ inline bool bankMacroEligible(const GridEntry& e) noexcept
     if (e.global >= 0 || e.loop >= 0 || e.action != Action::none || e.parameter < 0)
         return false;
     const auto p = static_cast<P>(e.parameter);
-    if (!hostAutomatable(p) || p == P::low || p == P::high || p == P::root ||
+    if (!hostAutomatable(p) || p == P::bp_cutoff || p == P::low || p == P::high || p == P::root ||
         p == P::velocity_low || p == P::velocity_high || p == P::midi_channel ||
         p == P::choke_trigger || p == P::choke_target || p == P::choke_mode ||
         std::strcmp(e.category, "Sample Window") == 0 ||

@@ -4404,12 +4404,29 @@ void LSampler24AudioProcessor::createHostParameters()
         const auto& d=parameters[size_t(P::phase)];
         h.values[size_t(P::phase)]=add(id+d.key,name+juce::String(d.name),d,hostGenerations[size_t(slot)]);
     }
-    for(int i=int(P::phase);i<parameterCount;++i) {
+    for(int i=int(P::phase);i<int(P::hp_key_follow);++i) {
         const auto& d=parameters[size_t(i)];
         hostBankMacros[size_t(i)]=add("bankmacro_"+juce::String(d.key),
             "Bank Macro - "+juce::String(d.name),
             bankMacroDeltaDescriptor(i),bankMacroHostGeneration);
     }
+    // TEST190: append after every TEST189 slot AND bank lane.
+    for(int slot=0;slot<slotCount;++slot) {
+        auto& h=hostSlots[size_t(slot)];
+        const juce::String id="slot"+juce::String(slot+1).paddedLeft('0',2)+"_";
+        const juce::String name="Slot "+juce::String(slot+1)+" - ";
+        for(int i=int(P::hp_key_follow);i<parameterCount;++i) {
+            const auto& d=parameters[size_t(i)];
+            h.values[size_t(i)]=add(id+d.key,name+juce::String(d.name),d,hostGenerations[size_t(slot)]);
+        }
+        auto* bp=h.values[size_t(P::bp_cutoff)];
+        bp->linkedLow=h.values[size_t(P::lp_cutoff)];
+        bp->linkedHigh=h.values[size_t(P::hp_cutoff)];
+    }
+    const auto hpIndex=int(P::hp_key_follow);
+    const auto& hpDescriptor=parameters[size_t(hpIndex)];
+    hostBankMacros[size_t(hpIndex)]=add("bankmacro_"+juce::String(hpDescriptor.key),
+        "Bank Macro - "+juce::String(hpDescriptor.name),bankMacroDeltaDescriptor(hpIndex),bankMacroHostGeneration);
     hostParametersReady=true;
 }
 
@@ -4464,6 +4481,7 @@ void LSampler24AudioProcessor::publishHostValuesLocked(bool notify, int forceSlo
     };
     for(int k=0;k<slotCount;++k) {
         auto& h=hostSlots[size_t(k)];auto& s=slots[size_t(k)];
+        s.parameters[P::bp_cutoff]=cutoffMidpoint(s.parameters[P::lp_cutoff],s.parameters[P::hp_cutoff]);
         for(int i=0;i<parameterCount;++i)publish(h.values[size_t(i)],s.parameters.values[size_t(i)],h.control.values[size_t(i)],k==forceSlot);
         for(int j=0;j<loopCount;++j)for(int i=0;i<loopParameterCount;++i)
             publish(h.loops[size_t(j)][size_t(i)],s.parameters.loops[size_t(j)][size_t(i)],h.control.loops[size_t(j)][size_t(i)],k==forceSlot);

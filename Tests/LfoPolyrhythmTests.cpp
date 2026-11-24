@@ -7,8 +7,8 @@
 #include <string>
 int main() {
     using namespace lsampler;
-    static_assert(parameterCount==174 && int(P::midi_channel)==159 && int(P::env_hold)==170);
-    static_assert(grid.size()==198);
+    static_assert(parameterCount==176 && int(P::midi_channel)==159 && int(P::env_hold)==170);
+    static_assert(grid.size()==200);
     static_assert(int(P::phase)==173);
     static_assert(int(P::lfo2_lace_mix)==169);
     for(int i=int(P::lfo1_drift_amount);i<int(P::env_hold);++i){

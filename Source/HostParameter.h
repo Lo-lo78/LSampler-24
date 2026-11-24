@@ -15,12 +15,18 @@ public:
           d(descriptor), real(descriptor.initial), revision(generation), uiRevision(ui) {
         labels = juce::StringArray::fromTokens(d.labels, "|", "");
     }
-    double load() const noexcept { return real.load(std::memory_order_acquire); }
+    double load() const noexcept {
+        if (linkedLow && linkedHigh) return cutoffMidpoint(linkedLow->load(), linkedHigh->load());
+        return real.load(std::memory_order_acquire);
+    }
     double decode(float v) const noexcept {
         return sanitise(d, d.minimum + (d.maximum-d.minimum)*std::clamp(double(v),0.0,1.0));
     }
     float encode(double v) const noexcept { return float((sanitise(d,v)-d.minimum)/(d.maximum-d.minimum)); }
     void storeReal(double v) noexcept {
+        // A linked macro has no independent stored value. Preset/UI publication
+        // writes the physical cutoff lanes first; never apply its midpoint twice.
+        if (linkedLow && linkedHigh) return;
         v=sanitise(d,v);
         if(syncParameter && syncParameter->load()!=0)
             v=std::clamp(std::round(v*8)/8,.125,512.0);
@@ -34,7 +40,12 @@ public:
         }
     }
     float getValue() const override { return encode(load()); }
-    void setValue(float v) override { storeReal(decode(v)); }
+    void setValue(float v) override {
+        if (linkedLow && linkedHigh) {
+            const auto pair = moveCutoffPair(linkedLow->load(), linkedHigh->load(), decode(v));
+            linkedLow->storeReal(pair[0]); linkedHigh->storeReal(pair[1]);
+        } else storeReal(decode(v));
+    }
     float getDefaultValue() const override { return encode(d.initial); }
     bool isDiscrete() const override { return d.kind!=Kind::continuous; }
     bool isBoolean() const override { return std::strcmp(d.labels,"Off|On")==0; }
@@ -48,6 +59,8 @@ public:
         const int i=labels.indexOf(text.trim(),true);
         return encode(i>=0?d.minimum+i:text.getDoubleValue());
     }
+    HostParameter* linkedLow = nullptr;
+    HostParameter* linkedHigh = nullptr;
     HostParameter* syncParameter = nullptr;
     HostParameter* syncedRate = nullptr;
     std::atomic<bool> notificationPending {false};

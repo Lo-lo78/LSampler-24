@@ -44,7 +44,7 @@ struct Rig {
 };
 void catalogTests() {
     SlotParameters p;require(p[P::root]==60&&p[P::low]==0&&p[P::high]==127,"Approved mapping defaults");
-    require(legacyParameterCount==143&&parameterCount==174&&int(P::env_hold)==170
+    require(legacyParameterCount==143&&parameterCount==176&&int(P::env_hold)==170
             &&int(P::phase)==173&&loopCount==10,
             "Stable legacy IDs and TEST163/TEST189 catalog");
     require(p[P::midi_channel]==0 && p.acceptsMidiChannel(0) && p.acceptsMidiChannel(15),
@@ -570,6 +570,41 @@ void idleAndFileWorkerTests(const juce::File& folder) {
     std::cout << "PASS idle wakeups and file worker isolation\n";
 }
 
+void filterMacroTests(const juce::File& folder) {
+    // At the same note and sample pitch, tracking one octave must match a
+    // static HP cutoff shifted one octave, with no changes to the LP filter.
+    for (double tracking : {-1.0, 0.0, 1.0}) {
+        auto a=std::make_unique<Rig>(), b=std::make_unique<Rig>();
+        SlotParameters pa,pb;
+        pa[P::hp_on]=pb[P::hp_on]=1;
+        pa[P::hp_cutoff]=.45;
+        pa[P::hp_key_follow]=tracking;
+        pb[P::hp_cutoff]=.45+tracking*std::log(2.0)/std::log(500.0);
+        a->set(0,pa); b->set(0,pb); a->on(0,72); b->on(0,72);
+        a->render(4096); b->render(4096);
+        for(int i=0;i<4096;++i)
+            require(approx(a->output.getSample(0,i),b->output.getSample(0,i),1e-5),
+                    "HP Key Follow matches equivalent static cutoff");
+    }
+    LSampler24AudioProcessor p(folder.getChildFile("filter-macro-library"));
+    auto get=[&](P key){return p.getSlotParameter(index(key));};
+    auto set=[&](P key,double v){p.setSlotParameter(index(key),v);};
+    set(P::lp_cutoff,.6);set(P::hp_cutoff,.3);set(P::bp_cutoff,.55);
+    require(approx(get(P::lp_cutoff),.7)&&approx(get(P::hp_cutoff),.4),"UI macro edits physical host cutoffs");
+    auto* bp=p.getAutomationGridParameter(0,index(P::bp_cutoff),0,false);
+    auto* lp=p.getAutomationGridParameter(0,index(P::lp_cutoff),0,false);
+    auto* hp=p.getAutomationGridParameter(0,index(P::hp_cutoff),0,false);
+    require(bp&&lp&&hp,"All three host lanes exist");
+    bp->setValue(.65f);
+    require(approx(get(P::lp_cutoff),.8,1e-6)&&approx(get(P::hp_cutoff),.5,1e-6),"Host BP physically moves both lanes");
+    require(approx(lp->getValue(),.8,1e-6)&&approx(hp->getValue(),.5,1e-6),"Host readback reflects physical values");
+    lp->setValue(.7f);
+    require(approx(bp->getValue(),.6,1e-6),"Independent edits update midpoint");
+    p.setCurrentSlot(1);
+    require(approx(get(P::lp_cutoff),1)&&approx(get(P::hp_cutoff),0),"Slot isolation");
+    std::cout<<"PASS TEST190 HP tracking DSP and physical macro host routing\n";
+}
+
 void phaseTests() {
     auto r=std::make_unique<Rig>();
     SlotParameters p;
@@ -647,7 +682,7 @@ int main() {
     try {
         juce::ScopedJuceInitialiser_GUI initialise;
         const auto folder=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("lsampler-regression","",false);folder.createDirectory();
-        voiceOptimisationParityTests();catalogTests();phaseTests();extendedLfoTests();cleanAndBypassTests();voiceTests();pitchAndStereoTests();dspReferenceTests();loopAndEffectTests();
+        voiceOptimisationParityTests();catalogTests();filterMacroTests(folder);phaseTests();extendedLfoTests();cleanAndBypassTests();voiceTests();pitchAndStereoTests();dspReferenceTests();loopAndEffectTests();
         persistenceAndProcessorTests(folder);midiChannelRoutingTests(folder);bankInitialisationTests(folder);concurrentPublicationTest(folder);idleAndFileWorkerTests(folder);editorTests(folder);runSliceTests(folder);
         require(realtimeAllocations==0&&realtimeDeletes==0,"Zero allocations and frees across all guarded render/note-on/process calls");
         folder.deleteRecursively();

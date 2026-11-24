@@ -18,8 +18,8 @@ build = read('Tools/build-windows.ps1')
 
 # Catalog: Phase is appended after every frozen ID and appears after Pan in the
 # accessible Slot page, while the VST3 ID remains at the end of the host batch.
-assert 'parameterCount = 174' in p
-assert 'std::array<GridEntry, 198> grid' in p
+assert 'parameterCount = 176' in p
+assert 'std::array<GridEntry, 200> grid' in p
 assert 'int(P::env_hold)==170' in p and 'int(P::lp_env_hold)==171' in p
 assert 'int(P::hp_env_hold)==172' in p and 'int(P::phase)==173' in p
 assert '{"phase", "Phase", "Slot", Kind::continuous, 0, -180, 180, 1, 15, "°", 0, ""}' in p
@@ -32,7 +32,7 @@ assert p.index('// TEST189: slot signal phase, appended after every existing ID.
 assert 'h.values[size_t(P::phase)]=add(id+d.key' in host
 assert '"slot"+juce::String(slot+1).paddedLeft(\'0\',2)+"_"' in host
 assert host.index('// TEST189: one Phase control per slot') > host.index('// TEST188: three AHDSR Hold controls')
-assert 'for(int i=int(P::phase);i<parameterCount;++i)' in host
+assert 'for(int i=int(P::phase);i<int(P::hp_key_follow);++i)' in host
 assert 'hostBankMacros[size_t(i)]=add("bankmacro_"+juce::String(d.key)' in host
 
 # Prepared slot state and per-voice rotator state.
